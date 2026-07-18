@@ -109,5 +109,26 @@ class TestWriteRows(unittest.TestCase):
         )
 
 
+class TestMain(unittest.TestCase):
+    def test_main_writes_merged_sorted_output(self):
+        file_a = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "02 Jan 2024;Barang Jadi (FG);A1;Item A1;KY001 - Branch;Porsi;1\n"
+        )
+        file_b = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "01 Jan 2024;Barang Jadi (FG);B1;Item B1;KY002 - Branch;Porsi;3\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path_a = Path(tmpdir) / "a.csv"
+            path_b = Path(tmpdir) / "b.csv"
+            out_path = Path(tmpdir) / "merged.csv"
+            path_a.write_bytes(b"\xef\xbb\xbf" + file_a.encode("utf-8"))
+            path_b.write_bytes(b"\xef\xbb\xbf" + file_b.encode("utf-8"))
+            merge_dataset.main(source_paths=[path_a, path_b], output_path=out_path)
+            rows = merge_dataset.read_rows(out_path)
+        self.assertEqual([row[2] for row in rows], ["B1", "A1"])
+
+
 if __name__ == "__main__":
     unittest.main()

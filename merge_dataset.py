@@ -46,3 +46,24 @@ def write_rows(rows, path) -> None:
         writer = csv.writer(f, delimiter=";")
         writer.writerow(FIELDNAMES)
         writer.writerows(rows)
+
+
+SOURCE_FILES = [
+    "dataset/jan-24.csv",
+    "dataset/feb-24.csv",
+    "dataset/mar-24.csv",
+    "dataset/apr-des-24.csv",
+    "dataset/jan-des-25.csv",
+]
+
+OUTPUT_FILE = "dataset/dataset.csv"
+
+
+def main(source_paths=SOURCE_FILES, output_path=OUTPUT_FILE) -> None:
+    rows = merge_and_sort(source_paths)
+    write_rows(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+if __name__ == "__main__":
+    main()
