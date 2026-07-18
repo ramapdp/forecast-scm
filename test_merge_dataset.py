@@ -65,6 +65,22 @@ class TestReadRows(unittest.TestCase):
              "KY038 - Kebuli Yaman Talaga Bestari", "Porsi", "2"],
         ])
 
+    def test_skips_fully_blank_trailing_row(self):
+        content = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "01 Jan 2025;Minuman - FG;FGS-00014;Club Mineral 600 ml;"
+            "KY003 - Kebuli Yaman Serang;Botol;4\n"
+            ";;;;;;\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            rows = merge_dataset.read_rows(path)
+        self.assertEqual(rows, [
+            ["01 Jan 2025", "Minuman - FG", "FGS-00014", "Club Mineral 600 ml",
+             "KY003 - Kebuli Yaman Serang", "Botol", "4"],
+        ])
+
 
 class TestMergeAndSort(unittest.TestCase):
     def test_merges_and_sorts_chronologically_with_stable_ties(self):

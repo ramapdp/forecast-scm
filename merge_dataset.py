@@ -24,7 +24,11 @@ def read_rows(path) -> list[list[str]]:
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.reader(f, delimiter=";")
         next(reader)  # skip header
-        return [normalize_row(row) for row in reader]
+        return [
+            normalize_row(row)
+            for row in reader
+            if any(field.strip() for field in row)
+        ]
 
 
 def merge_and_sort(paths) -> list[list[str]]:
