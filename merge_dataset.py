@@ -6,3 +6,15 @@ DATE_FORMAT = "%d %b %Y"
 
 def parse_tanggal(value: str) -> datetime.date:
     return datetime.datetime.strptime(value.strip(), DATE_FORMAT).date()
+
+
+EXPECTED_FIELD_COUNT = 7
+
+
+def normalize_row(row: list[str]) -> list[str]:
+    if len(row) < EXPECTED_FIELD_COUNT:
+        raise ValueError(f"Row has fewer than {EXPECTED_FIELD_COUNT} fields: {row!r}")
+    kept, extra = row[:EXPECTED_FIELD_COUNT], row[EXPECTED_FIELD_COUNT:]
+    if any(field.strip() for field in extra):
+        raise ValueError(f"Unexpected non-empty trailing field(s) in row: {row!r}")
+    return kept
