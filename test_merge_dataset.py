@@ -81,6 +81,44 @@ class TestReadRows(unittest.TestCase):
              "KY003 - Kebuli Yaman Serang", "Botol", "4"],
         ])
 
+    def test_skips_blank_row_but_raises_on_bad_trailing_field_in_same_file(self):
+        header = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+        )
+        normal_row = (
+            "01 Jan 2025;Minuman - FG;FGS-00014;Club Mineral 600 ml;"
+            "KY003 - Kebuli Yaman Serang;Botol;4\n"
+        )
+        blank_row = ";;;;;;\n"
+        bad_row = (
+            "02 Jan 2025;Barang Jadi (FG);FGS-00005;Sambal - FG;"
+            "KY038 - Kebuli Yaman Talaga Bestari;Porsi;2;unexpected\n"
+        )
+
+        # Part 1: a file with just the blank row and the normal row proves
+        # the blank row is skipped while the normal row survives, both read
+        # through read_rows (not normalize_row directly).
+        content_ok = header + normal_row + blank_row
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "ok.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content_ok.encode("utf-8"))
+            rows = merge_dataset.read_rows(path)
+        self.assertEqual(rows, [
+            ["01 Jan 2025", "Minuman - FG", "FGS-00014", "Club Mineral 600 ml",
+             "KY003 - Kebuli Yaman Serang", "Botol", "4"],
+        ])
+
+        # Part 2: the same blank row plus a row with a non-empty trailing
+        # field, in the SAME file, still raises when read via read_rows —
+        # proving the blank-skip and the trailing-field guard coexist
+        # correctly in one read.
+        content_bad = header + normal_row + blank_row + bad_row
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bad.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content_bad.encode("utf-8"))
+            with self.assertRaises(ValueError):
+                merge_dataset.read_rows(path)
+
 
 class TestMergeAndSort(unittest.TestCase):
     def test_merges_and_sorts_chronologically_with_stable_ties(self):
@@ -103,6 +141,17 @@ class TestMergeAndSort(unittest.TestCase):
         # Both A2 and B1 are dated 01 Jan 2024; A2 must come first because
         # file_a is listed (and therefore read) before file_b.
         self.assertEqual([row[2] for row in rows], ["A2", "B1", "B2", "A1"])
+
+    def test_unparseable_tanggal_raises(self):
+        content = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "not a date;Barang Jadi (FG);A1;Item A1;KY001 - Branch;Porsi;1\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bad_date.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            with self.assertRaises(ValueError):
+                merge_dataset.merge_and_sort([path])
 
 
 class TestWriteRows(unittest.TestCase):

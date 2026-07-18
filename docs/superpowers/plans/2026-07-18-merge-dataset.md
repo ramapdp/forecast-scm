@@ -435,12 +435,12 @@ Expected: `OK` (10 tests)
 - [ ] **Step 2: Run the script against the real dataset**
 
 Run (from repo root): `python3 merge_dataset.py`
-Expected: `Wrote 1548288 rows to dataset/dataset.csv`
+Expected: `Wrote 1548284 rows to dataset/dataset.csv`
 
 - [ ] **Step 3: Verify the output row count**
 
 Run: `wc -l dataset/dataset.csv`
-Expected: `1548289` (1,548,288 data rows + 1 header — this is `(48236-1) + (45599-1) + (61693-1) + (509496-1) + (883269-1) + 1`, i.e. every source data row plus one merged header)
+Expected: `1548285` (1,548,284 data rows + 1 header). The 5 source files contain 48236 + 45599 + 61693 + 509496 + 883269 = 1,548,293 data rows in total, but 9 of those are fully-blank trailing rows (3 each in `jan-24.csv`, `feb-24.csv`, and `apr-des-24.csv`) that `read_rows` skips before they reach the output — so the written total is 1,548,293 - 9 = 1,548,284 data rows, plus 1 merged header = 1,548,285 lines.
 
 - [ ] **Step 4: Spot-check chronological ordering and format**
 
