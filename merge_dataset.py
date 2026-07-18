@@ -25,3 +25,11 @@ def read_rows(path) -> list[list[str]]:
         reader = csv.reader(f, delimiter=";")
         next(reader)  # skip header
         return [normalize_row(row) for row in reader]
+
+
+def merge_and_sort(paths) -> list[list[str]]:
+    all_rows: list[list[str]] = []
+    for path in paths:
+        all_rows.extend(read_rows(path))
+    all_rows.sort(key=lambda row: parse_tanggal(row[0]))
+    return all_rows
