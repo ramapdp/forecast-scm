@@ -15,6 +15,7 @@ Implement as a standalone Python script, `merge_dataset.py`, at the repo root, u
 - **Date parsing**: parse `Tanggal` (format `"01 Jan 2024"`, i.e. `%d %b %Y`) into a `datetime` for sorting purposes only. The original text format is preserved unchanged in the output.
 - **Sorting**: perform a stable sort of all rows by parsed date, ascending. Because rows are read in chronological file order first, rows sharing the same date retain their original relative order (source file order, then in-file order) after the stable sort.
 - **Error handling**: any row whose `Tanggal` fails to parse raises an error immediately, aborting the run — bad/malformed data should be surfaced, not silently dropped.
+- **Blank rows** (discovered during implementation, not anticipated at design time): `jan-24.csv`, `feb-24.csv`, and `apr-des-24.csv` each have 3 fully-blank trailing rows (`;;;;;;`, all 7 fields empty — a CSV/Excel export artifact, not real data). These are dropped before date parsing, since they carry no transaction data and aren't the kind of malformed/unexpected data the error-handling above is meant to catch.
 - **Output**: write `dataset/dataset.csv` with a single header row, `;` delimiter, and UTF-8 BOM (`utf-8-sig` encoding) — matching the source file format exactly.
 
 ## Out of scope
