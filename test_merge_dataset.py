@@ -1,5 +1,7 @@
 import datetime
+import tempfile
 import unittest
+from pathlib import Path
 
 import merge_dataset
 
@@ -41,6 +43,27 @@ class TestNormalizeRow(unittest.TestCase):
         row = ["01 Jan 2025", "Minuman - FG", "FGS-00014"]
         with self.assertRaises(ValueError):
             merge_dataset.normalize_row(row)
+
+
+class TestReadRows(unittest.TestCase):
+    def test_reads_and_normalizes_rows(self):
+        content = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas;;\n"
+            "01 Jan 2025;Minuman - FG;FGS-00014;Club Mineral 600 ml;"
+            "KY003 - Kebuli Yaman Serang;Botol;4;;\n"
+            "02 Jan 2025;Barang Jadi (FG);FGS-00005;Sambal - FG;"
+            "KY038 - Kebuli Yaman Talaga Bestari;Porsi;2;;\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            rows = merge_dataset.read_rows(path)
+        self.assertEqual(rows, [
+            ["01 Jan 2025", "Minuman - FG", "FGS-00014", "Club Mineral 600 ml",
+             "KY003 - Kebuli Yaman Serang", "Botol", "4"],
+            ["02 Jan 2025", "Barang Jadi (FG)", "FGS-00005", "Sambal - FG",
+             "KY038 - Kebuli Yaman Talaga Bestari", "Porsi", "2"],
+        ])
 
 
 if __name__ == "__main__":

@@ -18,3 +18,10 @@ def normalize_row(row: list[str]) -> list[str]:
     if any(field.strip() for field in extra):
         raise ValueError(f"Unexpected non-empty trailing field(s) in row: {row!r}")
     return kept
+
+
+def read_rows(path) -> list[list[str]]:
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.reader(f, delimiter=";")
+        next(reader)  # skip header
+        return [normalize_row(row) for row in reader]
