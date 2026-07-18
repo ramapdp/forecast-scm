@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .worktrees/
 .claude/settings.local.json
+.superpowers/

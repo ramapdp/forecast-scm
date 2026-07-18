@@ -15,7 +15,7 @@
 - `Tanggal` is parsed (format `%d %b %Y`, e.g. `01 Jan 2024`) only for sorting; the original text is written back out unchanged.
 - Source files are read in this exact chronological order, always: `dataset/jan-24.csv`, `dataset/feb-24.csv`, `dataset/mar-24.csv`, `dataset/apr-des-24.csv`, `dataset/jan-des-25.csv`. This, combined with a stable sort, is what makes same-date rows keep source order.
 - Rows are normalized to exactly 7 fields. If a dropped trailing field (present in `jan-des-25.csv`) is ever non-empty, raise `ValueError` — never silently discard data.
-- This project has no git repository. Do not run any `git` commands; there are no commit steps in this plan.
+- This project now has a local-only git repository (initialized after this plan was written, on branch `master`, with an initial baseline commit). Each task should be committed on completion; nothing gets pushed anywhere.
 
 ---
 
