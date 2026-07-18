@@ -89,5 +89,25 @@ class TestMergeAndSort(unittest.TestCase):
         self.assertEqual([row[2] for row in rows], ["A2", "B1", "B2", "A1"])
 
 
+class TestWriteRows(unittest.TestCase):
+    def test_writes_bom_semicolon_header_and_rows(self):
+        rows = [
+            ["01 Jan 2024", "Barang Jadi (FG)", "FGS-00005", "Sambal - FG",
+             "KY038 - Kebuli Yaman Talaga Bestari", "Porsi", "2"],
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "out.csv"
+            merge_dataset.write_rows(rows, path)
+            raw = path.read_bytes()
+            round_tripped = merge_dataset.read_rows(path)
+        self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))
+        self.assertEqual(round_tripped, rows)
+        text = raw.decode("utf-8-sig")
+        self.assertEqual(
+            text.splitlines()[0],
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

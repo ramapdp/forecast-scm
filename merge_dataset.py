@@ -33,3 +33,16 @@ def merge_and_sort(paths) -> list[list[str]]:
         all_rows.extend(read_rows(path))
     all_rows.sort(key=lambda row: parse_tanggal(row[0]))
     return all_rows
+
+
+FIELDNAMES = [
+    "Tanggal", "Kategori Barang", "Kode Barang", "Nama Barang",
+    "Nama Cabang", "Satuan", "Kuantitas",
+]
+
+
+def write_rows(rows, path) -> None:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(FIELDNAMES)
+        writer.writerows(rows)
