@@ -88,8 +88,13 @@ def compute_branch_stats(
     all_tier_labels = ["small", "medium", "large", "flagship"]
     n_bins = max(1, min(len(all_tier_labels), len(stats)))
     if n_bins == 1:
-        stats["branch_volume_tier"] = all_tier_labels[0]
+        # Use pd.Categorical to ensure dtype=category (same as qcut path) even for single bin
+        stats["branch_volume_tier"] = pd.Categorical(
+            [all_tier_labels[0]] * len(stats), categories=all_tier_labels
+        )
     else:
+        # Note: rank-based tie-breaking means branches with exactly equal avg volume can land in different tiers,
+        # rather than crashing (duplicates='drop') or grouping together.
         stats["branch_volume_tier"] = pd.qcut(
             stats["branch_avg_daily_qty"].rank(method="first"),
             q=n_bins,
