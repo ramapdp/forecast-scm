@@ -39,3 +39,7 @@ def month(date_col: pd.Series) -> pd.Series:
 
 def is_weekend(date_col: pd.Series) -> pd.Series:
     return date_col.dt.dayofweek >= 5
+
+
+def is_national_holiday(date_col: pd.Series) -> pd.Series:
+    return date_col.dt.date.isin(ID_HOLIDAYS)

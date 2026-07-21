@@ -29,5 +29,22 @@ class TestBasicCalendarFeatures(unittest.TestCase):
         self.assertEqual(list(result), [True, True, False])
 
 
+class TestIsNationalHoliday(unittest.TestCase):
+    def test_new_years_day_both_years(self):
+        dates = pd.Series(pd.to_datetime(["2024-01-01", "2025-01-01"]))
+        result = calendar_features.is_national_holiday(dates)
+        self.assertEqual(list(result), [True, True])
+
+    def test_independence_day_both_years(self):
+        dates = pd.Series(pd.to_datetime(["2024-08-17", "2025-08-17"]))
+        result = calendar_features.is_national_holiday(dates)
+        self.assertEqual(list(result), [True, True])
+
+    def test_ordinary_date_is_not_a_holiday(self):
+        dates = pd.Series(pd.to_datetime(["2024-05-15"]))
+        result = calendar_features.is_national_holiday(dates)
+        self.assertEqual(list(result), [False])
+
+
 if __name__ == "__main__":
     unittest.main()
