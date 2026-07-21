@@ -12,7 +12,7 @@ ID_HOLIDAYS = holidays.country_holidays("ID", years=[2024, 2025])
 # original working assumptions exactly, so no corrections were required.
 RAMADAN_PERIODS: dict[int, tuple[datetime.date, datetime.date]] = {
     2024: (datetime.date(2024, 3, 11), datetime.date(2024, 4, 9)),
-    2025: (datetime.date(2025, 3, 1), datetime.date(2025, 3, 29)),
+    2025: (datetime.date(2025, 3, 1), datetime.date(2025, 3, 30)),
 }
 EID_AL_FITR_DATES: dict[int, datetime.date] = {
     2024: datetime.date(2024, 4, 10),
