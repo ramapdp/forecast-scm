@@ -43,3 +43,28 @@ def is_weekend(date_col: pd.Series) -> pd.Series:
 
 def is_national_holiday(date_col: pd.Series) -> pd.Series:
     return date_col.dt.date.isin(ID_HOLIDAYS)
+
+
+def is_ramadan(date_col: pd.Series) -> pd.Series:
+    def check(d):
+        period = RAMADAN_PERIODS.get(d.year)
+        return period is not None and period[0] <= d <= period[1]
+    return date_col.dt.date.apply(check)
+
+
+def days_into_ramadan(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        period = RAMADAN_PERIODS.get(d.year)
+        if period is None or not (period[0] <= d <= period[1]):
+            return float("nan")
+        return (d - period[0]).days
+    return date_col.dt.date.apply(compute)
+
+
+def days_until_ramadan(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        period = RAMADAN_PERIODS.get(d.year)
+        if period is None or d >= period[0]:
+            return float("nan")
+        return (period[0] - d).days
+    return date_col.dt.date.apply(compute)

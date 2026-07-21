@@ -46,5 +46,32 @@ class TestIsNationalHoliday(unittest.TestCase):
         self.assertEqual(list(result), [False])
 
 
+class TestRamadanFeatures(unittest.TestCase):
+    def test_is_ramadan_on_start_end_and_mid_dates(self):
+        dates = pd.Series(pd.to_datetime(["2024-03-11", "2024-03-25", "2024-04-09", "2024-04-10"]))
+        result = calendar_features.is_ramadan(dates)
+        self.assertEqual(list(result), [True, True, True, False])
+
+    def test_days_into_ramadan(self):
+        dates = pd.Series(pd.to_datetime(["2024-03-11", "2024-03-12", "2024-04-09"]))
+        result = calendar_features.days_into_ramadan(dates)
+        self.assertEqual(list(result), [0, 1, 29])
+
+    def test_days_into_ramadan_nan_outside_ramadan(self):
+        dates = pd.Series(pd.to_datetime(["2024-04-10"]))
+        result = calendar_features.days_into_ramadan(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+    def test_days_until_ramadan(self):
+        dates = pd.Series(pd.to_datetime(["2024-03-10", "2024-03-01"]))
+        result = calendar_features.days_until_ramadan(dates)
+        self.assertEqual(list(result), [1, 10])
+
+    def test_days_until_ramadan_nan_during_or_after_ramadan(self):
+        dates = pd.Series(pd.to_datetime(["2024-03-11", "2024-04-09"]))
+        result = calendar_features.days_until_ramadan(dates)
+        self.assertTrue(result.isna().all())
+
+
 if __name__ == "__main__":
     unittest.main()
