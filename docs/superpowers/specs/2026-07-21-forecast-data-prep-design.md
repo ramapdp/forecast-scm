@@ -13,6 +13,15 @@ Prepare `dataset/dataset.csv` (693,565 goods-issued rows, Jan 2024–Dec 2025) i
 - **Validation approach**: single time-based holdout. Test = predictions made for each day in December 2025 (the last full month in the data); train = everything before 2025-12-01. Chosen over rolling-window walk-forward validation to keep the first comparison pass fast to iterate across three model families; walk-forward is a natural follow-up if holdout results come out close/ambiguous between models.
 - **Evaluation metrics** (computed downstream, in the modeling stage, but drives what targets data prep must emit): both WMAPE (volume-weighted, intuitive) and MASE (scale-free, standard in forecasting research) — needed because items span very different units (Kg, Porsi, PCS, Botol, etc.) and volumes.
 
+## One shared table, not per-model pipelines
+
+RF, XGBoost, and LSTM do not get separate data-preparation pipelines. All three are built from the same `train.parquet`/`test.parquet` produced by this pipeline, with only a thin, model-specific adapter applied at the modeling stage:
+
+- **RF / XGBoost** consume the table close to as-is — flat rows, one per (item, branch, date) — with just categorical columns (`Kode Barang`, `Nama Cabang`, `Kategori Barang`) label/target-encoded.
+- **LSTM** needs a structurally different input: the flat rows are windowed into 3D sequences (samples × timesteps × features), numeric features are scaled, and the categorical columns are integer-encoded for embedding lookup instead of label/target-encoded.
+
+Keeping one shared table with per-model adapters (rather than three separate feature-engineering passes) matters for the comparison's validity: if lags/rolling stats/calendar features were computed three separate times, the three models could silently see slightly different data, undermining the comparison.
+
 ## Pipeline stages
 
 Implemented as sequential cells in `data-processing.ipynb` (not separate scripts) — chosen to keep this exploratory/QA-heavy stage in one notebook rather than splitting into composable modules like `merge_dataset.py`/`aggregate_dataset.py`.
@@ -77,5 +86,6 @@ Write `dataset/model_ready/train.parquet` and `dataset/model_ready/test.parquet`
 
 - Model configuration, training, hyperparameter tuning, and cross-model comparison methodology (separate follow-up design).
 - Categorical encoding strategy (one-hot / label / embedding) — deferred to the modeling stage.
+- LSTM-specific sequence windowing and feature scaling — deferred to the modeling stage; see "One shared table, not per-model pipelines" above.
 - Rolling-window walk-forward validation — noted as a possible follow-up if single-holdout results are ambiguous.
 - Cold-start / fallback handling for series dropped by the minimum-history filter.
