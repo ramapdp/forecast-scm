@@ -6,6 +6,23 @@ PAIR_COLS = ["Kode Barang", "Nama Cabang"]
 CARRY_COLS = ["Kategori Barang", "Nama Barang"]
 
 
+def filter_min_history(
+    df: pd.DataFrame,
+    cutoff: pd.Timestamp = TEST_START,
+    min_days: int = MIN_HISTORY_DAYS,
+    pair_cols: list[str] = PAIR_COLS,
+    date_col: str = "Tanggal",
+) -> pd.DataFrame:
+    pre_cutoff_counts = (
+        df[df[date_col] < cutoff]
+        .groupby(pair_cols)
+        .size()
+        .reset_index(name="pre_cutoff_days")
+    )
+    valid_pairs = pre_cutoff_counts[pre_cutoff_counts["pre_cutoff_days"] >= min_days][pair_cols]
+    return df.merge(valid_pairs, on=pair_cols, how="inner").reset_index(drop=True)
+
+
 def build_dense_panel(
     df: pd.DataFrame,
     pair_cols: list[str] = PAIR_COLS,

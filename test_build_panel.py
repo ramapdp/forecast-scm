@@ -5,6 +5,14 @@ import pandas as pd
 import build_panel
 
 
+def _daily_rows(pair, start, n_days, qty=1):
+    return pd.DataFrame({
+        "Kode Barang": [pair[0]] * n_days, "Nama Cabang": [pair[1]] * n_days,
+        "Tanggal": pd.date_range(start, periods=n_days, freq="D"),
+        "Kuantitas": [qty] * n_days,
+    })
+
+
 class TestBuildDensePanel(unittest.TestCase):
     def test_single_day_pair_yields_one_row(self):
         df = pd.DataFrame({
@@ -58,6 +66,38 @@ class TestBuildDensePanel(unittest.TestCase):
         })
         result = build_panel.build_dense_panel(df)
         self.assertEqual(len(result), 2)  # each pair has only 1 day of its own history
+
+
+class TestFilterMinHistory(unittest.TestCase):
+    def test_drops_pair_with_fewer_than_min_days_pre_cutoff(self):
+        df = _daily_rows(("A", "X"), "2025-10-01", 59)  # 59 < 60
+        result = build_panel.filter_min_history(df, cutoff=pd.Timestamp("2025-12-01"), min_days=60)
+        self.assertEqual(len(result), 0)
+
+    def test_keeps_pair_with_exactly_min_days_pre_cutoff(self):
+        df = _daily_rows(("A", "X"), "2025-10-02", 60)  # exactly 60 days ending 2025-12-01 (exclusive)
+        result = build_panel.filter_min_history(df, cutoff=pd.Timestamp("2025-12-01"), min_days=60)
+        self.assertEqual(len(result), 60)
+
+    def test_post_cutoff_rows_do_not_count_toward_threshold(self):
+        pre = _daily_rows(("A", "X"), "2025-11-01", 30)      # 30 pre-cutoff days
+        post = _daily_rows(("A", "X"), "2025-12-01", 31)      # 31 post-cutoff days (doesn't help)
+        df = pd.concat([pre, post], ignore_index=True)
+        result = build_panel.filter_min_history(df, cutoff=pd.Timestamp("2025-12-01"), min_days=60)
+        self.assertEqual(len(result), 0)  # only 30 pre-cutoff days, below the 60-day threshold
+
+    def test_kept_pair_retains_all_its_rows_including_post_cutoff(self):
+        pre = _daily_rows(("A", "X"), "2025-09-01", 90)
+        result = build_panel.filter_min_history(pre, cutoff=pd.Timestamp("2025-12-01"), min_days=60)
+        self.assertEqual(len(result), 90)  # all rows kept, not just the pre-cutoff ones
+
+    def test_pair_inactive_before_test_window_is_kept_if_history_sufficient(self):
+        # Activity stopped in October 2025 (before the Dec test window) — the
+        # spec says this is correct: the pair simply won't appear in test
+        # rows once split, not something this filter should remove.
+        df = _daily_rows(("A", "X"), "2025-08-01", 70)
+        result = build_panel.filter_min_history(df, cutoff=pd.Timestamp("2025-12-01"), min_days=60)
+        self.assertEqual(len(result), 70)
 
 
 if __name__ == "__main__":
