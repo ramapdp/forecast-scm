@@ -139,5 +139,35 @@ class TestApplyBranchStats(unittest.TestCase):
         self.assertEqual(result["branch_avg_daily_qty"].iloc[0], 42.0)
 
 
+class TestAddBranchAgeDays(unittest.TestCase):
+    def test_first_date_has_zero_age(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["X", "X"],
+            "Tanggal": pd.to_datetime(["2024-03-01", "2024-03-11"]),
+        })
+        result = prepare_forecast_data.add_branch_age_days(df)
+        self.assertEqual(result["branch_age_days"].iloc[0], 0)
+        self.assertEqual(result["branch_age_days"].iloc[1], 10)
+
+    def test_large_but_correct_age_for_later_date(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["X", "X"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2025-12-15"]),
+        })
+        result = prepare_forecast_data.add_branch_age_days(df)
+        expected = (pd.Timestamp("2025-12-15") - pd.Timestamp("2024-01-01")).days
+        self.assertEqual(result["branch_age_days"].iloc[1], expected)
+
+    def test_computed_independently_per_branch(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["X", "Y"],
+            "Tanggal": pd.to_datetime(["2024-01-10", "2024-01-10"]),
+        })
+        # X's first date is unknown here (only one row for X shown), but
+        # Y's age must not be affected by X's data at all.
+        result = prepare_forecast_data.add_branch_age_days(df)
+        self.assertEqual(result["branch_age_days"].iloc[1], 0)  # Y's own first date
+
+
 if __name__ == "__main__":
     unittest.main()

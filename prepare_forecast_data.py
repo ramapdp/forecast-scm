@@ -107,3 +107,12 @@ def apply_branch_stats(
     df: pd.DataFrame, branch_stats: pd.DataFrame, branch_col: str = BRANCH_COL
 ) -> pd.DataFrame:
     return df.merge(branch_stats, on=branch_col, how="left")
+
+
+def add_branch_age_days(
+    df: pd.DataFrame, branch_col: str = BRANCH_COL, date_col: str = "Tanggal"
+) -> pd.DataFrame:
+    result = df.copy()
+    first_date = result.groupby(branch_col)[date_col].transform("min")
+    result["branch_age_days"] = (result[date_col] - first_date).dt.days
+    return result
