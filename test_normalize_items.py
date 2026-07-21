@@ -107,5 +107,33 @@ class TestResolveConditionalNormalization(unittest.TestCase):
         self.assertEqual(result, {"A.001": "A-001", "A-001": "A-001", "xxx.A.001": "xxx.A-001"})
 
 
+class TestBuildNormalizedCodeMap(unittest.TestCase):
+    def test_merges_and_separates_real_fixture_codes_correctly(self):
+        df = pd.DataFrame({
+            "Kode Barang": [
+                "FGS-00003", "xxx.FGS-00003",       # same product -> merge
+                "FGS-00047", "FGS.00047",            # different products -> stay separate
+                "FGS.00069", "xxx.FGS.00069",        # different products -> stay separate
+                "FGS-00053", "xxx.FGS-00053", "FGS.00053",  # first two merge; third is unrelated
+            ],
+            "Nama Barang": [
+                "Iga Sapi Kebuli", "Iga Sapi Kebuli",
+                "Kentang Mustofa Rumput Laut", "Air Isi Ulang",
+                "Cendol - FG", "Cendol Pandan - FG",
+                "Ayam Kebuli (0.6)", "Ayam Kebuli (0.6)", "AirAlam 330 ml (Menu pakai kode AA)",
+            ],
+        })
+        result = normalize_items.build_normalized_code_map(df)
+        self.assertEqual(result["FGS-00003"], "FGS-00003")
+        self.assertEqual(result["xxx.FGS-00003"], "FGS-00003")
+        self.assertEqual(result["FGS-00047"], "FGS-00047")
+        self.assertEqual(result["FGS.00047"], "FGS.00047")
+        self.assertEqual(result["FGS.00069"], "FGS-00069")
+        self.assertEqual(result["xxx.FGS.00069"], "xxx.FGS-00069")
+        self.assertEqual(result["FGS-00053"], "FGS-00053")
+        self.assertEqual(result["xxx.FGS-00053"], "FGS-00053")
+        self.assertEqual(result["FGS.00053"], "FGS.00053")
+
+
 if __name__ == "__main__":
     unittest.main()

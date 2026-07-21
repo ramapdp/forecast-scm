@@ -51,3 +51,16 @@ def resolve_conditional_normalization(
             for raw in raws:
                 mapping[raw] = raw
     return mapping
+
+
+def build_normalized_code_map(
+    df: pd.DataFrame, code_col: str = "Kode Barang", name_col: str = "Nama Barang"
+) -> dict[str, str]:
+    pass1 = resolve_conditional_normalization(df, strip_xxx_prefix, code_col, name_col)
+
+    df_pass1 = df.copy()
+    df_pass1[code_col] = df_pass1[code_col].map(pass1)
+
+    pass2 = resolve_conditional_normalization(df_pass1, unify_separator, code_col, name_col)
+
+    return {raw: pass2[pass1[raw]] for raw in pass1}
