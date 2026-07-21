@@ -116,3 +116,11 @@ def add_branch_age_days(
     first_date = result.groupby(branch_col)[date_col].transform("min")
     result["branch_age_days"] = (result[date_col] - first_date).dt.days
     return result
+
+
+def split_train_test(
+    df: pd.DataFrame, cutoff: pd.Timestamp = TEST_START, date_col: str = "Tanggal"
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    train = df[df[date_col] < cutoff].reset_index(drop=True)
+    test = df[df[date_col] >= cutoff].reset_index(drop=True)
+    return train, test

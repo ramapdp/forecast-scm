@@ -169,5 +169,24 @@ class TestAddBranchAgeDays(unittest.TestCase):
         self.assertEqual(result["branch_age_days"].iloc[1], 0)  # Y's own first date
 
 
+class TestSplitTrainTest(unittest.TestCase):
+    def test_boundary_dates_split_correctly(self):
+        df = pd.DataFrame({
+            "Tanggal": pd.to_datetime(["2025-11-30", "2025-12-01", "2025-12-31"]),
+            "Kuantitas": [1, 2, 3],
+        })
+        train, test = prepare_forecast_data.split_train_test(df, cutoff=pd.Timestamp("2025-12-01"))
+        self.assertEqual(list(train["Tanggal"]), [pd.Timestamp("2025-11-30")])
+        self.assertEqual(
+            list(test["Tanggal"]), [pd.Timestamp("2025-12-01"), pd.Timestamp("2025-12-31")]
+        )
+
+    def test_date_after_available_data_stays_in_test(self):
+        df = pd.DataFrame({"Tanggal": pd.to_datetime(["2026-01-05"]), "Kuantitas": [1]})
+        train, test = prepare_forecast_data.split_train_test(df, cutoff=pd.Timestamp("2025-12-01"))
+        self.assertEqual(len(test), 1)
+        self.assertEqual(len(train), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
