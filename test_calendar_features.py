@@ -105,5 +105,27 @@ class TestEidAlFitrFeatures(unittest.TestCase):
         self.assertTrue(pd.isna(result.iloc[0]))
 
 
+class TestEidAlAdhaFeatures(unittest.TestCase):
+    def test_is_eid_al_adha_on_and_off_the_date(self):
+        dates = pd.Series(pd.to_datetime(["2024-06-17", "2024-06-18", "2025-06-06"]))
+        result = calendar_features.is_eid_al_adha(dates)
+        self.assertEqual(list(result), [True, False, True])
+
+    def test_days_since_within_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-06-17", "2024-06-24"]))  # 0, 7 days after
+        result = calendar_features.days_since_eid_al_adha(dates)
+        self.assertEqual(list(result), [0, 7])
+
+    def test_days_until_within_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-06-16", "2024-06-10"]))  # 1, 7 days before
+        result = calendar_features.days_until_eid_al_adha(dates)
+        self.assertEqual(list(result), [1, 7])
+
+    def test_days_until_nan_beyond_proximity_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-05-01"]))
+        result = calendar_features.days_until_eid_al_adha(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+
 if __name__ == "__main__":
     unittest.main()
