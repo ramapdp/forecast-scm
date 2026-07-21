@@ -127,6 +127,18 @@ class TestEidAlAdhaFeatures(unittest.TestCase):
         self.assertTrue(pd.isna(result.iloc[0]))
 
 
+class TestCheckYearCoverage(unittest.TestCase):
+    def test_raises_on_uncovered_year(self):
+        df = pd.DataFrame({"Tanggal": pd.to_datetime(["2026-01-01"])})
+        with self.assertRaises(ValueError):
+            calendar_features.add_calendar_features(df)
+
+    def test_no_error_for_covered_years(self):
+        df = pd.DataFrame({"Tanggal": pd.to_datetime(["2024-01-01", "2025-12-31"])})
+        result = calendar_features.add_calendar_features(df)
+        self.assertEqual(len(result), 2)
+
+
 class TestAddCalendarFeatures(unittest.TestCase):
     def test_wires_all_expected_columns(self):
         df = pd.DataFrame({"Tanggal": pd.to_datetime(["2024-03-11", "2024-06-17", "2024-07-01"])})

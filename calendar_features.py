@@ -118,9 +118,23 @@ def days_until_eid_al_adha(date_col: pd.Series) -> pd.Series:
     return date_col.dt.date.apply(compute)
 
 
+def check_year_coverage(date_col: pd.Series) -> None:
+    covered_years = set(RAMADAN_PERIODS.keys())
+    present_years = set(date_col.dt.year.unique())
+    missing_years = sorted(present_years - covered_years)
+    if missing_years:
+        raise ValueError(
+            f"calendar_features has no Ramadan/Eid/holiday data for year(s) {missing_years}. "
+            f"Only {sorted(covered_years)} are covered by RAMADAN_PERIODS, EID_AL_FITR_DATES, "
+            f"EID_AL_ADHA_DATES, and ID_HOLIDAYS. Update these mappings in calendar_features.py "
+            f"before running the pipeline on this data."
+        )
+
+
 def add_calendar_features(df: pd.DataFrame, date_col: str = "Tanggal") -> pd.DataFrame:
     result = df.copy()
     dates = result[date_col]
+    check_year_coverage(dates)
     result["day_of_week"] = day_of_week(dates)
     result["day_of_month"] = day_of_month(dates)
     result["month"] = month(dates)
