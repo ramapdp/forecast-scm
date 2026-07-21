@@ -39,5 +39,23 @@ class TestAddTargets(unittest.TestCase):
         self.assertTrue(pd.isna(day1["target_h7"]))
 
 
+class TestAddLagFeatures(unittest.TestCase):
+    def test_all_lags_populated_with_correct_past_values(self):
+        df = _pair_series(list(range(1, 30)))  # 29 days: 1..29
+        result = prepare_forecast_data.add_lag_features(df)
+        day29 = result[result["Tanggal"] == pd.Timestamp("2025-01-29")].iloc[0]
+        self.assertEqual(day29["lag_1"], 28)
+        self.assertEqual(day29["lag_7"], 22)
+        self.assertEqual(day29["lag_28"], 1)
+
+    def test_higher_lags_are_nan_when_insufficient_history(self):
+        df = _pair_series(list(range(1, 6)))  # only 5 days
+        result = prepare_forecast_data.add_lag_features(df)
+        day5 = result[result["Tanggal"] == pd.Timestamp("2025-01-05")].iloc[0]
+        self.assertEqual(day5["lag_1"], 4)  # 1 day back is available
+        self.assertTrue(pd.isna(day5["lag_7"]))
+        self.assertTrue(pd.isna(day5["lag_28"]))
+
+
 if __name__ == "__main__":
     unittest.main()

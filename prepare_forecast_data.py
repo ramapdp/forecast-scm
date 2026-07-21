@@ -24,3 +24,17 @@ def add_targets(
     for h in horizons:
         result[f"target_h{h}"] = grouped.shift(-h)
     return result
+
+
+def add_lag_features(
+    df: pd.DataFrame,
+    pair_cols: list[str] = PAIR_COLS,
+    date_col: str = "Tanggal",
+    qty_col: str = "Kuantitas",
+    lags: list[int] = LAG_DAYS,
+) -> pd.DataFrame:
+    result = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
+    grouped = result.groupby(pair_cols)[qty_col]
+    for lag in lags:
+        result[f"lag_{lag}"] = grouped.shift(lag)
+    return result
