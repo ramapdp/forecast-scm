@@ -42,5 +42,8 @@ python3 -m venv .venv
 ## Commands
 
 - Run the full data-prep pipeline: `.venv/bin/python3 prepare_forecast_data.py`
+- Run the pipeline via the notebook: `jupyter nbconvert --to notebook --execute --inplace --allow-errors data-processing.ipynb`
 - Run all tests: `.venv/bin/python3 -m unittest discover -p "test_*.py" -v`
 - Run one module's tests: `.venv/bin/python3 -m unittest test_normalize_items -v`
+
+Note: `data-processing.ipynb`'s QA cells currently include an assertion that raises on a known raw-data anomaly (negative Kuantitas values at branch KY011, 2024-02-29 — see the notebook's QA section) pending a data-owner decision on how to handle it. Until resolved, run the notebook with `jupyter nbconvert --to notebook --execute --inplace --allow-errors data-processing.ipynb`, or use `python3 prepare_forecast_data.py` directly (unaffected by this notebook-only assertion).
