@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 
@@ -186,6 +188,30 @@ class TestSplitTrainTest(unittest.TestCase):
         train, test = prepare_forecast_data.split_train_test(df, cutoff=pd.Timestamp("2025-12-01"))
         self.assertEqual(len(test), 1)
         self.assertEqual(len(train), 0)
+
+
+class TestExportSplits(unittest.TestCase):
+    def test_writes_and_round_trips_parquet_files(self):
+        train = pd.DataFrame({
+            "Tanggal": pd.to_datetime(["2025-01-01", "2025-01-02"]),
+            "Kuantitas": [1, 2],
+        })
+        test = pd.DataFrame({
+            "Tanggal": pd.to_datetime(["2025-12-01"]),
+            "Kuantitas": [3],
+        })
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prepare_forecast_data.export_splits(train, test, output_dir=tmpdir)
+            train_path = Path(tmpdir) / "train.parquet"
+            test_path = Path(tmpdir) / "test.parquet"
+            self.assertTrue(train_path.exists())
+            self.assertTrue(test_path.exists())
+            round_tripped_train = pd.read_parquet(train_path)
+            round_tripped_test = pd.read_parquet(test_path)
+        self.assertEqual(len(round_tripped_train), 2)
+        self.assertEqual(len(round_tripped_test), 1)
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(round_tripped_train["Tanggal"]))
+        self.assertTrue(pd.api.types.is_numeric_dtype(round_tripped_train["Kuantitas"]))
 
 
 if __name__ == "__main__":

@@ -124,3 +124,10 @@ def split_train_test(
     train = df[df[date_col] < cutoff].reset_index(drop=True)
     test = df[df[date_col] >= cutoff].reset_index(drop=True)
     return train, test
+
+
+def export_splits(train: pd.DataFrame, test: pd.DataFrame, output_dir: str = MODEL_READY_DIR) -> None:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    train.to_parquet(out / "train.parquet", index=False)
+    test.to_parquet(out / "test.parquet", index=False)
