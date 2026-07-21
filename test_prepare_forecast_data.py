@@ -76,5 +76,53 @@ class TestAddRollingFeatures(unittest.TestCase):
         self.assertTrue(pd.isna(day5["roll_mean_28"]))
 
 
+class TestComputeBranchStats(unittest.TestCase):
+    def test_stats_computed_only_from_pre_cutoff_rows(self):
+        train = pd.DataFrame({
+            "Nama Cabang": ["X"] * 10,
+            "Tanggal": pd.date_range("2025-11-01", periods=10, freq="D"),
+            "Kuantitas": [10] * 10,  # steady 10/day
+        })
+        test_period = pd.DataFrame({
+            "Nama Cabang": ["X"] * 5,
+            "Tanggal": pd.date_range("2025-12-01", periods=5, freq="D"),
+            "Kuantitas": [99999] * 5,  # extreme test-period values must not leak in
+        })
+        df = pd.concat([train, test_period], ignore_index=True)
+        result = prepare_forecast_data.compute_branch_stats(df, cutoff=pd.Timestamp("2025-12-01"))
+        branch_x = result[result["Nama Cabang"] == "X"].iloc[0]
+        self.assertAlmostEqual(branch_x["branch_avg_daily_qty"], 10.0)
+
+    def test_changing_test_period_values_does_not_change_output(self):
+        train = pd.DataFrame({
+            "Nama Cabang": ["X"] * 10,
+            "Tanggal": pd.date_range("2025-11-01", periods=10, freq="D"),
+            "Kuantitas": [10] * 10,
+        })
+        cutoff = pd.Timestamp("2025-12-01")
+        test_a = pd.concat([train, pd.DataFrame({
+            "Nama Cabang": ["X"], "Tanggal": [cutoff], "Kuantitas": [1],
+        })], ignore_index=True)
+        test_b = pd.concat([train, pd.DataFrame({
+            "Nama Cabang": ["X"], "Tanggal": [cutoff], "Kuantitas": [999999],
+        })], ignore_index=True)
+        result_a = prepare_forecast_data.compute_branch_stats(test_a, cutoff=cutoff)
+        result_b = prepare_forecast_data.compute_branch_stats(test_b, cutoff=cutoff)
+        pd.testing.assert_frame_equal(result_a, result_b)
+
+    def test_branch_volume_tier_ranks_distinct_branches(self):
+        rows = []
+        for branch, daily_qty in [("Small", 5), ("Medium", 50), ("Large", 500), ("Flagship", 5000)]:
+            rows.append(pd.DataFrame({
+                "Nama Cabang": [branch] * 10,
+                "Tanggal": pd.date_range("2025-09-01", periods=10, freq="D"),
+                "Kuantitas": [daily_qty] * 10,
+            }))
+        df = pd.concat(rows, ignore_index=True)
+        result = prepare_forecast_data.compute_branch_stats(df, cutoff=pd.Timestamp("2025-12-01"))
+        tiers = result.set_index("Nama Cabang")["branch_volume_tier"]
+        self.assertNotEqual(tiers["Small"], tiers["Flagship"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -57,3 +57,42 @@ def add_rolling_features(
         result[f"roll_mean_{window}"] = rolled.mean().reset_index(level=pair_cols, drop=True)
         result[f"roll_std_{window}"] = rolled.std().reset_index(level=pair_cols, drop=True)
     return result.drop(columns=["_shifted_qty"])
+
+
+def compute_branch_stats(
+    df: pd.DataFrame,
+    cutoff: pd.Timestamp = TEST_START,
+    branch_col: str = BRANCH_COL,
+    date_col: str = "Tanggal",
+    qty_col: str = "Kuantitas",
+) -> pd.DataFrame:
+    # Leakage guard: filter to strictly-pre-cutoff (training-period) rows
+    # BEFORE computing any branch-level aggregate. Everything below this
+    # line must only ever see `train`, never `df`.
+    train = df[df[date_col] < cutoff]
+    daily_totals = train.groupby([branch_col, date_col])[qty_col].sum().reset_index()
+    stats = daily_totals.groupby(branch_col)[qty_col].agg(
+        branch_avg_daily_qty="mean", branch_demand_std="std"
+    ).reset_index()
+    stats["branch_demand_cv"] = stats["branch_demand_std"] / stats["branch_avg_daily_qty"]
+
+    # Deviation from the brief: the brief's exact call —
+    # pd.qcut(stats["branch_avg_daily_qty"], q=4, labels=[4 names],
+    # duplicates="drop") — raises ValueError whenever fewer than 4 branches
+    # (or fewer than 4 distinct avg-qty values) are present in the training
+    # data, because duplicates="drop" can collapse bin edges below the
+    # fixed 4-label count. Both leakage-safety tests use a single branch,
+    # which trips this every time. Fix: size the label list to the number
+    # of bins that can actually be formed (bounded by branch count), and
+    # rank-break ties first so pd.qcut never needs to drop duplicate edges.
+    all_tier_labels = ["small", "medium", "large", "flagship"]
+    n_bins = max(1, min(len(all_tier_labels), len(stats)))
+    if n_bins == 1:
+        stats["branch_volume_tier"] = all_tier_labels[0]
+    else:
+        stats["branch_volume_tier"] = pd.qcut(
+            stats["branch_avg_daily_qty"].rank(method="first"),
+            q=n_bins,
+            labels=all_tier_labels[:n_bins],
+        )
+    return stats.drop(columns=["branch_demand_std"])
