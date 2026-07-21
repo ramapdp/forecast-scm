@@ -116,3 +116,23 @@ def days_until_eid_al_adha(date_col: pd.Series) -> pd.Series:
         delta = (eid_date - d).days
         return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
     return date_col.dt.date.apply(compute)
+
+
+def add_calendar_features(df: pd.DataFrame, date_col: str = "Tanggal") -> pd.DataFrame:
+    result = df.copy()
+    dates = result[date_col]
+    result["day_of_week"] = day_of_week(dates)
+    result["day_of_month"] = day_of_month(dates)
+    result["month"] = month(dates)
+    result["is_weekend"] = is_weekend(dates)
+    result["is_national_holiday"] = is_national_holiday(dates)
+    result["is_ramadan"] = is_ramadan(dates)
+    result["days_into_ramadan"] = days_into_ramadan(dates)
+    result["days_until_ramadan"] = days_until_ramadan(dates)
+    result["is_eid_al_fitr"] = is_eid_al_fitr(dates)
+    result["days_since_eid_al_fitr"] = days_since_eid_al_fitr(dates)
+    result["days_until_eid_al_fitr"] = days_until_eid_al_fitr(dates)
+    result["is_eid_al_adha"] = is_eid_al_adha(dates)
+    result["days_since_eid_al_adha"] = days_since_eid_al_adha(dates)
+    result["days_until_eid_al_adha"] = days_until_eid_al_adha(dates)
+    return result

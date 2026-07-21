@@ -127,5 +127,24 @@ class TestEidAlAdhaFeatures(unittest.TestCase):
         self.assertTrue(pd.isna(result.iloc[0]))
 
 
+class TestAddCalendarFeatures(unittest.TestCase):
+    def test_wires_all_expected_columns(self):
+        df = pd.DataFrame({"Tanggal": pd.to_datetime(["2024-03-11", "2024-06-17", "2024-07-01"])})
+        result = calendar_features.add_calendar_features(df)
+        expected_cols = {
+            "day_of_week", "day_of_month", "month", "is_weekend", "is_national_holiday",
+            "is_ramadan", "days_into_ramadan", "days_until_ramadan",
+            "is_eid_al_fitr", "days_since_eid_al_fitr", "days_until_eid_al_fitr",
+            "is_eid_al_adha", "days_since_eid_al_adha", "days_until_eid_al_adha",
+        }
+        self.assertTrue(expected_cols.issubset(set(result.columns)))
+
+    def test_ramadan_start_and_eid_al_adha_rows_have_correct_flags(self):
+        df = pd.DataFrame({"Tanggal": pd.to_datetime(["2024-03-11", "2024-06-17"])})
+        result = calendar_features.add_calendar_features(df)
+        self.assertTrue(result.iloc[0]["is_ramadan"])
+        self.assertTrue(result.iloc[1]["is_eid_al_adha"])
+
+
 if __name__ == "__main__":
     unittest.main()
