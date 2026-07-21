@@ -57,5 +57,24 @@ class TestAddLagFeatures(unittest.TestCase):
         self.assertTrue(pd.isna(day5["lag_28"]))
 
 
+class TestAddRollingFeatures(unittest.TestCase):
+    def test_rolling_mean_and_std_exclude_current_day(self):
+        # Days 1..10 with Kuantitas 1..10. On day 8, the trailing 7-day
+        # window (days 1-7, i.e. values 1..7) must be used — NOT days 2-8.
+        df = _pair_series(list(range(1, 11)))
+        result = prepare_forecast_data.add_rolling_features(df)
+        day8 = result[result["Tanggal"] == pd.Timestamp("2025-01-08")].iloc[0]
+        self.assertAlmostEqual(day8["roll_mean_7"], 4.0)  # mean(1..7)
+        self.assertAlmostEqual(day8["roll_std_7"], pd.Series(range(1, 8)).std())
+
+    def test_early_rows_are_nan_for_windows_larger_than_available_history(self):
+        df = _pair_series(list(range(1, 6)))  # only 5 days
+        result = prepare_forecast_data.add_rolling_features(df)
+        day5 = result[result["Tanggal"] == pd.Timestamp("2025-01-05")].iloc[0]
+        self.assertTrue(pd.isna(day5["roll_mean_7"]))
+        self.assertTrue(pd.isna(day5["roll_mean_14"]))
+        self.assertTrue(pd.isna(day5["roll_mean_28"]))
+
+
 if __name__ == "__main__":
     unittest.main()
