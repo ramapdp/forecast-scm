@@ -135,5 +135,24 @@ class TestBuildNormalizedCodeMap(unittest.TestCase):
         self.assertEqual(result["FGS.00053"], "FGS.00053")
 
 
+class TestApplyItemNormalization(unittest.TestCase):
+    def test_rewrites_kode_barang_for_agreeing_collision(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00003", "xxx.FGS-00003"],
+            "Nama Barang": ["Iga Sapi Kebuli", "Iga Sapi Kebuli"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+        })
+        result = normalize_items.apply_item_normalization(df)
+        self.assertEqual(list(result["Kode Barang"]), ["FGS-00003", "FGS-00003"])
+
+    def test_does_not_mutate_original_dataframe(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["xxx.FGS-00003"],
+            "Nama Barang": ["Iga Sapi Kebuli"],
+        })
+        normalize_items.apply_item_normalization(df)
+        self.assertEqual(df["Kode Barang"].iloc[0], "xxx.FGS-00003")
+
+
 if __name__ == "__main__":
     unittest.main()

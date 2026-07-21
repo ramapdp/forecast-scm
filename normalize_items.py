@@ -64,3 +64,10 @@ def build_normalized_code_map(
     pass2 = resolve_conditional_normalization(df_pass1, unify_separator, code_col, name_col)
 
     return {raw: pass2[pass1[raw]] for raw in pass1}
+
+
+def apply_item_normalization(df: pd.DataFrame) -> pd.DataFrame:
+    code_map = build_normalized_code_map(df)
+    result = df.copy()
+    result["Kode Barang"] = result["Kode Barang"].map(code_map)
+    return result
