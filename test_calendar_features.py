@@ -73,5 +73,37 @@ class TestRamadanFeatures(unittest.TestCase):
         self.assertTrue(result.isna().all())
 
 
+class TestEidAlFitrFeatures(unittest.TestCase):
+    def test_is_eid_al_fitr_on_and_off_the_date(self):
+        dates = pd.Series(pd.to_datetime(["2024-04-10", "2024-04-11", "2025-03-31"]))
+        result = calendar_features.is_eid_al_fitr(dates)
+        self.assertEqual(list(result), [True, False, True])
+
+    def test_days_since_within_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-04-10", "2024-04-11", "2024-04-17"]))  # 0, 1, 7 days after
+        result = calendar_features.days_since_eid_al_fitr(dates)
+        self.assertEqual(list(result), [0, 1, 7])
+
+    def test_days_since_nan_before_the_holiday(self):
+        dates = pd.Series(pd.to_datetime(["2024-04-09"]))
+        result = calendar_features.days_since_eid_al_fitr(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+    def test_days_since_nan_beyond_proximity_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-05-01"]))  # far beyond the 14-day window
+        result = calendar_features.days_since_eid_al_fitr(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+    def test_days_until_within_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-04-09", "2024-04-03"]))  # 1, 7 days before
+        result = calendar_features.days_until_eid_al_fitr(dates)
+        self.assertEqual(list(result), [1, 7])
+
+    def test_days_until_nan_beyond_proximity_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-03-01"]))  # far beyond the 14-day window
+        result = calendar_features.days_until_eid_al_fitr(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+
 if __name__ == "__main__":
     unittest.main()

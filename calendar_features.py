@@ -68,3 +68,27 @@ def days_until_ramadan(date_col: pd.Series) -> pd.Series:
             return float("nan")
         return (period[0] - d).days
     return date_col.dt.date.apply(compute)
+
+
+def is_eid_al_fitr(date_col: pd.Series) -> pd.Series:
+    return date_col.dt.date.apply(lambda d: EID_AL_FITR_DATES.get(d.year) == d)
+
+
+def days_since_eid_al_fitr(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        eid_date = EID_AL_FITR_DATES.get(d.year)
+        if eid_date is None or d < eid_date:
+            return float("nan")
+        delta = (d - eid_date).days
+        return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
+    return date_col.dt.date.apply(compute)
+
+
+def days_until_eid_al_fitr(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        eid_date = EID_AL_FITR_DATES.get(d.year)
+        if eid_date is None or d > eid_date:
+            return float("nan")
+        delta = (eid_date - d).days
+        return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
+    return date_col.dt.date.apply(compute)
