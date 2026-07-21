@@ -101,3 +101,9 @@ def compute_branch_stats(
             labels=all_tier_labels[:n_bins],
         )
     return stats.drop(columns=["branch_demand_std"])
+
+
+def apply_branch_stats(
+    df: pd.DataFrame, branch_stats: pd.DataFrame, branch_col: str = BRANCH_COL
+) -> pd.DataFrame:
+    return df.merge(branch_stats, on=branch_col, how="left")

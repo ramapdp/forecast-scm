@@ -124,5 +124,20 @@ class TestComputeBranchStats(unittest.TestCase):
         self.assertNotEqual(tiers["Small"], tiers["Flagship"])
 
 
+class TestApplyBranchStats(unittest.TestCase):
+    def test_stats_appear_identically_on_train_and_test_rows(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["X", "X"],
+            "Tanggal": pd.to_datetime(["2025-11-01", "2025-12-15"]),  # one train, one test row
+        })
+        branch_stats = pd.DataFrame({
+            "Nama Cabang": ["X"], "branch_avg_daily_qty": [42.0],
+            "branch_demand_cv": [0.5], "branch_volume_tier": ["large"],
+        })
+        result = prepare_forecast_data.apply_branch_stats(df, branch_stats)
+        self.assertEqual(result["branch_avg_daily_qty"].iloc[0], result["branch_avg_daily_qty"].iloc[1])
+        self.assertEqual(result["branch_avg_daily_qty"].iloc[0], 42.0)
+
+
 if __name__ == "__main__":
     unittest.main()
