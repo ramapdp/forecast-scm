@@ -5,6 +5,8 @@ from pathlib import Path
 import pandas as pd
 
 import prepare_forecast_data
+import normalize_items
+import build_panel
 
 
 def _pair_series(qtys, start="2025-01-01", pair=("A", "X")):
@@ -212,6 +214,38 @@ class TestExportSplits(unittest.TestCase):
         self.assertEqual(len(round_tripped_test), 1)
         self.assertTrue(pd.api.types.is_datetime64_any_dtype(round_tripped_train["Tanggal"]))
         self.assertTrue(pd.api.types.is_numeric_dtype(round_tripped_train["Kuantitas"]))
+
+
+class TestMain(unittest.TestCase):
+    def test_main_writes_train_and_test_parquet_end_to_end(self):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        # 90 days of daily activity for one pair: 2025-08-01 .. 2025-10-29.
+        # Cutoff 2025-10-01 leaves 61 pre-cutoff days (>= the 60-day minimum)
+        # and 29 post-cutoff days, so both train and test end up non-empty.
+        for i, date in enumerate(pd.date_range("2025-08-01", periods=90, freq="D")):
+            rows.append(
+                f"{date.strftime('%d %b %Y')};Barang Jadi (FG);FGS-00001;Widget;"
+                f"KY001 - Branch;Porsi;{i + 1}\n"
+            )
+        content = "".join(rows)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            output_dir = Path(tmpdir) / "model_ready"
+            prepare_forecast_data.main(
+                input_path=input_path,
+                output_dir=output_dir,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+            )
+            train = pd.read_parquet(output_dir / "train.parquet")
+            test = pd.read_parquet(output_dir / "test.parquet")
+        self.assertGreater(len(train), 0)
+        self.assertGreater(len(test), 0)
+        self.assertIn("target_h1", train.columns)
+        self.assertIn("lag_1", train.columns)
+        self.assertIn("is_ramadan", train.columns)
+        self.assertIn("branch_avg_daily_qty", train.columns)
 
 
 if __name__ == "__main__":

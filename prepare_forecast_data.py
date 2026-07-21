@@ -2,6 +2,8 @@ import pandas as pd
 from pathlib import Path
 
 import build_panel
+import normalize_items
+import calendar_features
 
 PAIR_COLS = build_panel.PAIR_COLS
 TEST_START = build_panel.TEST_START
@@ -131,3 +133,28 @@ def export_splits(train: pd.DataFrame, test: pd.DataFrame, output_dir: str = MOD
     out.mkdir(parents=True, exist_ok=True)
     train.to_parquet(out / "train.parquet", index=False)
     test.to_parquet(out / "test.parquet", index=False)
+
+
+def main(
+    input_path=normalize_items.RAW_DATA_FILE,
+    output_dir: str = MODEL_READY_DIR,
+    min_history_days: int = build_panel.MIN_HISTORY_DAYS,
+    cutoff: pd.Timestamp = TEST_START,
+) -> None:
+    df = normalize_items.load_and_normalize(input_path)
+    df = build_panel.build_dense_panel(df)
+    df = build_panel.filter_min_history(df, cutoff=cutoff, min_days=min_history_days)
+    df = add_targets(df)
+    df = add_lag_features(df)
+    df = add_rolling_features(df)
+    df = calendar_features.add_calendar_features(df)
+    branch_stats = compute_branch_stats(df, cutoff=cutoff)
+    df = apply_branch_stats(df, branch_stats)
+    df = add_branch_age_days(df)
+    train, test = split_train_test(df, cutoff=cutoff)
+    export_splits(train, test, output_dir)
+    print(f"Wrote {len(train)} train rows and {len(test)} test rows to {output_dir}")
+
+
+if __name__ == "__main__":
+    main()
