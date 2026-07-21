@@ -71,3 +71,10 @@ def apply_item_normalization(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
     result["Kode Barang"] = result["Kode Barang"].map(code_map)
     return result
+
+
+AGG_SPEC = {"Kuantitas": "sum", "Kategori Barang": "first", "Nama Barang": "first", "Satuan": "first"}
+
+
+def reaggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
+    return df.groupby(["Kode Barang", "Tanggal", "Nama Cabang"], as_index=False).agg(AGG_SPEC)

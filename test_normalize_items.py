@@ -154,5 +154,34 @@ class TestApplyItemNormalization(unittest.TestCase):
         self.assertEqual(df["Kode Barang"].iloc[0], "xxx.FGS-00003")
 
 
+class TestReaggregateDaily(unittest.TestCase):
+    def test_sums_kuantitas_for_rows_that_collided_after_normalization(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00003", "FGS-00003"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+            "Nama Cabang": ["KY001 - Branch", "KY001 - Branch"],
+            "Kategori Barang": ["Barang Jadi (FG)", "Barang Jadi (FG)"],
+            "Nama Barang": ["Iga Sapi Kebuli", "Iga Sapi Kebuli"],
+            "Satuan": ["Porsi", "Porsi"],
+            "Kuantitas": [3, 4],
+        })
+        result = normalize_items.reaggregate_daily(df)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["Kuantitas"].iloc[0], 7)
+
+    def test_leaves_distinct_keys_separate(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00003", "FGS-00004"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+            "Nama Cabang": ["KY001 - Branch", "KY001 - Branch"],
+            "Kategori Barang": ["Barang Jadi (FG)", "Barang Jadi (FG)"],
+            "Nama Barang": ["Iga Sapi Kebuli", "Nasi Kebuli"],
+            "Satuan": ["Porsi", "Porsi"],
+            "Kuantitas": [3, 4],
+        })
+        result = normalize_items.reaggregate_daily(df)
+        self.assertEqual(len(result), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
