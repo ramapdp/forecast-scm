@@ -136,7 +136,7 @@ def export_splits(train: pd.DataFrame, test: pd.DataFrame, output_dir: str = MOD
 
 
 def main(
-    input_path=normalize_items.RAW_DATA_FILE,
+    input_path: str = normalize_items.RAW_DATA_FILE,
     output_dir: str = MODEL_READY_DIR,
     min_history_days: int = build_panel.MIN_HISTORY_DAYS,
     cutoff: pd.Timestamp = TEST_START,
