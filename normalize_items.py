@@ -78,3 +78,11 @@ AGG_SPEC = {"Kuantitas": "sum", "Kategori Barang": "first", "Nama Barang": "firs
 
 def reaggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
     return df.groupby(["Kode Barang", "Tanggal", "Nama Cabang"], as_index=False).agg(AGG_SPEC)
+
+
+def load_and_normalize(path: str = RAW_DATA_FILE) -> pd.DataFrame:
+    df = pd.read_csv(path, sep=";", encoding="utf-8-sig")
+    df["Tanggal"] = pd.to_datetime(df["Tanggal"], format=DATE_FORMAT)
+    df = apply_item_normalization(df)
+    df = reaggregate_daily(df)
+    return df

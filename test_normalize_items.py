@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 import pandas as pd
 
@@ -181,6 +183,25 @@ class TestReaggregateDaily(unittest.TestCase):
         })
         result = normalize_items.reaggregate_daily(df)
         self.assertEqual(len(result), 2)
+
+
+class TestLoadAndNormalize(unittest.TestCase):
+    def test_reads_normalizes_and_reaggregates_end_to_end(self):
+        content = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "01 Jan 2024;Barang Jadi (FG);FGS-00003;Iga Sapi Kebuli;KY001 - Branch;Porsi;3\n"
+            "01 Jan 2024;Barang Jadi (FG);xxx.FGS-00003;Iga Sapi Kebuli;KY001 - Branch;Porsi;4\n"
+            "02 Jan 2024;Barang Jadi (FG);FGS-00003;Iga Sapi Kebuli;KY001 - Branch;Porsi;5\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            result = normalize_items.load_and_normalize(str(path))
+        self.assertEqual(len(result), 2)
+        row1 = result[result["Tanggal"] == pd.Timestamp("2024-01-01")].iloc[0]
+        self.assertEqual(row1["Kode Barang"], "FGS-00003")
+        self.assertEqual(row1["Kuantitas"], 7)
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(result["Tanggal"]))
 
 
 if __name__ == "__main__":
