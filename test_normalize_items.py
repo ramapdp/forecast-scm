@@ -1,5 +1,7 @@
 import unittest
 
+import pandas as pd
+
 import normalize_items
 
 
@@ -61,6 +63,48 @@ class TestNormalizeNameForComparison(unittest.TestCase):
         a = normalize_items.normalize_name_for_comparison("Gula Asam 250ml")
         b = normalize_items.normalize_name_for_comparison("Gula Asam 250 ml")
         self.assertEqual(a, b)
+
+
+class TestResolveConditionalNormalization(unittest.TestCase):
+    def test_merges_group_with_agreeing_names(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00003", "xxx.FGS-00003"],
+            "Nama Barang": ["Iga Sapi Kebuli", "Iga Sapi Kebuli"],
+        })
+        result = normalize_items.resolve_conditional_normalization(
+            df, normalize_items.strip_xxx_prefix
+        )
+        self.assertEqual(result, {"FGS-00003": "FGS-00003", "xxx.FGS-00003": "FGS-00003"})
+
+    def test_rejects_merge_for_group_with_disagreeing_names(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS.00069", "xxx.FGS.00069"],
+            "Nama Barang": ["Cendol - FG", "Cendol Pandan - FG"],
+        })
+        result = normalize_items.resolve_conditional_normalization(
+            df, normalize_items.strip_xxx_prefix
+        )
+        self.assertEqual(result, {"FGS.00069": "FGS.00069", "xxx.FGS.00069": "xxx.FGS.00069"})
+
+    def test_singleton_group_is_transformed_trivially(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00001"],
+            "Nama Barang": ["Ayam Kebuli (0.9)"],
+        })
+        result = normalize_items.resolve_conditional_normalization(
+            df, normalize_items.strip_xxx_prefix
+        )
+        self.assertEqual(result, {"FGS-00001": "FGS-00001"})
+
+    def test_three_way_group_all_agreeing_merges(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["A.001", "A-001", "xxx.A.001"],
+            "Nama Barang": ["Widget", "Widget", "Widget"],
+        })
+        result = normalize_items.resolve_conditional_normalization(
+            df, normalize_items.unify_separator
+        )
+        self.assertEqual(result, {"A.001": "A-001", "A-001": "A-001", "xxx.A.001": "xxx.A-001"})
 
 
 if __name__ == "__main__":

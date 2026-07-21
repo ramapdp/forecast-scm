@@ -1,5 +1,7 @@
 import re
 
+import pandas as pd
+
 RAW_DATA_FILE = "dataset/dataset.csv"
 DATE_FORMAT = "%d %b %Y"
 
@@ -24,3 +26,28 @@ def normalize_name_for_comparison(name: str) -> str:
     name = TRAILING_PAREN_RE.sub("", name)
     name = WHITESPACE_RE.sub(" ", name).strip()
     return name
+
+
+def resolve_conditional_normalization(
+    df: pd.DataFrame, transform, code_col: str = "Kode Barang", name_col: str = "Nama Barang"
+) -> dict[str, str]:
+    names_by_raw = df.groupby(code_col)[name_col].apply(
+        lambda s: {normalize_name_for_comparison(n) for n in s}
+    )
+    transformed = {raw: transform(raw) for raw in names_by_raw.index}
+    groups: dict[str, list[str]] = {}
+    for raw, t in transformed.items():
+        groups.setdefault(t, []).append(raw)
+
+    mapping: dict[str, str] = {}
+    for t, raws in groups.items():
+        all_names: set[str] = set()
+        for raw in raws:
+            all_names |= names_by_raw[raw]
+        if len(all_names) == 1:
+            for raw in raws:
+                mapping[raw] = t
+        else:
+            for raw in raws:
+                mapping[raw] = raw
+    return mapping
