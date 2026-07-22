@@ -64,13 +64,15 @@ Computed per pair, in chronological order:
 - **Rolling stats**: 7/14/28-day rolling mean and std of `Kuantitas`, computed on history strictly before the current day (shifted) to avoid leakage.
 - **Calendar features**: day-of-week, day-of-month, month, is-weekend, Indonesian national holiday flag, Ramadan flag + days-into/until Ramadan, Eid al-Fitr flag + proximity, Eid al-Adha flag + proximity. Source: the `holidays` Python package's Indonesia calendar. Islamic holiday dates from this package are spot-checked against known 2024/2025 dates before being trusted, given their business relevance to a Middle Eastern (Yaman/Kebuli) food business.
 - **Identifiers kept as plain categorical columns, not encoded**: normalized `Kode Barang`, `Nama Cabang`, `Kategori Barang`. Actual encoding (one-hot for RF/XGBoost, embedding index for LSTM) is a modeling-stage concern, since each algorithm wants a different encoding.
-- **Outlet (branch) characteristic features** — every branch has its own scale, maturity, and demand stability, which plain identity (`Nama Cabang` as a category) doesn't capture on its own. No external outlet master data (city/region, size, opening date, demographics) is available yet, so these are derived purely from each branch's own transaction history:
+- **Outlet (branch) characteristic features** — every branch has its own scale, maturity, and demand stability, which plain identity (`Nama Cabang` as a category) doesn't capture on its own. These are derived purely from each branch's own transaction history:
   - `branch_avg_daily_qty` — average total quantity (summed across all items) per day for that branch.
   - `branch_volume_tier` — a bucketed version of the above (e.g. quartiles), giving tree models a clean split point.
   - `branch_age_days` — days between the branch's own first observed transaction and the current row's date. Dynamic (grows per row), unlike the other branch features below which are frozen constants.
   - `branch_demand_cv` — coefficient of variation of the branch's daily total quantity, as a volatility measure.
 
   **Leakage rule**: `branch_avg_daily_qty`, `branch_volume_tier`, and `branch_demand_cv` are computed using training-period rows only (dates before 2025-12-01), then frozen and joined onto that branch's rows in both train and test — so a branch's December test-period demand never influences its own branch-level feature values. `branch_age_days` is inherently leakage-safe since it only reads each branch's own past (its first transaction date, which for any surviving pair is well before the test window per the minimum-history filter).
+
+- **Outlet location & delivery-channel features** — `kota`, `has_shopee`, `has_gofood`, `has_grabfood`, sourced from `dataset/outlets.csv`. Static exogenous master data, not derived from transaction history, so no leakage rule is needed (joins directly onto both train and test). See `docs/superpowers/specs/2026-07-23-outlet-location-features-design.md` for the full design, including the name-matching and data-quality issues found between `outlets.csv` and `Nama Cabang`.
 
 ### 5. Train/test split
 
