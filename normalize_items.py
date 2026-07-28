@@ -1,8 +1,11 @@
 import re
+from pathlib import Path
 
 import pandas as pd
 
-RAW_DATA_FILE = "dataset/dataset.csv"
+BASE_DIR = Path(__file__).resolve().parent
+
+RAW_DATA_FILE = str(BASE_DIR / "dataset/dataset.csv")
 DATE_FORMAT = "%d %b %Y"
 
 XXX_PREFIX_RE = re.compile(r"^xxx\.\s*", re.IGNORECASE)
@@ -73,7 +76,53 @@ def apply_item_normalization(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def canonicalize_item_names(
+    df: pd.DataFrame, code_col: str = "Kode Barang", name_col: str = "Nama Barang"
+) -> pd.DataFrame:
+    result = df.copy()
+    is_clean = result[name_col].map(strip_xxx_prefix) == result[name_col]
+    canonical = result.loc[is_clean].groupby(code_col)[name_col].first()
+    result[name_col] = result[code_col].map(canonical).fillna(result[name_col])
+    return result
+
+
 AGG_SPEC = {"Kuantitas": "sum", "Kategori Barang": "first", "Nama Barang": "first", "Satuan": "first"}
+
+EXCLUDED_BRANCHES = {"Kebab Saudagar - Kutabumi"}
+
+
+def exclude_branches(
+    df: pd.DataFrame, branches: set[str] = EXCLUDED_BRANCHES, branch_col: str = "Nama Cabang"
+) -> pd.DataFrame:
+    return df[~df[branch_col].isin(branches)].reset_index(drop=True)
+
+
+EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00069"}
+
+
+def exclude_items(
+    df: pd.DataFrame, items: set[str] = EXCLUDED_ITEMS, code_col: str = "Kode Barang"
+) -> pd.DataFrame:
+    return df[~df[code_col].isin(items)].reset_index(drop=True)
+
+
+EXPLICIT_ITEM_RENAMES: dict[str, tuple[str, str]] = {
+    "xxx.FGS.00067": ("FGS-00068", "Ayam Crispy Spicy - FG"),
+}
+
+
+def apply_item_renames(
+    df: pd.DataFrame,
+    renames: dict[str, tuple[str, str]] = EXPLICIT_ITEM_RENAMES,
+    code_col: str = "Kode Barang",
+    name_col: str = "Nama Barang",
+) -> pd.DataFrame:
+    result = df.copy()
+    matched = result[code_col].isin(renames)
+    raw_codes = result.loc[matched, code_col]
+    result.loc[matched, code_col] = raw_codes.map(lambda c: renames[c][0])
+    result.loc[matched, name_col] = raw_codes.map(lambda c: renames[c][1])
+    return result
 
 
 def reaggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
@@ -83,6 +132,10 @@ def reaggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
 def load_and_normalize(path: str = RAW_DATA_FILE) -> pd.DataFrame:
     df = pd.read_csv(path, sep=";", encoding="utf-8-sig")
     df["Tanggal"] = pd.to_datetime(df["Tanggal"], format=DATE_FORMAT)
+    df = exclude_branches(df)
+    df = apply_item_renames(df)
+    df = exclude_items(df)
     df = apply_item_normalization(df)
+    df = canonicalize_item_names(df)
     df = reaggregate_daily(df)
     return df

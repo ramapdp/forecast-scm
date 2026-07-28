@@ -118,6 +118,53 @@ def days_until_eid_al_adha(date_col: pd.Series) -> pd.Series:
     return date_col.dt.date.apply(compute)
 
 
+def is_independence_day(date_col: pd.Series) -> pd.Series:
+    return (date_col.dt.month == 8) & (date_col.dt.day == 17)
+
+
+def days_since_independence_day(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        event_date = datetime.date(d.year, 8, 17)
+        if d < event_date:
+            return float("nan")
+        delta = (d - event_date).days
+        return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
+    return date_col.dt.date.apply(compute)
+
+
+def days_until_independence_day(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        event_date = datetime.date(d.year, 8, 17)
+        if d > event_date:
+            return float("nan")
+        delta = (event_date - d).days
+        return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
+    return date_col.dt.date.apply(compute)
+
+
+def is_new_year(date_col: pd.Series) -> pd.Series:
+    return (date_col.dt.month == 1) & (date_col.dt.day == 1)
+
+
+def days_since_new_year(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        event_date = datetime.date(d.year, 1, 1)
+        if d < event_date:
+            return float("nan")
+        delta = (d - event_date).days
+        return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
+    return date_col.dt.date.apply(compute)
+
+
+def days_until_new_year(date_col: pd.Series) -> pd.Series:
+    def compute(d):
+        this_year = datetime.date(d.year, 1, 1)
+        event_date = this_year if d <= this_year else datetime.date(d.year + 1, 1, 1)
+        delta = (event_date - d).days
+        return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
+    return date_col.dt.date.apply(compute)
+
+
 def check_year_coverage(date_col: pd.Series) -> None:
     covered_years = set(RAMADAN_PERIODS.keys())
     present_years = set(date_col.dt.year.unique())
@@ -149,4 +196,10 @@ def add_calendar_features(df: pd.DataFrame, date_col: str = "Tanggal") -> pd.Dat
     result["is_eid_al_adha"] = is_eid_al_adha(dates)
     result["days_since_eid_al_adha"] = days_since_eid_al_adha(dates)
     result["days_until_eid_al_adha"] = days_until_eid_al_adha(dates)
+    result["is_independence_day"] = is_independence_day(dates)
+    result["days_since_independence_day"] = days_since_independence_day(dates)
+    result["days_until_independence_day"] = days_until_independence_day(dates)
+    result["is_new_year"] = is_new_year(dates)
+    result["days_since_new_year"] = days_since_new_year(dates)
+    result["days_until_new_year"] = days_until_new_year(dates)
     return result

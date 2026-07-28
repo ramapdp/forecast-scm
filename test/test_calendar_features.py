@@ -127,6 +127,71 @@ class TestEidAlAdhaFeatures(unittest.TestCase):
         self.assertTrue(pd.isna(result.iloc[0]))
 
 
+class TestIndependenceDayFeatures(unittest.TestCase):
+    def test_is_independence_day_on_and_off_the_date(self):
+        dates = pd.Series(pd.to_datetime(["2024-08-17", "2024-08-18", "2025-08-17"]))
+        result = calendar_features.is_independence_day(dates)
+        self.assertEqual(list(result), [True, False, True])
+
+    def test_days_since_within_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-08-17", "2024-08-24"]))  # 0, 7 days after
+        result = calendar_features.days_since_independence_day(dates)
+        self.assertEqual(list(result), [0, 7])
+
+    def test_days_since_nan_before_the_holiday(self):
+        dates = pd.Series(pd.to_datetime(["2024-08-16"]))
+        result = calendar_features.days_since_independence_day(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+    def test_days_since_nan_beyond_proximity_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-09-15"]))
+        result = calendar_features.days_since_independence_day(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+    def test_days_until_within_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-08-16", "2024-08-10"]))  # 1, 7 days before
+        result = calendar_features.days_until_independence_day(dates)
+        self.assertEqual(list(result), [1, 7])
+
+    def test_days_until_nan_beyond_proximity_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-07-01"]))
+        result = calendar_features.days_until_independence_day(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+
+class TestNewYearFeatures(unittest.TestCase):
+    def test_is_new_year_on_and_off_the_date(self):
+        dates = pd.Series(pd.to_datetime(["2024-01-01", "2024-01-02", "2025-01-01"]))
+        result = calendar_features.is_new_year(dates)
+        self.assertEqual(list(result), [True, False, True])
+
+    def test_days_since_within_window(self):
+        dates = pd.Series(pd.to_datetime(["2025-01-01", "2025-01-10"]))  # 0, 9 days after
+        result = calendar_features.days_since_new_year(dates)
+        self.assertEqual(list(result), [0, 9])
+
+    def test_days_since_nan_beyond_proximity_window(self):
+        dates = pd.Series(pd.to_datetime(["2025-01-20"]))
+        result = calendar_features.days_since_new_year(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+    def test_days_until_within_window_same_year(self):
+        # 2025-01-01 itself: 0 days until
+        dates = pd.Series(pd.to_datetime(["2025-01-01"]))
+        result = calendar_features.days_until_new_year(dates)
+        self.assertEqual(list(result), [0])
+
+    def test_days_until_wraps_to_next_year_in_december(self):
+        dates = pd.Series(pd.to_datetime(["2024-12-20", "2024-12-31"]))  # 12, 1 days until 2025-01-01
+        result = calendar_features.days_until_new_year(dates)
+        self.assertEqual(list(result), [12, 1])
+
+    def test_days_until_nan_beyond_proximity_window(self):
+        dates = pd.Series(pd.to_datetime(["2024-12-01"]))
+        result = calendar_features.days_until_new_year(dates)
+        self.assertTrue(pd.isna(result.iloc[0]))
+
+
 class TestCheckYearCoverage(unittest.TestCase):
     def test_raises_on_uncovered_year(self):
         df = pd.DataFrame({"Tanggal": pd.to_datetime(["2026-01-01"])})
@@ -148,6 +213,8 @@ class TestAddCalendarFeatures(unittest.TestCase):
             "is_ramadan", "days_into_ramadan", "days_until_ramadan",
             "is_eid_al_fitr", "days_since_eid_al_fitr", "days_until_eid_al_fitr",
             "is_eid_al_adha", "days_since_eid_al_adha", "days_until_eid_al_adha",
+            "is_independence_day", "days_since_independence_day", "days_until_independence_day",
+            "is_new_year", "days_since_new_year", "days_until_new_year",
         }
         self.assertTrue(expected_cols.issubset(set(result.columns)))
 

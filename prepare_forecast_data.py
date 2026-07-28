@@ -4,6 +4,9 @@ from pathlib import Path
 import build_panel
 import normalize_items
 import calendar_features
+import outlet_features
+
+BASE_DIR = Path(__file__).resolve().parent
 
 PAIR_COLS = build_panel.PAIR_COLS
 TEST_START = build_panel.TEST_START
@@ -11,7 +14,7 @@ BRANCH_COL = "Nama Cabang"
 TARGET_HORIZONS = range(1, 8)
 LAG_DAYS = [1, 2, 3, 7, 14, 21, 28]
 ROLLING_WINDOWS = [7, 14, 28]
-MODEL_READY_DIR = "dataset/model_ready"
+MODEL_READY_DIR = str(BASE_DIR / "dataset/model_ready")
 
 
 def add_targets(
@@ -111,6 +114,18 @@ def apply_branch_stats(
     return df.merge(branch_stats, on=branch_col, how="left")
 
 
+def apply_outlet_features(
+    df: pd.DataFrame,
+    outlets_df: pd.DataFrame,
+    overrides_df: pd.DataFrame,
+    branch_col: str = BRANCH_COL,
+) -> pd.DataFrame:
+    features = outlet_features.build_outlet_features(
+        df[branch_col].unique().tolist(), outlets_df, overrides_df
+    )
+    return df.merge(features, on=branch_col, how="left")
+
+
 def add_branch_age_days(
     df: pd.DataFrame, branch_col: str = BRANCH_COL, date_col: str = "Tanggal"
 ) -> pd.DataFrame:
@@ -140,8 +155,15 @@ def main(
     output_dir: str = MODEL_READY_DIR,
     min_history_days: int = build_panel.MIN_HISTORY_DAYS,
     cutoff: pd.Timestamp = TEST_START,
+    outlets_path: str = outlet_features.OUTLETS_FILE,
+    overrides_path: str = outlet_features.OVERRIDES_FILE,
 ) -> None:
+    outlets_df = outlet_features.load_outlets(outlets_path)
+    overrides_df = outlet_features.load_overrides(overrides_path)
     df = normalize_items.load_and_normalize(input_path)
+    df = outlet_features.filter_matched_branches(df, outlets_df, overrides_df)
+    df = outlet_features.canonicalize_branch_names(df, outlets_df, overrides_df)
+    df = normalize_items.reaggregate_daily(df)
     df = build_panel.build_dense_panel(df)
     df = build_panel.filter_min_history(df, cutoff=cutoff, min_days=min_history_days)
     df = add_targets(df)
@@ -151,6 +173,7 @@ def main(
     branch_stats = compute_branch_stats(df, cutoff=cutoff)
     df = apply_branch_stats(df, branch_stats)
     df = add_branch_age_days(df)
+    df = apply_outlet_features(df, outlets_df, overrides_df)
     train, test = split_train_test(df, cutoff=cutoff)
     export_splits(train, test, output_dir)
     print(f"Wrote {len(train)} train rows and {len(test)} test rows to {output_dir}")

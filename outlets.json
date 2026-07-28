@@ -1,0 +1,560 @@
+[
+  {
+    "Nama Outlet": "KY007 - Kebuli Yaman Cibubur",
+    "Alamat": "Jl. Lap. Tembak No. 11B, RT 003 RW 021 Cibubur, Kecamatan Ciracas, Kota Jakarta Timur DKI Jakarta. 13720",
+    "Kecamatan": "Ciracas",
+    "Kota": "Jakarta Timur",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY009 - Kebuli Yaman Cipinang",
+    "Alamat": "Jl. Cipinang Jaya Raya No. 31 Cipinang Besar Selatan, Kecamatan Jatinegara, Kota Jakarta Timur. DKI Jakarta. 13410",
+    "Kecamatan": "Jatinegara",
+    "Kota": "Jakarta Timur",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY023 - Kebuli Yaman Pondok Kelapa",
+    "Alamat": "Jl. Raya Pondok Kelapa Blok A12/8D RT.005/011,Malaka Jaya Duren Sawit Jakarta Timur 13460",
+    "Kecamatan": "Duren Sawit",
+    "Kota": "Jakarta Timur",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY054 - Kebuli Yaman Jagakarsa",
+    "Alamat": "Jl. Moch Khafi II No.4 RT 07 / RT 03, Kel. Cipedak, Kec. Jagakarsa , Kota Jakarta Selatan , Daerah Khusus Ibukota Jakarta 12630",
+    "Kecamatan": "Jagakarsa",
+    "Kota": "Jakarta Selatan",
+    "has_shopee": "Yes",
+    "has_gofood": "No",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY062 - Kebuli Yaman Kampung Baru",
+    "Alamat": "Jl. Panjang No.4, RT.3/RW.03, Sukabumi Sel., Kec. Kb. Jeruk, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11560",
+    "Kecamatan": "Kebon Jeruk",
+    "Kota": "Jakarta Barat",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman MCC LRT Jakarta",
+    "Alamat": "Jl. Pegangsaan Dua, RW.3, Pegangsaan Dua, Kec. Klp. Gading, Jkt Utara, Daerah Khusus Ibukota Jakarta 14250",
+    "Kecamatan": "Kelapa Gading",
+    "Kota": "Jakarta Utara",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman LRT Velodrome",
+    "Alamat": "Jl. Pegangsaan Dua RW 003, Kelurahan Pegangsaan Dua, Kecamatan Kelapa Gading, Jakarta Utara, DKI Jakarta 14250",
+    "Kecamatan": "Kelapa Gading",
+    "Kota": "Jakarta Utara",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY010 - Kebuli Yaman Bogor Ciampea",
+    "Alamat": "Jl. Raya Cibanteng Kecamatan Ciampea Jawa Barat. 16620",
+    "Kecamatan": "Ciampea",
+    "Kota": "Jawa Barat",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY012 - Kebuli Yaman Cibinong",
+    "Alamat": "Jl. Kol. Edy Yoso Martadipura No.1, RT.05/RW.05, Pakansari, Cibinong, Bogor, Jawa Barat 16915",
+    "Kecamatan": "Cibinong",
+    "Kota": "Bogor",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY021 - Kebuli Yaman Cikeas",
+    "Alamat": "Jl. Letda Natsir No.11Cikeas Udik, Kec. Gn. Putri, Bogor, Jawa Barat 16966",
+    "Kecamatan": "Gunung Putri",
+    "Kota": "Bogor",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY044 - Kebuli Yaman Pahlawan Bogor",
+    "Alamat": "Jl. Pahlawan No.35g, RT.01/RW.10, Kp. Parung Jambu, Bondongan, Kec. Bogor Sel., Kota Bogor, Jawa Barat 16131",
+    "Kecamatan": "Bogor Selatan",
+    "Kota": "Kota Bogor",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY049 - Kebuli Yaman Bukit Dago",
+    "Alamat": "Ruko Grand, Jl. Bukit Dago Jl. Pendidikan No.1 Blok AA5, Rawakalong, Kec. Gn. Sindur, Kabupaten Bogor, Jawa Barat 16340",
+    "Kecamatan": "Gunung Sindur",
+    "Kota": "Kabupaten Bogor",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY053 - Kebuli Yaman Cimanggu Bogor",
+    "Alamat": "Jl. Raya Taman Cimanggu No.17, RT.02/RW.02, Kedung Waringin, Kec. Tanah Sereal, Kota Bogor, Jawa Barat 16164 (samping erafone)",
+    "Kecamatan": "Tanah Sareal",
+    "Kota": "Kota Bogor",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY066 - Kebuli Yaman Parung",
+    "Alamat": "Jl. H.Mawi, No-1, Warujaya, Kec. Parung, Kab. Bogor, Jawa Barat, 16330",
+    "Kecamatan": "Parung",
+    "Kota": "Kabupaten Bogor",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY067 - Kebuli Yaman Metland",
+    "Alamat": "Ruko PTM Metland Transyogi, Jl. Kota Taman Metropolitan No.30, Cileungsi, Kec. Cileungsi, Kabupaten Bogor, Jawa Barat 16820.",
+    "Kecamatan": "Cileungsi",
+    "Kota": "Kabupaten Bogor",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Cilebut",
+    "Alamat": "Jl. Pendidikan no 8, Ruko Permata Residence 2 Blok Rk 3 no 17, Cilebut Barat, Kecamatan Sukaraja, Kabupaten Bogor, Jawa Barat 16710",
+    "Kecamatan": "Sukaraja",
+    "Kota": "Kabupaten Bogor",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Sentraland Parung Panjang",
+    "Alamat": "Ruko Sentraland Paradise No. 23, Kabasiran, Kecamatan Parung Panjang, Kabupaten Bogor, Jawa Barat 1636",
+    "Kecamatan": "Parung Panjang",
+    "Kota": "Kabupaten Bogor",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Mayor Oking",
+    "Alamat": "Jl. Raya Mayor Oking Jaya Atmaja, Cirimekar, Kec. Cibinong, Kabupaten Bogor, Jawa Barat 16917",
+    "Kecamatan": "Cibinong",
+    "Kota": "Kabupaten Bogor",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY004 - Kebuli Yaman Depok Sawangan",
+    "Alamat": "Jl. Muchtar Raya RT 001 RT 003 No. 35 (Depan Botani Lake) Sawangan Depok Jawa Barat. 16519",
+    "Kecamatan": "Sawangan",
+    "Kota": "Kota Depok",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY006 - Kebuli Yaman Depok Sentosa",
+    "Alamat": "Jl. Sentosa Raya No. 22 Mekar Jaya, Kecamatan Sukmajaya, Kota Depok Jawa Barat. 16411",
+    "Kecamatan": "Sukmajaya",
+    "Kota": "Kota Depok",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY008 - Kebuli Yaman Depok Kelapa Dua",
+    "Alamat": "Jl. Raya Akses UI No. 67 Tugu, Cimanggis, Kota Depok Jawa Barat. 16451",
+    "Kecamatan": "Cimanggis",
+    "Kota": "Kota Depok",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY029 - Kebuli Yaman Cinere",
+    "Alamat": "Jl. Cinere Raya No.4 Ruko Blok M, Cinere, Kec. Cinere, Kota Depok, Jawa Barat 16512",
+    "Kecamatan": "Cinere",
+    "Kota": "Kota Depok",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY001 - Kebuli Yaman Kutabumi (Pusat)",
+    "Alamat": "jl.Raya Regensi II Blok FA 02 No.6 Gelam Jaya , Pasar Kemis",
+    "Kecamatan": "Jatiuwung",
+    "Kota": "Banten",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY019 - Kebuli Yaman Ciledug",
+    "Alamat": "Jl. KH Hasyim Ashari No.85, RT.004/RW.002, Pinang, Kec. Pinang, Kota Tangerang, Banten 15145",
+    "Kecamatan": "Pinang",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY022 - Kebuli Yaman Citra Raya",
+    "Alamat": "Jl. Citra Raya Boulevard Rukp Melia Street Blok. X01 No.09 Mekar Bakti,Kec. Panongan, Kab.Tangerang, Banten 15710",
+    "Kecamatan": "Panongan",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY026 - Kebuli Yaman Poris",
+    "Alamat": "Jl. Ruko Poris Paradise No.27 Blok B11,RT.004/RW.003, Poris Gaga,Kec. Batuceper,Kota Tangerang,Banten 15122",
+    "Kecamatan": "Batuceper",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY031 - Kebuli Yaman Perum",
+    "Alamat": "Jln Prambanan Raya no. 32.Rt 007/ 009, Kel. Cibodas Baru, Kec Cibodas, Perum - Nas II, Kota Tangerang, Banten 15138",
+    "Kecamatan": "Cibodas",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY032 - Kebuli Yaman Kelapa Dua Karawaci",
+    "Alamat": "Klp. Dua, Kecamatan Kelapa Dua, Kabupaten Tangerang, Banten",
+    "Kecamatan": "Kelapa Dua",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY038 - Kebuli Yaman Talaga Bestari",
+    "Alamat": "Perumahan Telaga Bestari, Ruko Portobello Blok G-11 Wana Kerta, Sindang Jaya, Tangerang Regency, Banten 15560",
+    "Kecamatan": "Sindang Jaya",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY041 - Kebuli Yaman Sepatan",
+    "Alamat": "Sepatan Residence,Blok A.1, Jln.Raya Mauk Km.11.Sepatan Tangerang.15520.",
+    "Kecamatan": "Pasar Kemis",
+    "Kota": "Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY042 - Kebuli Yaman Batavia",
+    "Alamat": "Ruko Grand Batavia Arcade Blok C2 No-17, Sindangsari, Kec. Pasar kemis, Kab. Tangerang, Banten 15560",
+    "Kecamatan": "Pasar Kemis",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY043 - Kebuli Yaman Taman Cibodas",
+    "Alamat": "Jl. Raya Taman Cibodas Blok A2 No-12B, sangiang jaya, Kec. Priok, Kota Tangerang, Banten 15132",
+    "Kecamatan": "Periuk",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY045 - Kebuli Yaman Graha Raya",
+    "Alamat": "Jl. Graha Raya Bintaro No.37, Parigi Baru, Kec. Pd. Aren, Kota Tangerang Selatan, Banten 15228",
+    "Kecamatan": "Pondok Aren",
+    "Kota": "Kota Tangerang Selatan",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Cadas",
+    "Alamat": "Jl. Raya Mauk, Karet, Kec. Sepatan, Kabupaten Tangerang, Banten 15520",
+    "Kecamatan": "Sepatan",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY048 - Kebuli Yaman Banjar Wijaya",
+    "Alamat": "Ruko Azores, Jl. Banjar Wijaya No.18 Blok B 18A, RT.001/RW.003, Poris Plawad Indah, Kec. Cipondoh, Kota Tangerang, Banten 15142",
+    "Kecamatan": "Cipondoh",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY050 - Kebuli Yaman TangCity Mall",
+    "Alamat": "Tangerang City Mall Lt. 02 blok D 007, Jalan Jend Sudirman No.1, Babakan, RT.TangerangRT.001/RW.005, BabakanKec, Kec. Tangerang, Kota Tangerang, Banten 15118",
+    "Kecamatan": "Tangerang",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY056 - Kebuli Yaman Tigaraksa",
+    "Alamat": "Ruko sudirman indah blok F2A no.19 Rt.03 Rw.12 kel.pasir nangka kec.tigaraksa kab.tangerang Banten",
+    "Kecamatan": "Tigaraksa",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY060 - Kebuli Yaman Pakuhaji",
+    "Alamat": "Jl. Raya Kali Baru No.1-2 , Kramat, Kecamatan Pakuhaji, Kabupaten Tangerang, Banten 15570",
+    "Kecamatan": "Pakuhaji",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY061 - Kebuli Yaman Taman Kirana",
+    "Alamat": "Jl. Taman Kirana Surya No. 5-6, Pasanggrahan, Kec. Solear, Kabupaten Tangerang, Banten 15730",
+    "Kecamatan": "Solear",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY063 - Kebuli Yaman Kedaung",
+    "Alamat": "Jl. Raya Gatot Soebroto No.1, RW.2, Jati Mulya, Kec. Sepatan Tim., Kabupaten Tangerang, Banten 15520",
+    "Kecamatan": "Sepatan Timur",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY064 - Kebuli Yaman Mutiara Garuda",
+    "Alamat": "Ruko Perum Komplek Perumahan Garuda No.8 Blok A1, Kp. Melayu Timur, Kec. Teluknaga, Kabupaten Tangerang, Banten 15510",
+    "Kecamatan": "Teluknaga",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY065 - Kebuli Yaman Sangiang",
+    "Alamat": "Jl. Raya Villa Tangerang Indah No.17 Blok AE1, Gebang Raya, Kec. Periuk, Kota Tangerang, Banten 15132",
+    "Kecamatan": "Periuk",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY051 - kebuli Yaman TOD M1 Bandara",
+    "Alamat": "VJ8M+375, Jl. Marsekal Suryadarma, Selapajang Jaya, Kec. Neglasari, Kota Tangerang, Banten",
+    "Kecamatan": "Neglasari",
+    "Kota": "Kota Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Balaraja Kresek",
+    "Alamat": "Jl. Raya Kresek No 1-2, Merak, Kec. Sukamulya, Kabupaten Tangerang, Banten 15610",
+    "Kecamatan": "Sukamulya",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Bukit Gading Balaraja",
+    "Alamat": "Jl. Bukit Gading Balaraja No. 21-22 Blok O1, Kelurahan Cangkudu, Kecamatan Balaraja, Kabupaten Tangerang, Banten 15610.",
+    "Kecamatan": "Balaraja",
+    "Kota": "Kabupaten Tangerang",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY011 - Kebuli Yaman Bekasi Galaxy",
+    "Alamat": "Jl. Taman Galaxy Raya Blok A No.14, Jaka Setia, Kec. Bekasi Selatan, Kota Bekasi, Jawa Barat 17147.",
+    "Kecamatan": "Bekasi Selatan",
+    "Kota": "Kota Bekasi",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY016 - Kebuli Yaman Jatimakmur",
+    "Alamat": "Ruko Pesona Taman Mini No. 6, Jl. Raya Jati Makmur, Kel. Jati Makmur",
+    "Kecamatan": "Jatiasih",
+    "Kota": "Jawa Barat",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY027 - Kebuli Yaman Kaliabang",
+    "Alamat": "Jl. Lingkar Utara No. 5 Rt/Rw : 01/06 Kel. Kaliabang Tengah Kec. Bekasi Utara Kota Bekasi",
+    "Kecamatan": "Bekasi Utara",
+    "Kota": "Kota Bekasi",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY033 - Kebuli Yaman Jatiasih",
+    "Alamat": "JL. Raya Jati Asih No. 1 B RT.005/004 Jati Rasa, Kec. Jati Asih Kota Bekasi, Jawa Barat 1724",
+    "Kecamatan": "Jatiasih",
+    "Kota": "Kota Bekasi",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY036 - Kebuli Yaman Kota Harapan Indah",
+    "Alamat": "Kebuli Yaman Kota Harapan Indah",
+    "Kecamatan": "Medansatria",
+    "Kota": "Jawa Barat",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY037 - Kebuli Yaman Hankam",
+    "Alamat": "Jl. Raya Hankam No.90, RT.002/RW.005, Jatimelati, Kec. Pd. Melati, Kota Bks, Jawa Barat 17415",
+    "Kecamatan": "Pondokmelati",
+    "Kota": "Kota Bekasi",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY057 - Kebuli Yaman Rawalumbu (Bekasi)",
+    "Alamat": "Jl pramuka No 19 C ,kp Sepatan RT 004/Rw 002 , Kel Sepanjang Jaya , kec Rawalumbu, Bekasi Timur",
+    "Kecamatan": "Rawalumbu",
+    "Kota": "Bekasi",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Teluk Pucung",
+    "Alamat": "Jl. Raya Perjuangan No.1, RT.005/RW.034, Teluk Pucung, Kecamatan Bekasi Utara, Kota Bekasi, Jawa Barat 17121",
+    "Kecamatan": "Bekasi Utara",
+    "Kota": "Kota Bekasi",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "Kebuli Yaman Cikarang Pusat",
+    "Alamat": "Jl. Tarum Barat Raya No.11, Cikarang, Kec. Cikarang Pusat, Kabupaten Bekasi, Jawa Barat 17530",
+    "Kecamatan": "Cikarang Pusat",
+    "Kota": "Kabupaten Bekasi",
+    "has_shopee": "No",
+    "has_gofood": "No",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY003 - Kebuli Yaman Serang",
+    "Alamat": "Jl. Yusuf Martadilaga Serang No.32a, Cipare, Kec. Serang, Kota Serang, Banten 42117",
+    "Kecamatan": "Serang",
+    "Kota": "Kota Serang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY040 - Kebuli Yaman Anyer",
+    "Alamat": "Jl. Raya Anyer-sirih No.99, Anyar, Kec. Anyar, Kabupaten Serang, Banten 42166",
+    "Kecamatan": "Anyar",
+    "Kota": "Kabupaten Serang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY058 - Kebuli Yaman Cikande",
+    "Alamat": "Jl. Cikande Permai Blok E 1 No 4-5, Situterate, Kec. Cikande, Kabupaten Serang, Banten 42186",
+    "Kecamatan": "Cikande",
+    "Kota": "Kabupaten Serang",
+    "has_shopee": "No",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY068 - Kebuli Yaman Kramatwatu",
+    "Alamat": "Jl. Waringin Kurung No.1, Kramatwatu, Kec. Kramatwatu, Kab. Serang, Banten 42161",
+    "Kecamatan": "Kramatwatu",
+    "Kota": "Kabupaten Serang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY005 - Kebuli Yaman Pandeglang",
+    "Alamat": "Jl. Jenderal Ahmad Yani No. 46 Pandeglang, Kecamatan Pandeglang, Kabupaten Pandeglang Banten. 42211",
+    "Kecamatan": "Pandeglang",
+    "Kota": "Pandeglang",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "No"
+  },
+  {
+    "Nama Outlet": "KY002 - Kebuli Yaman Cilegon",
+    "Alamat": "Jl. Nuri Raya No. 11 (Bunderan Perumnas Cibeber) Cilegon Banten",
+    "Kecamatan": "Cilegon",
+    "Kota": "Cilegon",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY013 - Kebuli Yaman Cileunyi",
+    "Alamat": "Jl. Raya Tagog cinunuk No.200 Desa cimekar Kec. Cileunyi, Bandung Jawa Barat 40623",
+    "Kecamatan": "Cileunyi",
+    "Kota": "Kabupaten Bandung",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  },
+  {
+    "Nama Outlet": "KY014 - Kebuli Yaman Ciparay",
+    "Alamat": "RUKO POINT REGENCY Jl. Raya Laswi, bumi wangi Kec. Ciparay Bandung Jawa Barat 40381",
+    "Kecamatan": "Ciparay",
+    "Kota": "Kabupaten Bandung",
+    "has_shopee": "Yes",
+    "has_gofood": "Yes",
+    "has_grabfood": "Yes"
+  }
+]

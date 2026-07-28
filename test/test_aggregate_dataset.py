@@ -6,6 +6,18 @@ import aggregate_dataset
 import merge_dataset
 
 
+class TestParseKuantitas(unittest.TestCase):
+    def test_parses_plain_integer_string(self):
+        self.assertEqual(aggregate_dataset.parse_kuantitas("220"), 220)
+
+    def test_parses_whole_number_decimal_string(self):
+        self.assertEqual(aggregate_dataset.parse_kuantitas("103.0"), 103)
+
+    def test_raises_on_fractional_value(self):
+        with self.assertRaises(ValueError):
+            aggregate_dataset.parse_kuantitas("103.5")
+
+
 class TestAggregateRows(unittest.TestCase):
     def test_sums_kuantitas_for_rows_with_matching_key(self):
         rows = [
@@ -31,6 +43,18 @@ class TestAggregateRows(unittest.TestCase):
              "KY038 - Kebuli Yaman Talaga Bestari", "Botol", "3"],
         ]
         self.assertEqual(aggregate_dataset.aggregate_rows(rows), rows)
+
+    def test_sums_rows_with_decimal_formatted_kuantitas(self):
+        rows = [
+            ["01 Feb 2024", "Barang Semi FG (WIP-2)", "FGS-00001", "Ayam Kebuli (0.9)",
+             "KY001 - Kebuli Yaman Kutabumi (Pusat)", "Potong", "103.0"],
+            ["01 Feb 2024", "Barang Semi FG (WIP-2)", "FGS-00001", "Ayam Kebuli (0.9)",
+             "KY001 - Kebuli Yaman Kutabumi (Pusat)", "Potong", "4.0"],
+        ]
+        self.assertEqual(aggregate_dataset.aggregate_rows(rows), [
+            ["01 Feb 2024", "Barang Semi FG (WIP-2)", "FGS-00001", "Ayam Kebuli (0.9)",
+             "KY001 - Kebuli Yaman Kutabumi (Pusat)", "Potong", "107"],
+        ])
 
     def test_output_order_follows_first_occurrence_across_dates(self):
         rows = [

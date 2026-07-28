@@ -173,6 +173,35 @@ class TestAddBranchAgeDays(unittest.TestCase):
         self.assertEqual(result["branch_age_days"].iloc[1], 0)  # Y's own first date
 
 
+class TestApplyOutletFeatures(unittest.TestCase):
+    def test_joins_outlet_columns_identically_onto_matching_rows(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["KY007 - Kebuli Yaman Cibubur", "KY007 - Kebuli Yaman Cibubur"],
+            "Tanggal": pd.to_datetime(["2025-11-01", "2025-12-15"]),
+        })
+        outlets_df = pd.DataFrame({
+            "Nama Outlet": ["KY007 - Kebuli Yaman Cibubur"],
+            "Alamat": ["addr"], "Kecamatan": ["Ciracas"], "Kota": ["Jakarta Timur"],
+            "has_shopee": ["Yes"], "has_gofood": ["Yes"], "has_grabfood": ["Yes"],
+        })
+        overrides_df = pd.DataFrame(columns=["Nama Cabang", "Nama Outlet", "Kota Override"])
+        result = prepare_forecast_data.apply_outlet_features(df, outlets_df, overrides_df)
+        self.assertEqual(list(result["kota"]), ["Jakarta Timur", "Jakarta Timur"])
+        self.assertTrue(result["can_order_online"].all())
+
+    def test_unmatched_branch_gets_unknown_kota_and_nan_flags(self):
+        df = pd.DataFrame({"Nama Cabang": ["KY999 - No Such Outlet"], "Tanggal": pd.to_datetime(["2025-11-01"])})
+        outlets_df = pd.DataFrame({
+            "Nama Outlet": ["KY007 - Kebuli Yaman Cibubur"],
+            "Alamat": ["addr"], "Kecamatan": ["Ciracas"], "Kota": ["Jakarta Timur"],
+            "has_shopee": ["Yes"], "has_gofood": ["Yes"], "has_grabfood": ["Yes"],
+        })
+        overrides_df = pd.DataFrame(columns=["Nama Cabang", "Nama Outlet", "Kota Override"])
+        result = prepare_forecast_data.apply_outlet_features(df, outlets_df, overrides_df)
+        self.assertEqual(result["kota"].iloc[0], "Unknown")
+        self.assertTrue(pd.isna(result["can_order_online"].iloc[0]))
+
+
 class TestSplitTrainTest(unittest.TestCase):
     def test_boundary_dates_split_correctly(self):
         df = pd.DataFrame({
@@ -216,27 +245,61 @@ class TestExportSplits(unittest.TestCase):
         self.assertTrue(pd.api.types.is_numeric_dtype(round_tripped_train["Kuantitas"]))
 
 
+def _write_outlets_fixture(tmpdir, outlet_names):
+    path = Path(tmpdir) / "outlets.csv"
+    lines = ["Nama Outlet;Alamat;Kecamatan;Kota;has_shopee;has_gofood;has_grabfood\n"]
+    for name in outlet_names:
+        lines.append(f"{name};addr;Kec;Kota A;Yes;Yes;Yes\n")
+    path.write_bytes(b"\xef\xbb\xbf" + "".join(lines).encode("utf-8"))
+    return path
+
+
+def _write_empty_overrides_fixture(tmpdir):
+    path = Path(tmpdir) / "outlet_name_overrides.csv"
+    path.write_bytes(b"\xef\xbb\xbfNama Cabang;Nama Outlet;Kota Override\n")
+    return path
+
+
+def _write_overrides_fixture(tmpdir, rows):
+    path = Path(tmpdir) / "outlet_name_overrides.csv"
+    lines = ["Nama Cabang;Nama Outlet;Kota Override\n"]
+    for nama_cabang, nama_outlet, kota_override in rows:
+        lines.append(f"{nama_cabang};{nama_outlet};{kota_override}\n")
+    path.write_bytes(b"\xef\xbb\xbf" + "".join(lines).encode("utf-8"))
+    return path
+
+
+def _branch_rows(branch, start, periods):
+    lines = []
+    for i, date in enumerate(pd.date_range(start, periods=periods, freq="D")):
+        lines.append(
+            f"{date.strftime('%d %b %Y')};Barang Jadi (FG);FGS-00001;Widget;"
+            f"{branch};Porsi;{i + 1}\n"
+        )
+    return lines
+
+
 class TestMain(unittest.TestCase):
     def test_main_writes_train_and_test_parquet_end_to_end(self):
         rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
         # 90 days of daily activity for one pair: 2025-08-01 .. 2025-10-29.
         # Cutoff 2025-10-01 leaves 61 pre-cutoff days (>= the 60-day minimum)
         # and 29 post-cutoff days, so both train and test end up non-empty.
-        for i, date in enumerate(pd.date_range("2025-08-01", periods=90, freq="D")):
-            rows.append(
-                f"{date.strftime('%d %b %Y')};Barang Jadi (FG);FGS-00001;Widget;"
-                f"KY001 - Branch;Porsi;{i + 1}\n"
-            )
+        rows += _branch_rows("KY001 - Branch", "2025-08-01", 90)
         content = "".join(rows)
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "dataset.csv"
             input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
             output_dir = Path(tmpdir) / "model_ready"
+            outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
+            overrides_path = _write_empty_overrides_fixture(tmpdir)
             prepare_forecast_data.main(
                 input_path=input_path,
                 output_dir=output_dir,
                 min_history_days=60,
                 cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=outlets_path,
+                overrides_path=overrides_path,
             )
             train = pd.read_parquet(output_dir / "train.parquet")
             test = pd.read_parquet(output_dir / "test.parquet")
@@ -246,6 +309,98 @@ class TestMain(unittest.TestCase):
         self.assertIn("lag_1", train.columns)
         self.assertIn("is_ramadan", train.columns)
         self.assertIn("branch_avg_daily_qty", train.columns)
+        self.assertIn("kota", train.columns)
+        self.assertIn("can_order_online", train.columns)
+
+    def test_main_drops_rows_for_branch_with_no_outlet_match(self):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        rows += _branch_rows("KY001 - Branch", "2025-08-01", 90)
+        rows += _branch_rows("KY999 - Ghost Branch", "2025-08-01", 90)
+        content = "".join(rows)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            output_dir = Path(tmpdir) / "model_ready"
+            # Only "KY001 - Branch" has an outlet counterpart; "KY999 - Ghost
+            # Branch" must be dropped entirely rather than kept as "Unknown".
+            outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
+            overrides_path = _write_empty_overrides_fixture(tmpdir)
+            prepare_forecast_data.main(
+                input_path=input_path,
+                output_dir=output_dir,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=outlets_path,
+                overrides_path=overrides_path,
+            )
+            train = pd.read_parquet(output_dir / "train.parquet")
+            test = pd.read_parquet(output_dir / "test.parquet")
+        self.assertNotIn("KY999 - Ghost Branch", train["Nama Cabang"].values)
+        self.assertNotIn("KY999 - Ghost Branch", test["Nama Cabang"].values)
+        self.assertIn("KY001 - Branch", train["Nama Cabang"].values)
+
+    def test_main_merges_legacy_branch_spelling_into_canonical_history(self):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        # Mirrors the real TOD M1 Bandara / KY051 split: a legacy short name
+        # used for an early period, then the canonical "KY0NN - ..." name
+        # used from then on, with no date overlap between the two. Each side
+        # individually clears the 60-day min-history bar, so if canonicalization
+        # were NOT happening, "Legacy Name" would survive filter_min_history
+        # and show up as its own separate branch rather than being dropped —
+        # making this a real test of merging, not a false pass via the
+        # min-history filter incidentally dropping the shorter series.
+        rows += _branch_rows("Legacy Name", "2025-01-01", 65)
+        rows += _branch_rows("KY001 - Branch", "2025-03-10", 65)
+        content = "".join(rows)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            output_dir = Path(tmpdir) / "model_ready"
+            outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
+            overrides_path = _write_overrides_fixture(tmpdir, [("Legacy Name", "KY001 - Branch", "")])
+            prepare_forecast_data.main(
+                input_path=input_path,
+                output_dir=output_dir,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=outlets_path,
+                overrides_path=overrides_path,
+            )
+            train = pd.read_parquet(output_dir / "train.parquet")
+            test = pd.read_parquet(output_dir / "test.parquet")
+        combined = pd.concat([train, test])
+        self.assertEqual(set(combined["Nama Cabang"].unique()), {"KY001 - Branch"})
+        self.assertNotIn("Legacy Name", combined["Nama Cabang"].values)
+
+    def test_main_sums_kuantitas_when_duplicate_spellings_overlap_same_date(self):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        # Both raw spellings report on the exact same dates for the exact
+        # same item — a regression check for the reaggregate_daily step
+        # that must run after canonicalization, since build_dense_panel's
+        # reindex would otherwise raise on duplicate (item, date) rows.
+        rows += _branch_rows("Legacy Name", "2025-08-01", 90)
+        rows += _branch_rows("KY001 - Branch", "2025-08-01", 90)
+        content = "".join(rows)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            output_dir = Path(tmpdir) / "model_ready"
+            outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
+            overrides_path = _write_overrides_fixture(tmpdir, [("Legacy Name", "KY001 - Branch", "")])
+            prepare_forecast_data.main(
+                input_path=input_path,
+                output_dir=output_dir,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=outlets_path,
+                overrides_path=overrides_path,
+            )
+            train = pd.read_parquet(output_dir / "train.parquet")
+            test = pd.read_parquet(output_dir / "test.parquet")
+        combined = pd.concat([train, test])
+        self.assertEqual(set(combined["Nama Cabang"].unique()), {"KY001 - Branch"})
+        first_day = combined[combined["Tanggal"] == pd.Timestamp("2025-08-01")].iloc[0]
+        self.assertEqual(first_day["Kuantitas"], 2)  # both fixtures' day-1 Kuantitas is 1, summed
 
 
 if __name__ == "__main__":

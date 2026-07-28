@@ -1,5 +1,8 @@
 import csv
 import datetime
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
 
 DATE_FORMAT = "%d %b %Y"
 
@@ -53,14 +56,14 @@ def write_rows(rows, path) -> None:
 
 
 SOURCE_FILES = [
-    "dataset/jan-24.csv",
-    "dataset/feb-24.csv",
-    "dataset/mar-24.csv",
-    "dataset/apr-des-24.csv",
-    "dataset/jan-des-25.csv",
+    str(BASE_DIR / "dataset/jan-24.csv"),
+    str(BASE_DIR / "dataset/feb-24.csv"),
+    str(BASE_DIR / "dataset/mar-24.csv"),
+    str(BASE_DIR / "dataset/apr-des-24.csv"),
+    str(BASE_DIR / "dataset/jan-des-25.csv"),
 ]
 
-OUTPUT_FILE = "dataset/dataset.csv"
+OUTPUT_FILE = str(BASE_DIR / "dataset/dataset.csv")
 
 
 def main(source_paths=SOURCE_FILES, output_path=OUTPUT_FILE) -> None:
