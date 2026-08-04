@@ -4,3 +4,4 @@ openpyxl==3.1.5
 pyarrow
 holidays
 nbconvert
+matplotlib

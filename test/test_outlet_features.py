@@ -3,7 +3,7 @@ import unittest
 
 import pandas as pd
 
-import outlet_features
+from utils import outlet_features
 
 
 def _outlets(rows):

@@ -2,7 +2,7 @@ import csv
 import json
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 SOURCE_FILE = str(BASE_DIR / "outlets.json")
 OUTPUT_FILE = str(BASE_DIR / "dataset/outlets.csv")

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import merge_dataset
+from utils import merge_dataset
 
 
 class TestParseTanggal(unittest.TestCase):

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 RAW_DATA_FILE = str(BASE_DIR / "dataset/dataset.csv")
 DATE_FORMAT = "%d %b %Y"

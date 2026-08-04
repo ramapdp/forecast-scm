@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-import build_panel
+from utils import build_panel
 
 
 def _daily_rows(pair, start, n_days, qty=1):

@@ -1,4 +1,4 @@
-import merge_dataset
+from . import merge_dataset
 
 GROUP_FIELD_COUNT = 6  # Tanggal, Kategori Barang, Kode Barang, Nama Barang, Nama Cabang, Satuan
 

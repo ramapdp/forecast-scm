@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import aggregate_dataset
-import merge_dataset
+from utils import aggregate_dataset
+from utils import merge_dataset
 
 
 class TestParseKuantitas(unittest.TestCase):

@@ -1,12 +1,12 @@
 import pandas as pd
 from pathlib import Path
 
-import build_panel
-import normalize_items
-import calendar_features
-import outlet_features
+from . import build_panel
+from . import normalize_items
+from . import calendar_features
+from . import outlet_features
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 PAIR_COLS = build_panel.PAIR_COLS
 TEST_START = build_panel.TEST_START

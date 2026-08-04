@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-import calendar_features
+from utils import calendar_features
 
 
 class TestBasicCalendarFeatures(unittest.TestCase):
