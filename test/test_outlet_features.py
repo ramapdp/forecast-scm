@@ -230,5 +230,55 @@ class TestFilterMatchedBranches(unittest.TestCase):
         self.assertEqual(len(result), 0)
 
 
+def _region_mapping(rows):
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "old_name", "new_name", "Alamat", "Kecamatan", "Kota",
+            "has_shopee", "has_gofood", "has_grabfood", "kawasan", "hari_pengiriman",
+        ],
+    )
+
+
+class TestApplyRegionFeatures(unittest.TestCase):
+    def setUp(self):
+        self.region = _region_mapping([
+            ["KY007 - Kebuli Yaman Cibubur", "KY007 - Kebuli Yaman Cibubur", "addr", "Ciracas", "Jakarta Timur", "Yes", "Yes", "Yes", 2, "Selasa dan Jumat"],
+            ["KY054 - Kebuli Yaman Jagakarsa", "KY054 - Kebuli Yaman Jagakarsa", "addr", "Jagakarsa", "Jakarta Selatan", "Yes", "No", "Yes", 1, "Senin dan Kamis"],
+        ])
+
+    def test_joins_kawasan_and_hari_pengiriman_by_canonical_branch_name(self):
+        df = pd.DataFrame({"Nama Cabang": ["KY007 - Kebuli Yaman Cibubur"], "Kuantitas": [1]})
+        result = outlet_features.apply_region_features(df, self.region)
+        self.assertEqual(result.iloc[0]["kawasan"], 2)
+        self.assertEqual(result.iloc[0]["hari_pengiriman"], "Selasa dan Jumat")
+
+    def test_lead_time_days_flat_default_regardless_of_kawasan(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["KY007 - Kebuli Yaman Cibubur", "KY054 - Kebuli Yaman Jagakarsa"],
+            "Kuantitas": [1, 2],
+        })
+        result = outlet_features.apply_region_features(df, self.region)
+        self.assertEqual(result["lead_time_days"].tolist(), [4, 4])
+
+    def test_lead_time_days_override_via_parameter(self):
+        df = pd.DataFrame({"Nama Cabang": ["KY007 - Kebuli Yaman Cibubur"], "Kuantitas": [1]})
+        result = outlet_features.apply_region_features(df, self.region, lead_time_days=3)
+        self.assertEqual(result.iloc[0]["lead_time_days"], 3)
+
+    def test_unmatched_branch_gets_nan_kawasan(self):
+        df = pd.DataFrame({"Nama Cabang": ["KY999 - Unknown Branch"], "Kuantitas": [1]})
+        result = outlet_features.apply_region_features(df, self.region)
+        self.assertTrue(math.isnan(result.iloc[0]["kawasan"]))
+
+    def test_one_row_per_input_row_no_fanout(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["KY007 - Kebuli Yaman Cibubur", "KY007 - Kebuli Yaman Cibubur"],
+            "Kuantitas": [1, 2],
+        })
+        result = outlet_features.apply_region_features(df, self.region)
+        self.assertEqual(len(result), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

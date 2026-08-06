@@ -57,7 +57,7 @@ def write_rows(rows, path) -> None:
 
 SOURCE_FILES = [
     str(BASE_DIR / "dataset/csv/jan-24.csv"),
-    str(BASE_DIR / "dataset/csv/feb-24_No_Minus.csv"),
+    str(BASE_DIR / "dataset/csv/feb-24.csv"),
     str(BASE_DIR / "dataset/csv/mar-24.csv"),
     str(BASE_DIR / "dataset/csv/apr-des-24.csv"),
     str(BASE_DIR / "dataset/csv/jan-des-25.csv"),

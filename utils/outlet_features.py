@@ -8,11 +8,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 OUTLETS_FILE = str(BASE_DIR / "dataset/outlets.csv")
 OVERRIDES_FILE = str(BASE_DIR / "dataset/outlet_name_overrides.csv")
+REGION_MAPPING_FILE = str(BASE_DIR / "dataset/outlet_mapping.csv")
 
 PREFIX_RE = re.compile(r"^KY\d+\s*-\s*", re.IGNORECASE)
 TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
 
 CHANNEL_COLS = ["has_shopee", "has_gofood", "has_grabfood"]
+DEFAULT_LEAD_TIME_DAYS = 4
 
 
 def load_outlets(path: str = OUTLETS_FILE) -> pd.DataFrame:
@@ -21,6 +23,26 @@ def load_outlets(path: str = OUTLETS_FILE) -> pd.DataFrame:
 
 def load_overrides(path: str = OVERRIDES_FILE) -> pd.DataFrame:
     return pd.read_csv(path, sep=";", encoding="utf-8-sig", dtype=str)
+
+
+def load_region_mapping(path: str = REGION_MAPPING_FILE) -> pd.DataFrame:
+    return pd.read_csv(path, sep=";", encoding="utf-8-sig")
+
+
+def apply_region_features(
+    df: pd.DataFrame,
+    region_df: pd.DataFrame,
+    branch_col: str = "Nama Cabang",
+    lead_time_days: int = DEFAULT_LEAD_TIME_DAYS,
+) -> pd.DataFrame:
+    # region_df's `new_name` matches Nama Cabang once branches are canonicalized
+    # (see canonicalize_branch_names) — join is a straight rename, no fuzzy matching needed.
+    features = region_df[["new_name", "kawasan", "hari_pengiriman"]].rename(
+        columns={"new_name": branch_col}
+    )
+    result = df.merge(features, on=branch_col, how="left")
+    result["lead_time_days"] = lead_time_days
+    return result
 
 
 def _strip_for_matching(nama_cabang: str) -> str:
