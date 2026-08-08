@@ -51,37 +51,56 @@ Run via `notebook/data-processing.ipynb` (interactive/QA) or
    forward-filling descriptive columns. Then `filter_min_history` drops
    pairs with fewer than 60 days of history before the Dec-2025 cutoff
    (insufficient for the longest lag/rolling window).
-6. **Feature engineering** — `prepare_forecast_data.py`:
-   - `add_targets`: forecast targets `target_h1`…`target_h7` (Kuantitas
-     shifted 1–7 days into the future).
-   - `add_lag_features`: lagged quantities at 1, 2, 3, 7, 14, 21, 28 days.
-   - `add_rolling_features`: 7/14/28-day rolling mean & std, shifted by one
-     day before the window is computed so today's value never leaks into
-     its own rolling stats.
-   - `calendar_features.py` (`add_calendar_features`): day-of-week,
-     day-of-month, month, weekend flag, Indonesian public holidays, and
-     flags with days-until/days-since proximity features for the 4 high-season
-     events — Ramadan / Eid al-Fitr, Eid al-Adha, Indonesian Independence Day
-     (Aug 17), and New Year's Day (Jan 1).
+6. **Calendar features** — `calendar_features.py` (`add_calendar_features`):
+   day-of-week, day-of-month, month, weekend flag, Indonesian public
+   holidays, and flags with days-until/days-since proximity features for
+   the 4 high-season events — Ramadan / Eid al-Fitr, Eid al-Adha, Indonesian
+   Independence Day (Aug 17), and New Year's Day (Jan 1). Runs before
+   outlier handling (next step) so its event flags are available to decide
+   which spikes are exempt from capping.
+7. **Outlier / demand-spike handling** — `outlier_handling.py`:
+   `compute_pair_baseline` computes each (item, branch) pair's historical
+   median `Kuantitas` from real (non-zero-filled) train-period transactions
+   only (pairs with fewer than 30 such days are marked ineligible and never
+   capped). `apply_outlier_capping` flags rows at least 5x that median as
+   `is_spike` and produces `Kuantitas_capped` — the spike clipped to
+   `median * 5`, *unless* the row falls in a known high-season window
+   (Ramadan/Eid al-Fitr/Eid al-Adha/Independence Day/New Year), in which
+   case the value is left uncapped since it's treated as a real recurring
+   pattern, not noise. `baseline_ratio` and `is_spike` are kept as features;
+   raw `Kuantitas` is preserved unchanged for target computation.
+8. **Feature engineering** — `prepare_forecast_data.py`:
+   - `add_targets`: forecast targets `target_h1`…`target_h7` (raw,
+     **uncapped** `Kuantitas` shifted 1–7 days into the future — spikes are
+     real demand the model should be evaluated against, not something to
+     hide from the label).
+   - `add_lag_features`: lagged quantities at 1, 2, 3, 7, 14, 21, 28 days,
+     computed from `Kuantitas_capped` so a single extreme day doesn't
+     dominate the lag inputs.
+   - `add_rolling_features`: 7/14/28-day rolling mean & std (also from
+     `Kuantitas_capped`), shifted by one day before the window is computed
+     so today's value never leaks into its own rolling stats.
    - `compute_branch_stats` / `apply_branch_stats`: branch-level
      characteristics (average daily quantity, demand coefficient of
-     variation, volume tier, branch age in days) computed **only from the
-     training period** and then frozen/applied to both splits, to avoid
-     leaking future information into features.
+     variation, volume tier, branch age in days) computed from
+     `Kuantitas_capped`, **only from the training period**, then
+     frozen/applied to both splits, to avoid leaking future information
+     into features.
    - `outlet_features.apply_outlet_features`: joins static per-branch
      features — `kota`, `has_shopee`, `has_gofood`, `has_grabfood`, and the
      derived `can_order_online`.
-7. **Train/test split** — `split_train_test`: train = everything before
+9. **Train/test split** — `split_train_test`: train = everything before
    2025-12-01; test = December 2025. A `target_h{n}` is left as `NaN` rather
    than shrinking the test window when the target date would fall past
    2025-12-31.
-8. **Export** — `export_splits` writes `dataset/model_ready/train.parquet`
-   and `dataset/model_ready/test.parquet` (currently 49 columns).
-9. **QA checks** (notebook only, not run by the plain script) — row-count
-   sanity vs. the panel, no duplicate (item, branch, date) rows, no negative
-   `Kuantitas`, Ramadan/Eid spot-checks on known dates, a lag/rolling-window
-   leakage spot-check, and outlet-join sanity checks (no `kota == "Unknown"`,
-   no branch mapping to more than one city).
+10. **Export** — `export_splits` writes `dataset/model_ready/train.parquet`
+    and `dataset/model_ready/test.parquet` (currently 58 columns, verified
+    against actual pipeline output).
+11. **QA checks** (notebook only, not run by the plain script) — row-count
+    sanity vs. the panel, no duplicate (item, branch, date) rows, no negative
+    `Kuantitas`, Ramadan/Eid spot-checks on known dates, a lag/rolling-window
+    leakage spot-check, and outlet-join sanity checks (no `kota == "Unknown"`,
+    no branch mapping to more than one city).
 
 ```
 raw .xlsx/.csv
@@ -92,8 +111,9 @@ raw .xlsx/.csv
   → outlet_features.canonicalize_branch_names
   → normalize_items.reaggregate_daily (re-dedup after renaming)
   → build_panel.py             (dense daily panel, min-history filter)
-  → prepare_forecast_data.py   (targets, lags, rolling stats, branch stats)
   → calendar_features.py       (calendar/holiday/high-season features)
+  → outlier_handling.py        (per-pair spike detection + capping)
+  → prepare_forecast_data.py   (targets [raw], lags/rolling/branch stats [capped])
   → outlet_features.apply_outlet_features
   → split_train_test → export_splits
   → dataset/model_ready/{train,test}.parquet
@@ -101,9 +121,10 @@ raw .xlsx/.csv
 
 ## 3. What's already model-ready vs. still open
 
-Fully implemented and verified against the actual parquet output: all 9
-stages above, including outlet/location features (these are already wired
-into `prepare_forecast_data.py`, not a pending addition).
+Fully implemented and verified against the actual parquet output: all 11
+stages above, including outlet/location features and outlier/demand-spike
+handling (these are already wired into `prepare_forecast_data.py`, not a
+pending addition).
 
 Still open before the data can be fully trusted for modelling:
 
