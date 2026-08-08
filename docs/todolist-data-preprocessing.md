@@ -61,14 +61,22 @@ Beda dengan bagian 🔴, poin-poin ini **sudah** punya perilaku default di kode 
 oleh yang paham datanya".
 
 - [ ] **Item ber-prefix `xxx.`** — `normalize_items.py` sudah punya keputusan eksplisit:
-  `EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00069"}` (baris 100, exclude "Nasi Putih" dan
-  "Cendol Pandan" — dua item ini juga muncul sebagai outlier Kuantitas tertinggi di `eda.ipynb`
-  §3, nilai 5250 & 1600) dan `EXPLICIT_ITEM_RENAMES = {"xxx.FGS.00067": ("FGS-00068", "Ayam
-  Crispy Spicy - FG")}` (baris 109). Ini keputusan best-guess dari desain (lihat
-  `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md` §1 soal "flavor difference
-  can't be ruled out from the data alone"), **belum dikonfirmasi ke data owner**. Minta
-  konfirmasi: apakah 2 item itu memang harus di-drop total, dan apakah rename `xxx.FGS.00067`
-  → `FGS-00068` itu benar secara bisnis.
+  `EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00069", "xxx.FGS.00070", "xxx.FGS.00071"}`
+  (`normalize_items.py:113`, exclude "Nasi Putih" dan trio "Cendol Pandan" / "Santan Cendol" /
+  "Gula Cendol" — ketiganya cuma tercatat Jan–Mar 2025 lalu berhenti total secara serentak,
+  konsisten dengan produk trial/discontinued; juga muncul sebagai outlier Kuantitas tertinggi di
+  `eda.ipynb` §3, nilai 5250/2625/.../1260) dan `EXPLICIT_ITEM_RENAMES = {"xxx.FGS.00067":
+  ("FGS-00068", "Ayam Crispy Spicy - FG")}` (`normalize_items.py:122`). Ini keputusan best-guess
+  dari desain (lihat `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md` §1 soal
+  "flavor difference can't be ruled out from the data alone"), **belum dikonfirmasi ke data
+  owner**. Minta konfirmasi: apakah ke-4 item itu memang harus di-drop total, dan apakah rename
+  `xxx.FGS.00067` → `FGS-00068` itu benar secara bisnis.
+  **Catatan verifikasi penting:** `eda.ipynb` membaca `dataset/dataset.csv` mentah langsung
+  (tidak lewat `normalize_items.load_and_normalize()`), jadi cell apa pun di notebook itu —
+  termasuk `extreme_rows` §3 — akan **tetap** menampilkan ke-4 item ini apa adanya selamanya;
+  itu bukan tanda exclude-nya gagal/terlewat. Jangan verifikasi exclude ini dari notebook EDA —
+  cek langsung lewat `normalize_items.load_and_normalize()` (atau `test_normalize_items.py`)
+  atau output akhir `dataset/model_ready/*.parquet` setiap kali pipeline di-generate ulang.
 - [ ] **`EXCLUDED_BRANCHES = {"Kebab Saudagar - Kutabumi"}`** (`normalize_items.py:91`) — cabang
   ini juga tampak di outlier Kuantitas ekstrem `eda.ipynb` §3 (WIP `Ayam Shawarma`, 1340).
   Namanya tidak mengikuti pola `KY0NN - ...` cabang lain — konfirmasi apakah ini memang brand/
@@ -92,9 +100,15 @@ oleh yang paham datanya".
 - [ ] **27 dari 109 SKU (24,8%) tercatat di lebih dari satu `Kategori Barang`** sepanjang waktu
   (`eda.ipynb` §2, mis. `Minuman`→`Minuman - FG`, `Barang Semi FG (WIP-2)`→`Barang Jadi (FG)`,
   `Snack`→`Snack (FG)`). Pola pasangannya konsisten, terlihat seperti rename taksonomi kategori
-  pertengahan 2024, bukan noise input. **Belum ada penanganan di kode** (lihat 🟡 di bawah) —
-  konfirmasi dulu ke data owner apakah ini memang rename disengaja, karena itu menentukan fix
-  mana yang benar secara bisnis (pakai kategori terbaru vs treat as time-varying).
+  pertengahan 2024, bukan noise input. **Sudah ditangani di kode** — `normalize_items.py` kini
+  punya `canonicalize_item_categories` (dipanggil di `load_and_normalize`, sebelum
+  `reaggregate_daily`), yang membekukan tiap `Kode Barang` ke `Kategori Barang` dari baris
+  ber-`Tanggal` terbaru, dengan test di `TestCanonicalizeItemCategories` +
+  `TestLoadAndNormalize.test_canonicalizes_category_relabel_across_time_end_to_end`
+  (`test_normalize_items.py`). Yang masih kurang cuma **sign-off data owner**: keputusan "pakai
+  kategori terbaru" ini masih asumsi dari pola tanggal, belum dikonfirmasi eksplisit bahwa ini
+  memang rename taksonomi disengaja (bukan, misalnya, dua produk berbeda yang kebetulan pakai
+  kode SKU yang sama).
 - [ ] **Negative Kuantitas** — 0 baris di run terakhir (anomali KY011 2024-02-29 sudah resolved,
   `eda.ipynb` §8 soft-check), tapi `CLAUDE.md` menegaskan ini belum dikonfirmasi permanen ke
   data owner. **Jalankan ulang soft-check ini setiap kali `dataset.csv` di-refresh bulanan** —
@@ -102,18 +116,6 @@ oleh yang paham datanya".
 
 ## 🟡 Gap engineering yang belum tergarap (tidak butuh keputusan data owner, murni kerjaan kode)
 
-- [ ] **`Kategori Barang` tidak di-canonicalize seperti `Kode Barang`/`Nama Cabang`** — pola yang
-  sudah ada untuk kode item (`normalize_items.canonicalize_item_names`) dan nama cabang
-  (`outlet_features.canonicalize_branch_names`) tidak punya padanan untuk kategori. Saat ini
-  `AGG_SPEC = {..., "Kategori Barang": "first", ...}` (`normalize_items.py:89`) cuma ambil
-  kategori pertama yang muncul dalam satu grup agregasi harian, dan `build_panel.py`
-  (`CARRY_COLS = ["Kategori Barang", "Nama Barang"]`, baris 6) forward/backward-fill kategori
-  itu per hari — artinya untuk 27 SKU yang berganti kategori, kolom kategori di panel akhir
-  **benar-benar berubah nilai di tengah seri waktu item-cabang yang sama**, tanpa itu jadi
-  keputusan desain yang disengaja. Perbaikan: setelah dapat konfirmasi dari 🟠 di atas, tambahkan
-  fungsi `canonicalize_item_category` (pola sama seperti `canonicalize_item_names`) yang
-  membekukan ke kategori ter-observasi-terakhir per `Kode Barang`, dipanggil di
-  `normalize_items.load_and_normalize`.
 - [ ] **7 QA assertion cuma ada di notebook, tidak di script** — `pipeline-overview.md` §3 & §9
   menyebutkan cek row-count, no-duplicate, no-negative-Kuantitas, spot-check Ramadan/Eid,
   leakage lag/rolling, dan outlet-join sanity itu semua cuma jalan lewat
@@ -133,6 +135,13 @@ oleh yang paham datanya".
 
 ## 🟢 Sanity check rutin (jalankan tiap kali dataset di-refresh atau sebelum training)
 
+- [ ] **Verifikasi `EXCLUDED_ITEMS` (`xxx.FGS.00066/69/70/71`) benar-benar tidak muncul di
+  `dataset/model_ready/*.parquet`** — penting untuk diingat karena `eda.ipynb` **tidak bisa**
+  dipakai untuk verifikasi ini (baca `dataset.csv` mentah, lihat catatan di poin 🟠 "Item
+  ber-prefix `xxx.`" di atas). Cek lewat kode langsung, mis.
+  `normalize_items.load_and_normalize()["Kode Barang"].isin(normalize_items.EXCLUDED_ITEMS).sum() == 0`,
+  supaya item trial/discontinued ini tidak diam-diam kembali masuk kalau raw CSV bulanan
+  ternyata memakai kode SKU baru untuk produk serupa.
 - [ ] Soft-check negative `Kuantitas` (`eda.ipynb` §8) — lihat poin 🟠 di atas.
 - [ ] `calendar_features.check_year_coverage` (`calendar_features.py:168`) — akan raise
   `ValueError` otomatis kalau data punya tahun yang `RAMADAN_PERIODS`/`EID_AL_FITR_DATES`/

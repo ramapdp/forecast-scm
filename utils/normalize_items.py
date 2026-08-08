@@ -86,6 +86,19 @@ def canonicalize_item_names(
     return result
 
 
+def canonicalize_item_categories(
+    df: pd.DataFrame,
+    code_col: str = "Kode Barang",
+    category_col: str = "Kategori Barang",
+    date_col: str = "Tanggal",
+) -> pd.DataFrame:
+    result = df.copy()
+    latest_rows = result.loc[result.groupby(code_col)[date_col].idxmax()]
+    canonical = latest_rows.set_index(code_col)[category_col]
+    result[category_col] = result[code_col].map(canonical)
+    return result
+
+
 AGG_SPEC = {"Kuantitas": "sum", "Kategori Barang": "first", "Nama Barang": "first", "Satuan": "first"}
 
 EXCLUDED_BRANCHES = {"Kebab Saudagar - Kutabumi"}
@@ -97,7 +110,7 @@ def exclude_branches(
     return df[~df[branch_col].isin(branches)].reset_index(drop=True)
 
 
-EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00069"}
+EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00069", "xxx.FGS.00070", "xxx.FGS.00071"}
 
 
 def exclude_items(
@@ -137,5 +150,6 @@ def load_and_normalize(path: str = RAW_DATA_FILE) -> pd.DataFrame:
     df = exclude_items(df)
     df = apply_item_normalization(df)
     df = canonicalize_item_names(df)
+    df = canonicalize_item_categories(df)
     df = reaggregate_daily(df)
     return df

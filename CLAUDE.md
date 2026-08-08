@@ -23,7 +23,7 @@ Columns (semicolon-delimited, UTF-8 with BOM, header row in Indonesian):
 | `Kode Barang` | SKU code, e.g. `FGS-00001` |
 | `Nama Barang` | Item name |
 | `Nama Cabang` | Branch, formatted `KY0NN - Kebuli Yaman <location>` (67 branches as of the current data) |
-| `Satuan` | Unit of measure — `Kg`, `Potong`, `Porsi`, `Botol`, `PCS`, `Pack`, `Ekor`, `Galon` |
+| `Satuan` | Unit of measure — `Kg`, `Potong`, `Porsi`, `Botol`, `PCS`, `Pack`, `Ekor`, `Galon`, `Gr`, `Cup`, `Roll`, `Bungkus` (12 distinct values total; `Bungkus` occurs only once in the whole dataset) |
 | `Kuantitas` | Quantity issued |
 
 Notes / quirks to be aware of when writing any ingestion code:

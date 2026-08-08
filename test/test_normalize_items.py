@@ -202,6 +202,47 @@ class TestCanonicalizeItemNames(unittest.TestCase):
         self.assertEqual(df["Nama Barang"].iloc[0], "xxx.Ayam Crispy Spicy - FG")
 
 
+class TestCanonicalizeItemCategories(unittest.TestCase):
+    def test_maps_all_rows_to_category_of_most_recent_date(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00006", "FGS-00006"],
+            "Kategori Barang": ["Minuman", "Minuman - FG"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-03-01"]),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(list(result["Kategori Barang"]), ["Minuman - FG", "Minuman - FG"])
+
+    def test_leaves_single_category_group_unchanged(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00003", "FGS-00003"],
+            "Kategori Barang": ["Barang Jadi (FG)", "Barang Jadi (FG)"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(list(result["Kategori Barang"]), ["Barang Jadi (FG)", "Barang Jadi (FG)"])
+
+    def test_resolves_independent_codes_separately(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00006", "FGS-00006", "FGS-00055", "FGS-00055"],
+            "Kategori Barang": ["Minuman", "Minuman - FG", "Snack", "Snack (FG)"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-03-01", "2024-01-01", "2024-03-01"]),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(
+            list(result["Kategori Barang"]),
+            ["Minuman - FG", "Minuman - FG", "Snack (FG)", "Snack (FG)"],
+        )
+
+    def test_does_not_mutate_original_dataframe(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00006", "FGS-00006"],
+            "Kategori Barang": ["Minuman", "Minuman - FG"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-03-01"]),
+        })
+        normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(df["Kategori Barang"].iloc[0], "Minuman")
+
+
 class TestExcludeItems(unittest.TestCase):
     def test_drops_rows_for_excluded_item(self):
         df = pd.DataFrame({
@@ -358,11 +399,37 @@ class TestLoadAndNormalize(unittest.TestCase):
         self.assertEqual(result["Nama Barang"].iloc[0], "Ayam Crispy Spicy - FG")
         self.assertEqual(result["Kuantitas"].iloc[0], 8)
 
+    def test_canonicalizes_category_relabel_across_time_end_to_end(self):
+        content = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "01 Jan 2024;Minuman;FGS-00006;Club Mineral 330 ml;KY001 - Branch;Botol;2\n"
+            "01 Mar 2024;Minuman - FG;FGS-00006;Club Mineral 330 ml;KY001 - Branch;Botol;5\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            result = normalize_items.load_and_normalize(str(path))
+        self.assertEqual(set(result["Kategori Barang"]), {"Minuman - FG"})
+
     def test_drops_explicitly_excluded_items_end_to_end(self):
         content = (
             "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
             "01 Jan 2024;Barang Jadi (FG);xxx.FGS.00066;xxx.Nasi Putih;KY001 - Branch;Porsi;3\n"
             "01 Jan 2024;Barang Jadi (FG);FGS-00003;Iga Sapi Kebuli;KY001 - Branch;Porsi;5\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            result = normalize_items.load_and_normalize(str(path))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["Kode Barang"].iloc[0], "FGS-00003")
+
+    def test_drops_discontinued_cendol_components_by_default(self):
+        content = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "01 Jan 2025;Barang Jadi (FG);xxx.FGS.00070;xxx.Santan Cendol - FG;KY001 - Branch;Gr;100\n"
+            "01 Jan 2025;Barang Jadi (FG);xxx.FGS.00071;xxx.Gula Cendol - FG;KY001 - Branch;Gr;50\n"
+            "01 Jan 2025;Barang Jadi (FG);FGS-00003;Iga Sapi Kebuli;KY001 - Branch;Porsi;5\n"
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "sample.csv"
