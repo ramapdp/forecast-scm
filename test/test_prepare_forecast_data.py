@@ -279,6 +279,16 @@ def _branch_rows(branch, start, periods):
     return lines
 
 
+def _branch_rows_with_quantities(branch, start, quantities):
+    lines = []
+    for date, qty in zip(pd.date_range(start, periods=len(quantities), freq="D"), quantities):
+        lines.append(
+            f"{date.strftime('%d %b %Y')};Barang Jadi (FG);FGS-00001;Widget;"
+            f"{branch};Porsi;{qty}\n"
+        )
+    return lines
+
+
 class TestMain(unittest.TestCase):
     def test_main_writes_train_and_test_parquet_end_to_end(self):
         rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
@@ -401,6 +411,52 @@ class TestMain(unittest.TestCase):
         self.assertEqual(set(combined["Nama Cabang"].unique()), {"KY001 - Branch"})
         first_day = combined[combined["Tanggal"] == pd.Timestamp("2025-08-01")].iloc[0]
         self.assertEqual(first_day["Kuantitas"], 2)  # both fixtures' day-1 Kuantitas is 1, summed
+
+    def test_main_caps_lag_input_but_leaves_target_and_flags_spike(self):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        # 90 days, 2025-08-01..2025-10-29, steady Kuantitas=10, except a
+        # single spike of 1000 on 2025-08-31 (not a calendar event date).
+        # Cutoff 2025-10-01 gives 61 pre-cutoff real-transaction days for
+        # "KY001 - Branch", comfortably above MIN_PAIR_HISTORY (30) and
+        # min_history_days (60).
+        quantities = [10] * 90
+        quantities[30] = 1000  # 2025-08-01 + 30 days = 2025-08-31
+        rows += _branch_rows_with_quantities("KY001 - Branch", "2025-08-01", quantities)
+        content = "".join(rows)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            output_dir = Path(tmpdir) / "model_ready"
+            outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
+            overrides_path = _write_empty_overrides_fixture(tmpdir)
+            prepare_forecast_data.main(
+                input_path=input_path,
+                output_dir=output_dir,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=outlets_path,
+                overrides_path=overrides_path,
+            )
+            train = pd.read_parquet(output_dir / "train.parquet")
+
+        self.assertIn("Kuantitas_capped", train.columns)
+        self.assertIn("baseline_ratio", train.columns)
+        self.assertIn("is_spike", train.columns)
+
+        spike_day = train[train["Tanggal"] == pd.Timestamp("2025-08-31")].iloc[0]
+        self.assertTrue(spike_day["is_spike"])
+        self.assertEqual(spike_day["Kuantitas_capped"], 50.0)  # 10 * SPIKE_RATIO_THRESHOLD
+
+        day_before_spike = train[train["Tanggal"] == pd.Timestamp("2025-08-30")].iloc[0]
+        self.assertEqual(day_before_spike["target_h1"], 1000)  # target uses RAW Kuantitas
+
+        day_after_spike = train[train["Tanggal"] == pd.Timestamp("2025-09-01")].iloc[0]
+        self.assertEqual(day_after_spike["lag_1"], 50.0)  # lag uses CAPPED Kuantitas
+
+        branch_stats_row = train[train["Tanggal"] == pd.Timestamp("2025-09-15")].iloc[0]
+        # Uncapped, the spike would pull the average toward ~26; capped it
+        # stays close to the steady 10/day baseline.
+        self.assertLess(branch_stats_row["branch_avg_daily_qty"], 15.0)
 
 
 if __name__ == "__main__":

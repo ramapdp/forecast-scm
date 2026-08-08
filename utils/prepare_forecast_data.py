@@ -5,6 +5,7 @@ from . import build_panel
 from . import normalize_items
 from . import calendar_features
 from . import outlet_features
+from . import outlier_handling
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -157,6 +158,8 @@ def main(
     cutoff: pd.Timestamp = TEST_START,
     outlets_path: str = outlet_features.OUTLETS_FILE,
     overrides_path: str = outlet_features.OVERRIDES_FILE,
+    min_pair_history: int = outlier_handling.MIN_PAIR_HISTORY,
+    spike_ratio_threshold: float = outlier_handling.SPIKE_RATIO_THRESHOLD,
 ) -> None:
     outlets_df = outlet_features.load_outlets(outlets_path)
     overrides_df = outlet_features.load_overrides(overrides_path)
@@ -166,11 +169,17 @@ def main(
     df = normalize_items.reaggregate_daily(df)
     df = build_panel.build_dense_panel(df)
     df = build_panel.filter_min_history(df, cutoff=cutoff, min_days=min_history_days)
-    df = add_targets(df)
-    df = add_lag_features(df)
-    df = add_rolling_features(df)
     df = calendar_features.add_calendar_features(df)
-    branch_stats = compute_branch_stats(df, cutoff=cutoff)
+    pair_baseline = outlier_handling.compute_pair_baseline(
+        df, cutoff=cutoff, min_history=min_pair_history
+    )
+    df = outlier_handling.apply_outlier_capping(
+        df, pair_baseline, ratio_threshold=spike_ratio_threshold
+    )
+    df = add_targets(df)
+    df = add_lag_features(df, qty_col="Kuantitas_capped")
+    df = add_rolling_features(df, qty_col="Kuantitas_capped")
+    branch_stats = compute_branch_stats(df, cutoff=cutoff, qty_col="Kuantitas_capped")
     df = apply_branch_stats(df, branch_stats)
     df = add_branch_age_days(df)
     df = apply_outlet_features(df, outlets_df, overrides_df)
