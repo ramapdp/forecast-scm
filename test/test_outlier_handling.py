@@ -51,5 +51,53 @@ class TestComputePairBaseline(unittest.TestCase):
         self.assertEqual(row["pair_median"], 10.0)
 
 
+def _with_event_flags(df, **flags):
+    result = df.copy()
+    for col in outlier_handling.EVENT_FLAG_COLS:
+        result[col] = flags.get(col, False)
+    return result
+
+
+class TestApplyOutlierCapping(unittest.TestCase):
+    def _baseline(self, pair=("A", "X"), median=10.0, eligible=True):
+        return pd.DataFrame({
+            "Kode Barang": [pair[0]], "Nama Cabang": [pair[1]],
+            "pair_median": [median], "pair_eligible": [eligible],
+        })
+
+    def test_caps_spike_above_threshold_outside_event_window(self):
+        df = _with_event_flags(_pair_rows(("A", "X"), [1000]))
+        result = outlier_handling.apply_outlier_capping(df, self._baseline())
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 50.0)  # 10 * 5.0
+        self.assertTrue(result["is_spike"].iloc[0])
+        self.assertEqual(result["baseline_ratio"].iloc[0], 100.0)
+
+    def test_does_not_cap_value_below_threshold(self):
+        df = _with_event_flags(_pair_rows(("A", "X"), [40]))  # ratio 4.0 < 5.0
+        result = outlier_handling.apply_outlier_capping(df, self._baseline())
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 40.0)
+        self.assertFalse(result["is_spike"].iloc[0])
+
+    def test_exempts_spike_inside_event_window(self):
+        df = _with_event_flags(_pair_rows(("A", "X"), [1000]), is_ramadan=True)
+        result = outlier_handling.apply_outlier_capping(df, self._baseline())
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 1000.0)  # not capped
+        self.assertTrue(result["is_spike"].iloc[0])  # still flagged as detected
+
+    def test_ineligible_pair_is_never_capped(self):
+        df = _with_event_flags(_pair_rows(("A", "X"), [1000]))
+        baseline = self._baseline(median=10.0, eligible=False)
+        result = outlier_handling.apply_outlier_capping(df, baseline)
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 1000.0)
+        self.assertFalse(result["is_spike"].iloc[0])
+        self.assertTrue(pd.isna(result["baseline_ratio"].iloc[0]))
+
+    def test_gap_fill_zero_quantity_row_is_not_a_spike(self):
+        df = _with_event_flags(_pair_rows(("A", "X"), [0]))
+        result = outlier_handling.apply_outlier_capping(df, self._baseline())
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 0.0)
+        self.assertFalse(result["is_spike"].iloc[0])
+
+
 if __name__ == "__main__":
     unittest.main()
