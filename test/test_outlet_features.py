@@ -240,6 +240,42 @@ def _region_mapping(rows):
     )
 
 
+class TestParseDeliveryDays(unittest.TestCase):
+    def test_senin_dan_kamis(self):
+        self.assertEqual(outlet_features.parse_delivery_days("Senin dan Kamis"), {0, 3})
+
+    def test_selasa_dan_jumat(self):
+        self.assertEqual(outlet_features.parse_delivery_days("Selasa dan Jumat"), {1, 4})
+
+    def test_unrecognized_token_raises(self):
+        with self.assertRaises(ValueError):
+            outlet_features.parse_delivery_days("Senin dan Blah")
+
+
+class TestComputeLeadTimeDays(unittest.TestCase):
+    # Verified by direct computation, not hand-derived: for each day_of_week
+    # (0=Senin..6=Minggu), the smallest number of days strictly forward to
+    # the next delivery day.
+    KAWASAN_1 = {0, 3}  # Senin & Kamis
+    KAWASAN_2 = {1, 4}  # Selasa & Jumat
+    EXPECTED_KAWASAN_1 = [3, 2, 1, 4, 3, 2, 1]
+    EXPECTED_KAWASAN_2 = [1, 3, 2, 1, 4, 3, 2]
+
+    def test_kawasan_1_full_week_matrix(self):
+        for day_of_week, expected in enumerate(self.EXPECTED_KAWASAN_1):
+            with self.subTest(day_of_week=day_of_week):
+                self.assertEqual(
+                    outlet_features.compute_lead_time_days(day_of_week, self.KAWASAN_1), expected
+                )
+
+    def test_kawasan_2_full_week_matrix(self):
+        for day_of_week, expected in enumerate(self.EXPECTED_KAWASAN_2):
+            with self.subTest(day_of_week=day_of_week):
+                self.assertEqual(
+                    outlet_features.compute_lead_time_days(day_of_week, self.KAWASAN_2), expected
+                )
+
+
 class TestApplyRegionFeatures(unittest.TestCase):
     def setUp(self):
         self.region = _region_mapping([
@@ -248,32 +284,42 @@ class TestApplyRegionFeatures(unittest.TestCase):
         ])
 
     def test_joins_kawasan_and_hari_pengiriman_by_canonical_branch_name(self):
-        df = pd.DataFrame({"Nama Cabang": ["KY007 - Kebuli Yaman Cibubur"], "Kuantitas": [1]})
+        df = pd.DataFrame({
+            "Nama Cabang": ["KY007 - Kebuli Yaman Cibubur"],
+            "Tanggal": pd.to_datetime(["2025-08-04"]),
+            "Kuantitas": [1],
+        })
         result = outlet_features.apply_region_features(df, self.region)
         self.assertEqual(result.iloc[0]["kawasan"], 2)
         self.assertEqual(result.iloc[0]["hari_pengiriman"], "Selasa dan Jumat")
 
-    def test_lead_time_days_flat_default_regardless_of_kawasan(self):
+    def test_lead_time_days_varies_by_kawasan_and_day_of_week(self):
+        # 2025-08-04 = Monday, 2025-08-05 = Tuesday, 2025-08-07 = Thursday.
         df = pd.DataFrame({
-            "Nama Cabang": ["KY007 - Kebuli Yaman Cibubur", "KY054 - Kebuli Yaman Jagakarsa"],
-            "Kuantitas": [1, 2],
+            "Nama Cabang": [
+                "KY007 - Kebuli Yaman Cibubur", "KY007 - Kebuli Yaman Cibubur",
+                "KY054 - Kebuli Yaman Jagakarsa", "KY054 - Kebuli Yaman Jagakarsa",
+            ],
+            "Tanggal": pd.to_datetime(["2025-08-04", "2025-08-05", "2025-08-04", "2025-08-07"]),
+            "Kuantitas": [1, 2, 3, 4],
         })
         result = outlet_features.apply_region_features(df, self.region)
-        self.assertEqual(result["lead_time_days"].tolist(), [4, 4])
+        self.assertEqual(result["lead_time_days"].tolist(), [1, 3, 3, 4])
 
-    def test_lead_time_days_override_via_parameter(self):
-        df = pd.DataFrame({"Nama Cabang": ["KY007 - Kebuli Yaman Cibubur"], "Kuantitas": [1]})
-        result = outlet_features.apply_region_features(df, self.region, lead_time_days=3)
-        self.assertEqual(result.iloc[0]["lead_time_days"], 3)
-
-    def test_unmatched_branch_gets_nan_kawasan(self):
-        df = pd.DataFrame({"Nama Cabang": ["KY999 - Unknown Branch"], "Kuantitas": [1]})
+    def test_unmatched_branch_gets_nan_kawasan_and_lead_time(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["KY999 - Unknown Branch"],
+            "Tanggal": pd.to_datetime(["2025-08-04"]),
+            "Kuantitas": [1],
+        })
         result = outlet_features.apply_region_features(df, self.region)
         self.assertTrue(math.isnan(result.iloc[0]["kawasan"]))
+        self.assertTrue(math.isnan(result.iloc[0]["lead_time_days"]))
 
     def test_one_row_per_input_row_no_fanout(self):
         df = pd.DataFrame({
             "Nama Cabang": ["KY007 - Kebuli Yaman Cibubur", "KY007 - Kebuli Yaman Cibubur"],
+            "Tanggal": pd.to_datetime(["2025-08-04", "2025-08-05"]),
             "Kuantitas": [1, 2],
         })
         result = outlet_features.apply_region_features(df, self.region)

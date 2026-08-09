@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from pathlib import Path
 
@@ -63,6 +64,40 @@ def add_rolling_features(
         result[f"roll_mean_{window}"] = rolled.mean().reset_index(level=pair_cols, drop=True)
         result[f"roll_std_{window}"] = rolled.std().reset_index(level=pair_cols, drop=True)
     return result.drop(columns=["_shifted_qty"])
+
+
+def add_lead_time_target(
+    df: pd.DataFrame,
+    pair_cols: list[str] = PAIR_COLS,
+    date_col: str = "Tanggal",
+    qty_col: str = "Kuantitas",
+    lead_time_col: str = "lead_time_days",
+) -> pd.DataFrame:
+    result = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
+    rev = result.iloc[::-1]
+
+    # For row H we want sum(Kuantitas[H+1 .. H+w]). On the reversed-order
+    # frame, "shift(1) then trailing rolling(w)" walks the opposite direction
+    # from the real date axis, turning a trailing window into the forward
+    # window we need — same shift(1) leakage guard as add_rolling_features,
+    # just applied on the reversed axis. lead_time_days only takes a handful
+    # of distinct values, so compute one forward-sum column per distinct
+    # window rather than per row.
+    distinct_windows = sorted(int(w) for w in result[lead_time_col].dropna().unique())
+    fwd_cols = []
+    for w in distinct_windows:
+        col = f"_fwd_sum_{w}"
+        fwd = rev.groupby(pair_cols)[qty_col].shift(1).rolling(w, min_periods=w).sum()
+        result[col] = fwd.reindex(result.index)
+        fwd_cols.append(col)
+
+    if distinct_windows:
+        conditions = [result[lead_time_col] == w for w in distinct_windows]
+        choices = [result[c] for c in fwd_cols]
+        result["target_lead_time_cumulative"] = np.select(conditions, choices, default=np.nan)
+    else:
+        result["target_lead_time_cumulative"] = np.nan
+    return result.drop(columns=fwd_cols)
 
 
 def compute_branch_stats(
@@ -151,18 +186,25 @@ def export_splits(train: pd.DataFrame, test: pd.DataFrame, output_dir: str = MOD
     test.to_parquet(out / "test.parquet", index=False)
 
 
-def main(
+def export_featured(df: pd.DataFrame, output_dir: str = MODEL_READY_DIR) -> None:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out / "featured.parquet", index=False)
+
+
+def build_featured_dataset(
     input_path: str = normalize_items.RAW_DATA_FILE,
-    output_dir: str = MODEL_READY_DIR,
     min_history_days: int = build_panel.MIN_HISTORY_DAYS,
     cutoff: pd.Timestamp = TEST_START,
     outlets_path: str = outlet_features.OUTLETS_FILE,
     overrides_path: str = outlet_features.OVERRIDES_FILE,
+    region_path: str = outlet_features.REGION_MAPPING_FILE,
     min_pair_history: int = outlier_handling.MIN_PAIR_HISTORY,
     spike_ratio_threshold: float = outlier_handling.SPIKE_RATIO_THRESHOLD,
-) -> None:
+) -> pd.DataFrame:
     outlets_df = outlet_features.load_outlets(outlets_path)
     overrides_df = outlet_features.load_overrides(overrides_path)
+    region_df = outlet_features.load_region_mapping(region_path)
     df = normalize_items.load_and_normalize(input_path)
     df = outlet_features.filter_matched_branches(df, outlets_df, overrides_df)
     df = outlet_features.canonicalize_branch_names(df, outlets_df, overrides_df)
@@ -177,12 +219,39 @@ def main(
         df, pair_baseline, ratio_threshold=spike_ratio_threshold
     )
     df = add_targets(df)
+    df = outlet_features.apply_region_features(df, region_df)
+    df = apply_outlet_features(df, outlets_df, overrides_df)
+    df = add_lead_time_target(df)
     df = add_lag_features(df, qty_col="Kuantitas_capped")
     df = add_rolling_features(df, qty_col="Kuantitas_capped")
     branch_stats = compute_branch_stats(df, cutoff=cutoff, qty_col="Kuantitas_capped")
     df = apply_branch_stats(df, branch_stats)
     df = add_branch_age_days(df)
-    df = apply_outlet_features(df, outlets_df, overrides_df)
+    return df
+
+
+def main(
+    input_path: str = normalize_items.RAW_DATA_FILE,
+    output_dir: str = MODEL_READY_DIR,
+    min_history_days: int = build_panel.MIN_HISTORY_DAYS,
+    cutoff: pd.Timestamp = TEST_START,
+    outlets_path: str = outlet_features.OUTLETS_FILE,
+    overrides_path: str = outlet_features.OVERRIDES_FILE,
+    region_path: str = outlet_features.REGION_MAPPING_FILE,
+    min_pair_history: int = outlier_handling.MIN_PAIR_HISTORY,
+    spike_ratio_threshold: float = outlier_handling.SPIKE_RATIO_THRESHOLD,
+) -> None:
+    df = build_featured_dataset(
+        input_path=input_path,
+        min_history_days=min_history_days,
+        cutoff=cutoff,
+        outlets_path=outlets_path,
+        overrides_path=overrides_path,
+        region_path=region_path,
+        min_pair_history=min_pair_history,
+        spike_ratio_threshold=spike_ratio_threshold,
+    )
+    export_featured(df, output_dir)
     train, test = split_train_test(df, cutoff=cutoff)
     export_splits(train, test, output_dir)
     print(f"Wrote {len(train)} train rows and {len(test)} test rows to {output_dir}")

@@ -14,7 +14,11 @@ PREFIX_RE = re.compile(r"^KY\d+\s*-\s*", re.IGNORECASE)
 TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
 
 CHANNEL_COLS = ["has_shopee", "has_gofood", "has_grabfood"]
-DEFAULT_LEAD_TIME_DAYS = 4
+
+INDONESIAN_WEEKDAYS = {
+    "Senin": 0, "Selasa": 1, "Rabu": 2, "Kamis": 3,
+    "Jumat": 4, "Sabtu": 5, "Minggu": 6,
+}
 
 
 def load_outlets(path: str = OUTLETS_FILE) -> pd.DataFrame:
@@ -29,11 +33,33 @@ def load_region_mapping(path: str = REGION_MAPPING_FILE) -> pd.DataFrame:
     return pd.read_csv(path, sep=";", encoding="utf-8-sig")
 
 
+def parse_delivery_days(hari_pengiriman: str) -> set[int]:
+    tokens = re.split(r"\bdan\b|,", hari_pengiriman)
+    days = set()
+    for token in tokens:
+        name = token.strip()
+        if not name:
+            continue
+        if name not in INDONESIAN_WEEKDAYS:
+            raise ValueError(f"Unrecognized weekday token: {name!r} in {hari_pengiriman!r}")
+        days.add(INDONESIAN_WEEKDAYS[name])
+    return days
+
+
+def compute_lead_time_days(day_of_week: int, delivery_days: set[int]) -> int:
+    # Always strictly forward: if day_of_week is itself a delivery day, this
+    # returns the days to the *next* occurrence, never 0.
+    for d in range(1, 8):
+        if (day_of_week + d) % 7 in delivery_days:
+            return d
+    raise ValueError(f"No delivery day found for day_of_week={day_of_week}")
+
+
 def apply_region_features(
     df: pd.DataFrame,
     region_df: pd.DataFrame,
     branch_col: str = "Nama Cabang",
-    lead_time_days: int = DEFAULT_LEAD_TIME_DAYS,
+    date_col: str = "Tanggal",
 ) -> pd.DataFrame:
     # region_df's `new_name` matches Nama Cabang once branches are canonicalized
     # (see canonicalize_branch_names) — join is a straight rename, no fuzzy matching needed.
@@ -41,8 +67,23 @@ def apply_region_features(
         columns={"new_name": branch_col}
     )
     result = df.merge(features, on=branch_col, how="left")
-    result["lead_time_days"] = lead_time_days
-    return result
+
+    # lead_time_days depends only on (day_of_week, hari_pengiriman) — a handful
+    # of distinct combinations even across millions of rows — so compute a
+    # small lookup table once and merge back, instead of .apply() per row.
+    # itertuples() can't expose a leading-underscore column as an attribute
+    # (renamed positionally instead), so avoid that name for the temp column.
+    result["day_of_week_tmp"] = result[date_col].dt.weekday
+    combos = result[["day_of_week_tmp", "hari_pengiriman"]].drop_duplicates().dropna()
+    # list comprehension over itertuples, not .apply(axis=1) — .apply() on an
+    # empty frame (all branches unmatched) can't infer the output is a Series
+    # and returns an empty DataFrame instead, breaking the assignment below.
+    combos["lead_time_days"] = [
+        compute_lead_time_days(int(row.day_of_week_tmp), parse_delivery_days(row.hari_pengiriman))
+        for row in combos.itertuples()
+    ]
+    result = result.merge(combos, on=["day_of_week_tmp", "hari_pengiriman"], how="left")
+    return result.drop(columns=["day_of_week_tmp"])
 
 
 def _strip_for_matching(nama_cabang: str) -> str:

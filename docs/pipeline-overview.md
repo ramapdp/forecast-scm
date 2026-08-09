@@ -21,8 +21,10 @@ the dated specs in `docs/superpowers/specs/`.
 
 ## 2. Pipeline stages
 
-Run via `notebook/data-processing.ipynb` (interactive/QA) or
-`prepare_forecast_data.py` (scripted, no QA assertions). Order:
+Run via `notebook/data-processing.ipynb` (interactive/QA, stops at the cleaned
++ feature-engineered `featured.parquet`) followed by `notebook/train_test_split.ipynb`
+(interactive, split + export), or `prepare_forecast_data.py` (scripted, runs
+the whole thing end to end, no QA assertions). Order:
 
 1. **Merge raw periods** — `merge_dataset.py` combines the 5 period CSVs into
    one `dataset/dataset.csv`, normalizing to a consistent 7-column schema.
@@ -69,11 +71,25 @@ Run via `notebook/data-processing.ipynb` (interactive/QA) or
    case the value is left uncapped since it's treated as a real recurring
    pattern, not noise. `baseline_ratio` and `is_spike` are kept as features;
    raw `Kuantitas` is preserved unchanged for target computation.
-8. **Feature engineering** — `prepare_forecast_data.py`:
+8. **Feature engineering** — `prepare_forecast_data.py::build_featured_dataset`:
    - `add_targets`: forecast targets `target_h1`…`target_h7` (raw,
      **uncapped** `Kuantitas` shifted 1–7 days into the future — spikes are
      real demand the model should be evaluated against, not something to
      hide from the label).
+   - `outlet_features.apply_region_features`: joins `kawasan`/`hari_pengiriman`
+     from `dataset/outlet_mapping.csv`, then computes `lead_time_days` per
+     row — days from that row's transaction date to the *next* delivery day
+     (Region 1 ships Monday & Thursday, Region 2 ships Tuesday & Friday),
+     via `outlet_features.compute_lead_time_days`. Always strictly forward
+     (never 0, even when the transaction date is itself a delivery day).
+   - `outlet_features.apply_outlet_features`: joins static per-branch
+     features — `kota`, `has_shopee`, `has_gofood`, `has_grabfood`, and the
+     derived `can_order_online`.
+   - `add_lead_time_target`: the core business target,
+     `target_lead_time_cumulative` — sum of raw `Kuantitas` over the
+     strictly-forward window `(H+1 .. H+lead_time_days)`, i.e. cumulative
+     demand until the next delivery. Window length is variable per row
+     (from `lead_time_days`).
    - `add_lag_features`: lagged quantities at 1, 2, 3, 7, 14, 21, 28 days,
      computed from `Kuantitas_capped` so a single extreme day doesn't
      dominate the lag inputs.
@@ -86,21 +102,23 @@ Run via `notebook/data-processing.ipynb` (interactive/QA) or
      `Kuantitas_capped`, **only from the training period**, then
      frozen/applied to both splits, to avoid leaking future information
      into features.
-   - `outlet_features.apply_outlet_features`: joins static per-branch
-     features — `kota`, `has_shopee`, `has_gofood`, `has_grabfood`, and the
-     derived `can_order_online`.
-9. **Train/test split** — `split_train_test`: train = everything before
-   2025-12-01; test = December 2025. A `target_h{n}` is left as `NaN` rather
-   than shrinking the test window when the target date would fall past
-   2025-12-31.
-10. **Export** — `export_splits` writes `dataset/model_ready/train.parquet`
-    and `dataset/model_ready/test.parquet` (currently 58 columns, verified
-    against actual pipeline output).
-11. **QA checks** (notebook only, not run by the plain script) — row-count
+9. **Export featured dataset** — `export_featured` writes
+   `dataset/model_ready/featured.parquet`, the full unsplit cleaned +
+   feature-engineered table (currently 62 columns). This is the file
+   `notebook/train_test_split.ipynb` reads for the next stage.
+10. **Train/test split** — `split_train_test`: train = everything before
+   2025-12-01; test = December 2025. A `target_h{n}`/
+   `target_lead_time_cumulative` is left as `NaN` rather than shrinking the
+   test window when the target date would fall past 2025-12-31.
+11. **Export splits** — `export_splits` writes `dataset/model_ready/train.parquet`
+    and `dataset/model_ready/test.parquet`.
+12. **QA checks** (notebook only, not run by the plain script) — row-count
     sanity vs. the panel, no duplicate (item, branch, date) rows, no negative
     `Kuantitas`, Ramadan/Eid spot-checks on known dates, a lag/rolling-window
-    leakage spot-check, and outlet-join sanity checks (no `kota == "Unknown"`,
-    no branch mapping to more than one city).
+    leakage spot-check, outlet-join sanity checks (no `kota == "Unknown"`,
+    no branch mapping to more than one city), no branch missing `kawasan`,
+    and split-integrity checks in `train_test_split.ipynb` (no dates crossing
+    the cutoff wrong, target NaN rates near the boundary).
 
 ```
 raw .xlsx/.csv
@@ -113,18 +131,20 @@ raw .xlsx/.csv
   → build_panel.py             (dense daily panel, min-history filter)
   → calendar_features.py       (calendar/holiday/high-season features)
   → outlier_handling.py        (per-pair spike detection + capping)
-  → prepare_forecast_data.py   (targets [raw], lags/rolling/branch stats [capped])
-  → outlet_features.apply_outlet_features
+  → prepare_forecast_data.py   (targets [raw] → region/lead-time → outlet
+                                 features → lead-time target [raw] →
+                                 lags/rolling/branch stats [capped])
+  → export_featured            (dataset/model_ready/featured.parquet)
   → split_train_test → export_splits
   → dataset/model_ready/{train,test}.parquet
 ```
 
 ## 3. What's already model-ready vs. still open
 
-Fully implemented and verified against the actual parquet output: all 11
-stages above, including outlet/location features and outlier/demand-spike
-handling (these are already wired into `prepare_forecast_data.py`, not a
-pending addition).
+Fully implemented and verified against the actual parquet output: all 12
+stages above, including outlet/location features, region/lead-time features,
+the cumulative lead-time target, and outlier/demand-spike handling (these are
+already wired into `prepare_forecast_data.py`, not a pending addition).
 
 Still open before the data can be fully trusted for modelling:
 
@@ -134,8 +154,10 @@ Still open before the data can be fully trusted for modelling:
   (`KY069` → `KY011`, "Bekasi Galaxy") in
   `dataset/outlet_name_overrides.csv` are best-guess corrections, not yet
   confirmed by the data owner.
+- `kawasan`/`hari_pengiriman` provenance in `dataset/outlet_mapping.csv` is
+  not yet confirmed by the data owner either — the pipeline uses it as-is.
 - The 7 QA assertions currently live only in the notebook — a plain
-  `python3 prepare_forecast_data.py` run does not re-verify them.
+  `python3 -m utils.prepare_forecast_data` run does not re-verify them.
 
 ## 4. Expected modelling phase (not yet built)
 

@@ -17,42 +17,30 @@ bawah ini **bukan** "bangun pipeline-nya", tapi tiga kategori pekerjaan yang ter
 fitur yang belum selesai, konfirmasi keputusan yang sudah di-hardcode di kode, dan gap
 engineering yang belum tergarap.
 
-## 🔴 Prioritas tertinggi — integrasi region/lead-time (sedang berjalan, belum selesai)
+## 🔴 Prioritas tertinggi — integrasi region/lead-time (selesai, 2026-08-08)
 
-Ini beda dari temuan `eda.ipynb` §8/§11 ("belum ada mapping Region 1/2") — **temuan itu sudah
-usang**. Sejak commit `1b02bf2`, ada file baru `dataset/outlet_mapping.csv` berisi kolom
-`kawasan` (1 = kirim Senin & Kamis, 2 = kirim Selasa & Jumat, sesuai konteks bisnis di
-`eda.ipynb` cell `cell-000`) dan `hari_pengiriman`, plus fungsi
-`outlet_features.apply_region_features` (dengan test-nya di `test_outlet_features.py`, kelas
-`TestApplyRegionFeatures`) yang sudah bisa join `kawasan`/`hari_pengiriman` ke `Nama Cabang`
-ter-kanonik. **Perubahan ini masih uncommitted** (`git diff utils/outlet_features.py` /
-`test/test_outlet_features.py`) — bukan pekerjaan yang belum dimulai, tapi pekerjaan
-setengah-jalan yang perlu diselesaikan:
+Lihat `docs/superpowers/specs/2026-08-08-lead-time-integration-design.md` untuk desain
+lengkapnya. Ringkasan: `dataset/outlet_mapping.csv` (kolom `kawasan` — 1 = kirim Senin & Kamis,
+2 = kirim Selasa & Jumat — dan `hari_pengiriman`) sekarang di-wire penuh ke pipeline via
+`outlet_features.apply_region_features`, `lead_time_days` dihitung variabel per baris (bukan
+konstanta flat lagi), dan target cumulative-demand-sampai-pengiriman-berikutnya
+(`target_lead_time_cumulative`) sudah dibangun.
 
-- [ ] **`apply_region_features` belum dipanggil di `prepare_forecast_data.py::main()`** —
-  bandingkan dengan `apply_outlet_features` yang sudah di-wire (baris
-  `df = apply_outlet_features(...)`). Perlu ditambahkan langkah serupa, idealnya setelah
-  `canonicalize_branch_names` supaya `Nama Cabang` sudah dalam bentuk kanonik saat di-join ke
-  `outlet_mapping.csv`.
-- [ ] **`lead_time_days` masih konstanta flat (`DEFAULT_LEAD_TIME_DAYS = 4`), tidak bervariasi
-  per `kawasan`** — nama test-nya sendiri eksplisit: `test_lead_time_days_flat_default_regardless_of_kawasan`
-  (`test/test_outlet_features.py:256`). Ini gap paling penting: kebutuhan bisnis di `eda.ipynb`
-  cell `cell-000` adalah window 3 hari **atau** 4 hari tergantung *hari pengiriman berikutnya*
-  relatif ke tanggal transaksi (mis. kawasan 1/Senin-Kamis: transaksi hari Senin → window
-  3 hari ke Kamis, transaksi hari Kamis → window 4 hari ke Senin depan). Ini belum dihitung
-  di mana pun.
-- [ ] **Target cumulative lead-time belum dibangun sama sekali** — `add_targets` di
-  `prepare_forecast_data.py:20` cuma bikin `target_h1`…`target_h7` (shift harian satu-satu),
-  bukan target "total demand sampai pengiriman berikutnya" yang jadi tujuan bisnis utama
-  notebook ini. Perlu fungsi baru (mis. `add_lead_time_target`) yang, per baris, menjumlahkan
-  `Kuantitas` dari tanggal tersebut sampai `lead_time_days` berikutnya (variabel, hasil dari
-  poin di atas), lalu tulis sebagai kolom target baru — dan tambahkan test leakage-safety-nya
-  (window harus strictly ke depan, bukan termasuk hari ini/ke belakang, mengikuti pola shift
-  yang sudah dipakai `add_rolling_features`).
-- [ ] Setelah 3 poin di atas selesai: update `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md`
-  dan `docs/pipeline-overview.md` (keduanya masih menyebut region mapping sebagai "belum ada"
-  atau tidak menyebutnya sama sekali) dan jalankan ulang `eda.ipynb` §5/§7 supaya analisis
-  day-of-week & lead-time window bisa disegmentasi per region, bukan proxy generik lagi.
+- [x] **`apply_region_features` dipanggil di `prepare_forecast_data.py::build_featured_dataset`**
+  (dipanggil dari `main()`), tepat setelah `add_targets` dan berdekatan dengan
+  `apply_outlet_features`.
+- [x] **`lead_time_days` bervariasi per `kawasan` & hari transaksi** — dihitung oleh
+  `outlet_features.compute_lead_time_days` dari `(day_of_week, hari_pengiriman)`, selalu
+  strictly ke depan (kawasan 1/Senin-Kamis: transaksi hari Senin → 3 hari ke Kamis, transaksi
+  hari Kamis → 4 hari ke Senin depan — sesuai kebutuhan bisnis di `eda.ipynb` cell `cell-000`).
+- [x] **Target cumulative lead-time dibangun** — `prepare_forecast_data.add_lead_time_target`
+  menjumlahkan `Kuantitas` mentah pada window strictly-ke-depan `(H+1..H+lead_time_days)` jadi
+  `target_lead_time_cumulative`, dengan test leakage-safety (window tidak pernah termasuk hari
+  ini/ke belakang).
+- [x] Dokumentasi diupdate: `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md`
+  dan `docs/pipeline-overview.md` sudah menyebut region/lead-time features & target barunya.
+  (`eda.ipynb` §5/§7 belum dijalankan ulang untuk segmentasi per-region — dicatat sebagai
+  follow-up terpisah, bukan blocker untuk pipeline data-prep.)
 
 ## 🟠 Perlu konfirmasi data owner (keputusan sudah di-hardcode di kode, belum di-sign-off)
 
@@ -89,6 +77,24 @@ oleh yang paham datanya".
   "best-guess corrections, not yet confirmed by the data owner". Perlu sign-off eksplisit,
   terutama mapping KY069→KY011 karena efeknya menggabungkan histori dua kode cabang jadi satu
   seri waktu.
+- [ ] **Outlet relocation belum di-wire ke pipeline (`docs/outlet_relocation_notes.md`)** —
+  dokumen ini murni referensi manual, tidak direferensikan di `utils/*.py` manapun (cek: grep
+  "reloc" di seluruh `utils/` nol hasil). Cross-check ke data aktual (2026-08-09): 8 dari 9
+  "old outlet" di catatan (Tambun/KY020, Antapani/KY035, Aryana Karawaci/KY046, Ciomas/KY047,
+  Bantarjati Bogor/KY052, Dukuh Zamrud/KY059, Condet/KY028, Ciputat Timur/KY055) ada di
+  `dataset.csv` mentah tapi **tidak ada** di `outlets.csv`, sehingga
+  `outlet_features.filter_matched_branches` membuang seluruh historinya (67.020 baris, 9,66%
+  dari seluruh dataset) alih-alih menyambungkannya ke outlet baru hasil relokasi — pola yang
+  seharusnya sama seperti `KY069→KY011` di `outlet_name_overrides.csv`, tapi belum diterapkan
+  ke ke-6 relokasi "verified" (Tambun→Mayor Oking, Antapani→Tigaraksa, Aryana Karawaci→Cadas,
+  Ciomas→Cikarang Pusat, Bantarjati Bogor→Teluk Pucung, Dukuh Zamrud→Bukit Gading Balaraja) di
+  catatan itu. Anomali tambahan: `Cinere` (KY029) dicatat sebagai outlet lama yang relokasi ke
+  Bintara (pending), tapi KY029 masih **aktif** di `outlets.csv` saat ini — catatan relokasi
+  kemungkinan belum sinkron dengan status outlet terkini. Konfirmasi ke data owner: (1) apakah
+  6 relokasi verified perlu digabung historinya via `outlet_name_overrides.csv` seperti
+  KY069→KY011, (2) status Cinere/Bintara — sudah terjadi atau masih rencana, (3) 3 outlet
+  target yang belum terdaftar (Grand Wisata Bekasi, Citayem/Citayam, Bintara) perlu ditambahkan
+  ke `outlets.json`/`outlets.csv` dulu sebelum bisa masuk pipeline forecast.
 - [ ] **Provenance `kawasan`/`hari_pengiriman` di `dataset/outlet_mapping.csv`** — file ini baru
   (belum ter-commit) dan belum ada dokumentasi dari mana sumbernya (tim SCM langsung? asumsi
   manual?). Sebelum dipakai untuk target lead-time (lihat 🔴 di atas), pastikan sumbernya resmi
@@ -116,16 +122,29 @@ oleh yang paham datanya".
 
 ## 🟡 Gap engineering yang belum tergarap (tidak butuh keputusan data owner, murni kerjaan kode)
 
+- [x] **Stage outlier-handling di-wire ke `notebook/data-processing.ipynb`** (2026-08-08) —
+  cell 0 sekarang import `outlier_handling`. Section di-reorder: **"4. Calendar features"**
+  (dulu §5) sekarang jalan lebih dulu, baru **"5. Outlier handling"** (baru,
+  `compute_pair_baseline` + `apply_outlier_capping`), baru **"6. Targets, lag & rolling
+  features"** (dulu §4) — urutan ini beda dari draf awal todo ("sisip antara section 3 dan 4")
+  karena `apply_outlier_capping` butuh kolom event kalender (`is_ramadan`/`is_eid_al_fitr`/dst)
+  dari `add_calendar_features` untuk pengecualian event-window, jadi harus jalan setelahnya —
+  persis urutan di `prepare_forecast_data.py::main()`. `add_targets` tetap pakai `Kuantitas`
+  mentah; `add_lag_features`/`add_rolling_features`/`compute_branch_stats` (§7, dulu §6) pakai
+  `qty_col="Kuantitas_capped"`. Section 8 (QA, dulu §7) dapat tambahan assert baru: capped tidak
+  pernah melebihi raw, dan baris yang tidak di-cap identik dengan raw. Notebook sudah dieksekusi
+  ulang penuh (`jupyter nbconvert --execute`), semua assert lolos: 1.340.034 baris konsisten di
+  semua tahap, 8.507/11.718 baris spike benar-benar di-cap (sisanya dikecualikan event window).
 - [ ] **7 QA assertion cuma ada di notebook, tidak di script** — `pipeline-overview.md` §3 & §9
   menyebutkan cek row-count, no-duplicate, no-negative-Kuantitas, spot-check Ramadan/Eid,
   leakage lag/rolling, dan outlet-join sanity itu semua cuma jalan lewat
-  `notebook/data-processing.ipynb`. `python3 prepare_forecast_data.py` langsung tidak
+  `notebook/data-processing.ipynb`. `python3 -m utils.prepare_forecast_data` langsung tidak
   memverifikasi apa pun setelah export. Pertimbangkan pindahkan minimal subset-nya (no-negative,
   no-duplicate, leakage spot-check) jadi assertion di dalam `main()` atau fungsi terpisah yang
   dipanggil dari situ, supaya CI/automation yang tidak lewat notebook tetap ke-cover.
-- [ ] **Re-run `prepare_forecast_data.py` setiap kali ada perubahan di script pipeline manapun**
-  — parquet `dataset/model_ready/*.parquet` gampang jadi stale relatif ke kode kalau lupa
-  di-generate ulang; tidak ada mekanisme guard otomatis untuk ini saat ini.
+- [ ] **Re-run `python3 -m utils.prepare_forecast_data` setiap kali ada perubahan di script
+  pipeline manapun** — parquet `dataset/model_ready/*.parquet` gampang jadi stale relatif ke
+  kode kalau lupa di-generate ulang; tidak ada mekanisme guard otomatis untuk ini saat ini.
 - [ ] **22% item-branch pair (842 dari 3.882) gagal `MIN_HISTORY_DAYS` (60 hari)** di
   `build_panel.filter_min_history` (`eda.ipynb` §6). Bukan bug, tapi konsekuensi desain yang
   didokumentasikan sebagai "out of scope" di spec §Out of scope ("Cold-start / fallback handling
@@ -156,12 +175,12 @@ oleh yang paham datanya".
 
 ## Prioritas & urutan pengerjaan yang disarankan
 
-1. **🔴 Selesaikan integrasi region/lead-time** — ini blocker langsung untuk tujuan bisnis inti
-   (forecast cumulative demand sampai pengiriman berikutnya). Konfirmasi provenance
-   `outlet_mapping.csv` dulu (🟠) sebelum wiring, supaya tidak membangun target di atas data
-   yang belum tentu benar.
+1. ~~**🔴 Selesaikan integrasi region/lead-time**~~ — selesai 2026-08-08 (lihat §🔴 di atas).
+   Provenance `outlet_mapping.csv` masih belum dikonfirmasi data owner (🟠 di bawah) — pipeline
+   berjalan di atas data as-is sesuai arahan eksplisit, bukan menunggu konfirmasi.
 2. **🟠 Kumpulkan semua konfirmasi data owner** dalam satu putaran (item `xxx.`, cabang
-   dikecualikan, kota override/KY069, kategori 27-SKU, KY056) — banyak yang bisa ditanyakan
+   dikecualikan, kota override/KY069, outlet relocation (67.020 baris/9,66% berpotensi hilang),
+   kategori 27-SKU, KY056, provenance `kawasan`/`hari_pengiriman`) — banyak yang bisa ditanyakan
    sekaligus ke orang yang sama.
 3. **🟡 Kerjakan gap engineering** yang tidak butuh menunggu jawaban (QA assertion ke script,
    re-run parquet) sambil menunggu 2; canonicalize kategori setelah dapat jawabannya.

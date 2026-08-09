@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-This is a git repository with a Python 3.9.6 virtual environment (`.venv`) and `requirements.txt` (pandas, pyarrow, holidays). The data-prep pipeline currently includes `merge_dataset.py` and `aggregate_dataset.py` (which clean/combine raw CSVs into `dataset/dataset.csv`); the full pipeline will also include `normalize_items.py`, `build_panel.py`, `calendar_features.py`, and `prepare_forecast_data.py` (which transform the cleaned data into model-ready train/test parquet files), orchestrated by `notebook/data-processing.ipynb`. Refer to `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md` for the full design, and to `docs/pipeline-overview.md` for a plain-language walkthrough of the whole flow.
+This is a git repository with a Python 3.9.6 virtual environment (`.venv`) and `requirements.txt` (pandas, pyarrow, holidays). The data-prep pipeline (`utils/normalize_items.py`, `build_panel.py`, `calendar_features.py`, `outlier_handling.py`, `outlet_features.py`, `prepare_forecast_data.py`) cleans/combines raw CSVs (via `merge_dataset.py`/`aggregate_dataset.py`) into `dataset/dataset.csv`, then transforms it into a cleaned + feature-engineered `dataset/model_ready/featured.parquet`, and finally splits that into model-ready `dataset/model_ready/{train,test}.parquet`. Refer to `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md` and `docs/superpowers/specs/2026-08-08-lead-time-integration-design.md` for the full design, and to `docs/pipeline-overview.md` for a plain-language walkthrough of the whole flow.
 
-- `notebook/data-processing.ipynb` — Jupyter notebook with 34 cells of exploratory, feature-engineering and QA code, the entry point for data processing/forecasting work ("forecast-scm" = supply-chain forecasting). `notebook/merge_and_aggregate.ipynb` is a companion notebook for the merge/aggregate stage. Both add the repo root to `sys.path` in an early cell so they can import the root-level modules.
+- `notebook/data-processing.ipynb` — Jupyter notebook of exploratory, feature-engineering and QA code that produces `featured.parquet`; the entry point for data processing/forecasting work ("forecast-scm" = supply-chain forecasting). `notebook/merge_and_aggregate.ipynb` is a companion notebook for the merge/aggregate stage; `notebook/train_test_split.ipynb` reads `featured.parquet` and produces the final train/test split. All three add the repo root to `sys.path` in an early cell so they can import the root-level `utils` package.
 - `test/` — unittest suites (`test_*.py`), one per pipeline module.
 - `dataset/` — raw transactional data, described below.
 
@@ -42,9 +42,9 @@ python3 -m venv .venv
 
 ## Commands
 
-- Run the full data-prep pipeline: `.venv/bin/python3 prepare_forecast_data.py`
-- Run the pipeline via the notebook: `jupyter nbconvert --to notebook --execute --inplace --allow-errors notebook/data-processing.ipynb`
+- Run the full data-prep pipeline (cleansing + split, end to end): `.venv/bin/python3 -m utils.prepare_forecast_data` (must be run as a module from the repo root — the package uses relative imports)
+- Run the pipeline via the notebooks (cleansing, then split): `jupyter nbconvert --to notebook --execute --inplace --allow-errors notebook/data-processing.ipynb notebook/train_test_split.ipynb`
 - Run all tests: `.venv/bin/python3 -m unittest discover -p "test_*.py" -v`
 - Run one module's tests: `.venv/bin/python3 -m unittest test.test_normalize_items -v`
 
-Note: `notebook/data-processing.ipynb`'s QA section asserts `(featured["Kuantitas"] >= 0).all()`, added for a known raw-data anomaly (negative Kuantitas at branch KY011, 2024-02-29). As of 2026-07-28 there are no negative-Kuantitas rows in `dataset/dataset.csv` or `dataset/feb-24.csv`, and the presence of `dataset/feb-24_No_Minus.csv`/`.xlsx` suggests the data owner already supplied a corrected February 2024 export — so the assertion should now pass cleanly. This has not been reconfirmed with the data owner; until it is, keep `--allow-errors` on the nbconvert run, or use `.venv/bin/python3 prepare_forecast_data.py` directly (unaffected by this notebook-only assertion).
+Note: `notebook/data-processing.ipynb`'s QA section asserts `(featured["Kuantitas"] >= 0).all()`, added for a known raw-data anomaly (negative Kuantitas at branch KY011, 2024-02-29). As of 2026-07-28 there are no negative-Kuantitas rows in `dataset/dataset.csv` or `dataset/feb-24.csv`, and the presence of `dataset/feb-24_No_Minus.csv`/`.xlsx` suggests the data owner already supplied a corrected February 2024 export — so the assertion should now pass cleanly. This has not been reconfirmed with the data owner; until it is, keep `--allow-errors` on the nbconvert run, or use `.venv/bin/python3 -m utils.prepare_forecast_data` directly (unaffected by this notebook-only assertion).

@@ -80,6 +80,69 @@ class TestAddRollingFeatures(unittest.TestCase):
         self.assertTrue(pd.isna(day5["roll_mean_28"]))
 
 
+class TestAddLeadTimeTarget(unittest.TestCase):
+    def test_cumulative_sum_for_fixed_3_day_window(self):
+        df = _pair_series(list(range(1, 11)))  # 1..10
+        df["lead_time_days"] = 3
+        result = prepare_forecast_data.add_lead_time_target(df)
+        day1 = result[result["Tanggal"] == pd.Timestamp("2025-01-01")].iloc[0]
+        self.assertEqual(day1["target_lead_time_cumulative"], 2 + 3 + 4)
+
+    def test_cumulative_sum_for_fixed_4_day_window(self):
+        df = _pair_series(list(range(1, 11)))  # 1..10
+        df["lead_time_days"] = 4
+        result = prepare_forecast_data.add_lead_time_target(df)
+        day1 = result[result["Tanggal"] == pd.Timestamp("2025-01-01")].iloc[0]
+        self.assertEqual(day1["target_lead_time_cumulative"], 2 + 3 + 4 + 5)
+
+    def test_variable_window_per_row(self):
+        df = _pair_series(list(range(1, 11)))  # 1..10
+        df["lead_time_days"] = [3, 4, 3, 4, 3, 4, 3, 4, 3, 4]
+        result = prepare_forecast_data.add_lead_time_target(df)
+        day1 = result[result["Tanggal"] == pd.Timestamp("2025-01-01")].iloc[0]  # window 3
+        day2 = result[result["Tanggal"] == pd.Timestamp("2025-01-02")].iloc[0]  # window 4
+        self.assertEqual(day1["target_lead_time_cumulative"], 2 + 3 + 4)
+        self.assertEqual(day2["target_lead_time_cumulative"], 3 + 4 + 5 + 6)
+
+    def test_window_excludes_current_and_prior_days(self):
+        qtys = [10] * 10
+        qtys[5] = 1000  # 2025-01-06, a large outlier
+        df = _pair_series(qtys)
+        df["lead_time_days"] = 2
+        result = prepare_forecast_data.add_lead_time_target(df)
+        spike_day = result[result["Tanggal"] == pd.Timestamp("2025-01-06")].iloc[0]
+        self.assertEqual(spike_day["target_lead_time_cumulative"], 20)  # excludes its own 1000
+        day_before_spike = result[result["Tanggal"] == pd.Timestamp("2025-01-05")].iloc[0]
+        self.assertEqual(day_before_spike["target_lead_time_cumulative"], 1000 + 10)  # includes it
+
+    def test_nan_at_end_of_data_boundary(self):
+        df = _pair_series(list(range(1, 6)))  # only 5 days
+        df["lead_time_days"] = 3
+        result = prepare_forecast_data.add_lead_time_target(df)
+        day5 = result[result["Tanggal"] == pd.Timestamp("2025-01-05")].iloc[0]
+        day4 = result[result["Tanggal"] == pd.Timestamp("2025-01-04")].iloc[0]
+        self.assertTrue(pd.isna(day5["target_lead_time_cumulative"]))
+        self.assertTrue(pd.isna(day4["target_lead_time_cumulative"]))
+
+    def test_nan_propagates_when_lead_time_days_is_nan(self):
+        df = _pair_series(list(range(1, 6)))
+        df["lead_time_days"] = [3, 3, float("nan"), 3, 3]
+        result = prepare_forecast_data.add_lead_time_target(df)
+        day3 = result[result["Tanggal"] == pd.Timestamp("2025-01-03")].iloc[0]
+        self.assertTrue(pd.isna(day3["target_lead_time_cumulative"]))
+
+    def test_multiple_pairs_independent(self):
+        pair_a = _pair_series([1, 2, 3, 4, 5], pair=("A", "X"))
+        pair_b = _pair_series([100, 200, 300, 400, 500], pair=("B", "Y"))
+        df = pd.concat([pair_a, pair_b], ignore_index=True)
+        df["lead_time_days"] = 2
+        result = prepare_forecast_data.add_lead_time_target(df)
+        a_day1 = result[(result["Kode Barang"] == "A") & (result["Tanggal"] == pd.Timestamp("2025-01-01"))].iloc[0]
+        b_day1 = result[(result["Kode Barang"] == "B") & (result["Tanggal"] == pd.Timestamp("2025-01-01"))].iloc[0]
+        self.assertEqual(a_day1["target_lead_time_cumulative"], 2 + 3)
+        self.assertEqual(b_day1["target_lead_time_cumulative"], 200 + 300)
+
+
 class TestComputeBranchStats(unittest.TestCase):
     def test_stats_computed_only_from_pre_cutoff_rows(self):
         train = pd.DataFrame({
@@ -269,6 +332,15 @@ def _write_overrides_fixture(tmpdir, rows):
     return path
 
 
+def _write_region_mapping_fixture(tmpdir, rows):
+    path = Path(tmpdir) / "outlet_mapping.csv"
+    lines = ["old_name;new_name;Alamat;Kecamatan;Kota;has_shopee;has_gofood;has_grabfood;kawasan;hari_pengiriman\n"]
+    for old_name, new_name, kawasan, hari_pengiriman in rows:
+        lines.append(f"{old_name};{new_name};addr;Kec;Kota A;Yes;Yes;Yes;{kawasan};{hari_pengiriman}\n")
+    path.write_bytes(b"\xef\xbb\xbf" + "".join(lines).encode("utf-8"))
+    return path
+
+
 def _branch_rows(branch, start, periods):
     lines = []
     for i, date in enumerate(pd.date_range(start, periods=periods, freq="D")):
@@ -289,6 +361,53 @@ def _branch_rows_with_quantities(branch, start, quantities):
     return lines
 
 
+class TestBuildFeaturedDataset(unittest.TestCase):
+    def test_returns_full_unsplit_range_with_all_expected_columns(self):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        rows += _branch_rows("KY001 - Branch", "2025-08-01", 90)
+        content = "".join(rows)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
+            overrides_path = _write_empty_overrides_fixture(tmpdir)
+            region_path = _write_region_mapping_fixture(
+                tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+            )
+            cutoff = pd.Timestamp("2025-10-01")
+            df = prepare_forecast_data.build_featured_dataset(
+                input_path=input_path,
+                min_history_days=60,
+                cutoff=cutoff,
+                outlets_path=outlets_path,
+                overrides_path=overrides_path,
+                region_path=region_path,
+            )
+        # Unsplit: unlike train/test, both sides of the cutoff are present.
+        self.assertTrue((df["Tanggal"] < cutoff).any())
+        self.assertTrue((df["Tanggal"] >= cutoff).any())
+        for col in [
+            "target_h1", "lag_1", "is_ramadan", "branch_avg_daily_qty", "kota",
+            "can_order_online", "kawasan", "lead_time_days", "target_lead_time_cumulative",
+        ]:
+            self.assertIn(col, df.columns)
+
+
+class TestExportFeatured(unittest.TestCase):
+    def test_writes_and_round_trips_parquet_file(self):
+        df = pd.DataFrame({
+            "Tanggal": pd.to_datetime(["2025-01-01", "2025-12-15"]),
+            "Kuantitas": [1, 2],
+        })
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prepare_forecast_data.export_featured(df, output_dir=tmpdir)
+            featured_path = Path(tmpdir) / "featured.parquet"
+            self.assertTrue(featured_path.exists())
+            round_tripped = pd.read_parquet(featured_path)
+        self.assertEqual(len(round_tripped), 2)
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(round_tripped["Tanggal"]))
+
+
 class TestMain(unittest.TestCase):
     def test_main_writes_train_and_test_parquet_end_to_end(self):
         rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
@@ -303,6 +422,9 @@ class TestMain(unittest.TestCase):
             output_dir = Path(tmpdir) / "model_ready"
             outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
             overrides_path = _write_empty_overrides_fixture(tmpdir)
+            region_path = _write_region_mapping_fixture(
+                tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+            )
             prepare_forecast_data.main(
                 input_path=input_path,
                 output_dir=output_dir,
@@ -310,6 +432,7 @@ class TestMain(unittest.TestCase):
                 cutoff=pd.Timestamp("2025-10-01"),
                 outlets_path=outlets_path,
                 overrides_path=overrides_path,
+                region_path=region_path,
             )
             train = pd.read_parquet(output_dir / "train.parquet")
             test = pd.read_parquet(output_dir / "test.parquet")
@@ -321,6 +444,9 @@ class TestMain(unittest.TestCase):
         self.assertIn("branch_avg_daily_qty", train.columns)
         self.assertIn("kota", train.columns)
         self.assertIn("can_order_online", train.columns)
+        self.assertIn("kawasan", train.columns)
+        self.assertIn("lead_time_days", train.columns)
+        self.assertIn("target_lead_time_cumulative", train.columns)
 
     def test_main_drops_rows_for_branch_with_no_outlet_match(self):
         rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
@@ -335,6 +461,9 @@ class TestMain(unittest.TestCase):
             # Branch" must be dropped entirely rather than kept as "Unknown".
             outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
             overrides_path = _write_empty_overrides_fixture(tmpdir)
+            region_path = _write_region_mapping_fixture(
+                tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+            )
             prepare_forecast_data.main(
                 input_path=input_path,
                 output_dir=output_dir,
@@ -342,6 +471,7 @@ class TestMain(unittest.TestCase):
                 cutoff=pd.Timestamp("2025-10-01"),
                 outlets_path=outlets_path,
                 overrides_path=overrides_path,
+                region_path=region_path,
             )
             train = pd.read_parquet(output_dir / "train.parquet")
             test = pd.read_parquet(output_dir / "test.parquet")
@@ -368,6 +498,9 @@ class TestMain(unittest.TestCase):
             output_dir = Path(tmpdir) / "model_ready"
             outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
             overrides_path = _write_overrides_fixture(tmpdir, [("Legacy Name", "KY001 - Branch", "")])
+            region_path = _write_region_mapping_fixture(
+                tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+            )
             prepare_forecast_data.main(
                 input_path=input_path,
                 output_dir=output_dir,
@@ -375,6 +508,7 @@ class TestMain(unittest.TestCase):
                 cutoff=pd.Timestamp("2025-10-01"),
                 outlets_path=outlets_path,
                 overrides_path=overrides_path,
+                region_path=region_path,
             )
             train = pd.read_parquet(output_dir / "train.parquet")
             test = pd.read_parquet(output_dir / "test.parquet")
@@ -397,6 +531,9 @@ class TestMain(unittest.TestCase):
             output_dir = Path(tmpdir) / "model_ready"
             outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
             overrides_path = _write_overrides_fixture(tmpdir, [("Legacy Name", "KY001 - Branch", "")])
+            region_path = _write_region_mapping_fixture(
+                tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+            )
             prepare_forecast_data.main(
                 input_path=input_path,
                 output_dir=output_dir,
@@ -404,6 +541,7 @@ class TestMain(unittest.TestCase):
                 cutoff=pd.Timestamp("2025-10-01"),
                 outlets_path=outlets_path,
                 overrides_path=overrides_path,
+                region_path=region_path,
             )
             train = pd.read_parquet(output_dir / "train.parquet")
             test = pd.read_parquet(output_dir / "test.parquet")
@@ -429,6 +567,9 @@ class TestMain(unittest.TestCase):
             output_dir = Path(tmpdir) / "model_ready"
             outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
             overrides_path = _write_empty_overrides_fixture(tmpdir)
+            region_path = _write_region_mapping_fixture(
+                tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+            )
             prepare_forecast_data.main(
                 input_path=input_path,
                 output_dir=output_dir,
@@ -436,6 +577,7 @@ class TestMain(unittest.TestCase):
                 cutoff=pd.Timestamp("2025-10-01"),
                 outlets_path=outlets_path,
                 overrides_path=overrides_path,
+                region_path=region_path,
             )
             train = pd.read_parquet(output_dir / "train.parquet")
 
