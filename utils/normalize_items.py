@@ -110,7 +110,29 @@ def exclude_branches(
     return df[~df[branch_col].isin(branches)].reset_index(drop=True)
 
 
-EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00069", "xxx.FGS.00070", "xxx.FGS.00071"}
+GRAM_TO_PORSI_FACTORS: dict[str, int] = {
+    "xxx.FGS.00070": 40,  # Santan Cendol
+    "xxx.FGS.00071": 30,  # Gula Cendol
+}
+
+
+def convert_gram_items_to_porsi(
+    df: pd.DataFrame,
+    factors: dict[str, int] = GRAM_TO_PORSI_FACTORS,
+    code_col: str = "Kode Barang",
+    unit_col: str = "Satuan",
+    qty_col: str = "Kuantitas",
+) -> pd.DataFrame:
+    result = df.copy()
+    result[qty_col] = result[qty_col].astype(float)
+    for code, factor in factors.items():
+        mask = (result[code_col] == code) & (result[unit_col] == "Gr")
+        result.loc[mask, qty_col] = result.loc[mask, qty_col] / factor
+        result.loc[mask, unit_col] = "Porsi"
+    return result
+
+
+EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00067", "xxx.FGS.00068", "xxx.FGS.00069"}
 
 
 def exclude_items(
@@ -119,9 +141,7 @@ def exclude_items(
     return df[~df[code_col].isin(items)].reset_index(drop=True)
 
 
-EXPLICIT_ITEM_RENAMES: dict[str, tuple[str, str]] = {
-    "xxx.FGS.00067": ("FGS-00068", "Ayam Crispy Spicy - FG"),
-}
+EXPLICIT_ITEM_RENAMES: dict[str, tuple[str, str]] = {}
 
 
 def apply_item_renames(
@@ -147,6 +167,7 @@ def load_and_normalize(path: str = RAW_DATA_FILE) -> pd.DataFrame:
     df["Tanggal"] = pd.to_datetime(df["Tanggal"], format=DATE_FORMAT)
     df = exclude_branches(df)
     df = apply_item_renames(df)
+    df = convert_gram_items_to_porsi(df)
     df = exclude_items(df)
     df = apply_item_normalization(df)
     df = canonicalize_item_names(df)

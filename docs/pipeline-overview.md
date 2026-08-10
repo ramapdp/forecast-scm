@@ -34,8 +34,16 @@ the whole thing end to end, no QA assertions). Order:
 3. **Normalize item codes & branches** — `normalize_items.py` strips `xxx.`
    prefixes, unifies separator punctuation in `Kode Barang`, conditionally
    merges codes that only differ by these cosmetic issues (only when the item
-   name also agrees), applies confirmed manual renames/exclusions, and
-   re-aggregates quantities at the normalized-code level.
+   name also agrees), converts a handful of `xxx.`-prefixed items whose
+   `Kuantitas` was recorded in grams instead of `Porsi` (Santan Cendol/Gula
+   Cendol, factor 40/30 gram per porsi, derived from every raw value being an
+   exact integer multiple of that factor) so they merge cleanly into their
+   later Porsi-denominated series, drops confirmed-discontinued items
+   (Nasi Putih, Cendol Pandan, Ayam Crispy Original/Spicy — the latter two
+   were previously force-merged into other SKUs via `EXPLICIT_ITEM_RENAMES`,
+   which turned out to combine genuinely different products; both are now
+   excluded outright and the renames table is empty), and re-aggregates
+   quantities at the normalized-code level.
 4. **Filter and canonicalize branches** — `outlet_features.filter_matched_branches`
    drops rows for branches with no corresponding entry in `outlets.csv` (i.e.
    branches that no longer operate), so downstream stages only see currently

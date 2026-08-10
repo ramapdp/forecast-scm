@@ -261,6 +261,54 @@ class TestExcludeItems(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
 
+class TestConvertGramItemsToPorsi(unittest.TestCase):
+    def test_converts_kuantitas_and_satuan_for_matching_gram_items(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["xxx.FGS.00070", "xxx.FGS.00071"],
+            "Satuan": ["Gr", "Gr"],
+            "Kuantitas": [80, 60],
+        })
+        result = normalize_items.convert_gram_items_to_porsi(
+            df, factors={"xxx.FGS.00070": 40, "xxx.FGS.00071": 30}
+        )
+        self.assertEqual(list(result["Satuan"]), ["Porsi", "Porsi"])
+        self.assertEqual(list(result["Kuantitas"]), [2.0, 2.0])
+
+    def test_leaves_non_matching_items_untouched(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00003"],
+            "Satuan": ["Kg"],
+            "Kuantitas": [5],
+        })
+        result = normalize_items.convert_gram_items_to_porsi(
+            df, factors={"xxx.FGS.00070": 40}
+        )
+        self.assertEqual(result["Satuan"].iloc[0], "Kg")
+        self.assertEqual(result["Kuantitas"].iloc[0], 5.0)
+
+    def test_leaves_matching_item_untouched_when_satuan_is_not_gr(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["xxx.FGS.00070"],
+            "Satuan": ["Porsi"],
+            "Kuantitas": [4],
+        })
+        result = normalize_items.convert_gram_items_to_porsi(
+            df, factors={"xxx.FGS.00070": 40}
+        )
+        self.assertEqual(result["Satuan"].iloc[0], "Porsi")
+        self.assertEqual(result["Kuantitas"].iloc[0], 4.0)
+
+    def test_does_not_mutate_original_dataframe(self):
+        df = pd.DataFrame({
+            "Kode Barang": ["xxx.FGS.00070"],
+            "Satuan": ["Gr"],
+            "Kuantitas": [80],
+        })
+        normalize_items.convert_gram_items_to_porsi(df, factors={"xxx.FGS.00070": 40})
+        self.assertEqual(df["Satuan"].iloc[0], "Gr")
+        self.assertEqual(df["Kuantitas"].iloc[0], 80)
+
+
 class TestApplyItemRenames(unittest.TestCase):
     def test_rewrites_kode_and_nama_for_matching_raw_code(self):
         df = pd.DataFrame({
@@ -295,14 +343,14 @@ class TestApplyItemRenames(unittest.TestCase):
         self.assertEqual(df["Kode Barang"].iloc[0], "xxx.FGS.00067")
         self.assertEqual(df["Nama Barang"].iloc[0], "xxx.Ayam Crispy Original - FG")
 
-    def test_default_renames_table_applies_seed_entry(self):
+    def test_default_renames_table_is_empty(self):
         df = pd.DataFrame({
             "Kode Barang": ["xxx.FGS.00067"],
             "Nama Barang": ["xxx.Ayam Crispy Original - FG"],
         })
         result = normalize_items.apply_item_renames(df)
-        self.assertEqual(result["Kode Barang"].iloc[0], "FGS-00068")
-        self.assertEqual(result["Nama Barang"].iloc[0], "Ayam Crispy Spicy - FG")
+        self.assertEqual(result["Kode Barang"].iloc[0], "xxx.FGS.00067")
+        self.assertEqual(result["Nama Barang"].iloc[0], "xxx.Ayam Crispy Original - FG")
 
 
 class TestReaggregateDaily(unittest.TestCase):
@@ -384,20 +432,18 @@ class TestLoadAndNormalize(unittest.TestCase):
         self.assertEqual(row1["Kuantitas"], 7)
         self.assertTrue(pd.api.types.is_datetime64_any_dtype(result["Tanggal"]))
 
-    def test_applies_explicit_rename_and_canonicalizes_before_reaggregation(self):
+    def test_drops_discontinued_ayam_crispy_original_and_spicy_by_default(self):
         content = (
             "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
             "01 Jan 2024;Barang Jadi (FG);xxx.FGS.00067;xxx.Ayam Crispy Original - FG;KY001 - Branch;Potong;3\n"
             "01 Jan 2024;Barang Jadi (FG);xxx.FGS.00068;xxx.Ayam Crispy Spicy - FG;KY001 - Branch;Potong;5\n"
+            "01 Jan 2024;Barang Jadi (FG);FGS-00003;Iga Sapi Kebuli;KY001 - Branch;Porsi;5\n"
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "sample.csv"
             path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
             result = normalize_items.load_and_normalize(str(path))
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result["Kode Barang"].iloc[0], "FGS-00068")
-        self.assertEqual(result["Nama Barang"].iloc[0], "Ayam Crispy Spicy - FG")
-        self.assertEqual(result["Kuantitas"].iloc[0], 8)
+        self.assertEqual(list(result["Kode Barang"]), ["FGS-00003"])
 
     def test_canonicalizes_category_relabel_across_time_end_to_end(self):
         content = (
@@ -424,19 +470,36 @@ class TestLoadAndNormalize(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result["Kode Barang"].iloc[0], "FGS-00003")
 
-    def test_drops_discontinued_cendol_components_by_default(self):
+    def test_drops_discontinued_cendol_pandan_by_default(self):
         content = (
             "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
-            "01 Jan 2025;Barang Jadi (FG);xxx.FGS.00070;xxx.Santan Cendol - FG;KY001 - Branch;Gr;100\n"
-            "01 Jan 2025;Barang Jadi (FG);xxx.FGS.00071;xxx.Gula Cendol - FG;KY001 - Branch;Gr;50\n"
-            "01 Jan 2025;Barang Jadi (FG);FGS-00003;Iga Sapi Kebuli;KY001 - Branch;Porsi;5\n"
+            "24 Jan 2025;Barang Jadi (FG);xxx.FGS.00069;xxx.Cendol Pandan - FG;KY001 - Branch;Gr;250\n"
+            "03 Jun 2025;Barang Jadi (FG);FGS.00069;Cendol - FG;KY001 - Branch;Porsi;3\n"
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "sample.csv"
             path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
             result = normalize_items.load_and_normalize(str(path))
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result["Kode Barang"].iloc[0], "FGS-00003")
+        self.assertEqual(list(result["Kode Barang"]), ["FGS-00069"])
+
+    def test_merges_santan_and_gula_cendol_across_xxx_prefix_gap(self):
+        content = (
+            "Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"
+            "24 Jan 2025;Barang Jadi (FG);xxx.FGS.00070;xxx.Santan Cendol - FG;KY001 - Branch;Gr;80\n"
+            "03 Jun 2025;Barang Jadi (FG);FGS.00070;Santan Cendol - FG;KY001 - Branch;Porsi;4\n"
+            "24 Jan 2025;Barang Jadi (FG);xxx.FGS.00071;xxx.Gula Cendol - FG;KY001 - Branch;Gr;60\n"
+            "03 Jun 2025;Barang Jadi (FG);FGS.00071;Gula Cendol - FG;KY001 - Branch;Porsi;6\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.csv"
+            path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            result = normalize_items.load_and_normalize(str(path))
+        self.assertEqual(len(result), 4)
+        self.assertEqual(set(result["Kode Barang"]), {"FGS-00070", "FGS-00071"})
+        self.assertTrue((result["Satuan"] == "Porsi").all())
+        santan = result[result["Kode Barang"] == "FGS-00070"]
+        self.assertEqual(set(santan["Nama Barang"]), {"Santan Cendol - FG"})
+        self.assertEqual(sorted(santan["Kuantitas"]), [2.0, 4.0])
 
 
 if __name__ == "__main__":

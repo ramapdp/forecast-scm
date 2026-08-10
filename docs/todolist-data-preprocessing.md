@@ -48,28 +48,56 @@ Beda dengan bagian 🔴, poin-poin ini **sudah** punya perilaku default di kode 
 "pipeline belum bisa jalan" tapi "pipeline jalan dengan asumsi yang belum dikonfirmasi benar
 oleh yang paham datanya".
 
-- [ ] **Item ber-prefix `xxx.`** — `normalize_items.py` sudah punya keputusan eksplisit:
-  `EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00069", "xxx.FGS.00070", "xxx.FGS.00071"}`
-  (`normalize_items.py:113`, exclude "Nasi Putih" dan trio "Cendol Pandan" / "Santan Cendol" /
-  "Gula Cendol" — ketiganya cuma tercatat Jan–Mar 2025 lalu berhenti total secara serentak,
-  konsisten dengan produk trial/discontinued; juga muncul sebagai outlier Kuantitas tertinggi di
-  `eda.ipynb` §3, nilai 5250/2625/.../1260) dan `EXPLICIT_ITEM_RENAMES = {"xxx.FGS.00067":
-  ("FGS-00068", "Ayam Crispy Spicy - FG")}` (`normalize_items.py:122`). Ini keputusan best-guess
-  dari desain (lihat `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md` §1 soal
-  "flavor difference can't be ruled out from the data alone"), **belum dikonfirmasi ke data
-  owner**. Minta konfirmasi: apakah ke-4 item itu memang harus di-drop total, dan apakah rename
-  `xxx.FGS.00067` → `FGS-00068` itu benar secara bisnis.
+- [x] **Santan Cendol / Gula Cendol (`xxx.FGS.00070` / `xxx.FGS.00071`) periode Gr dikonversi ke
+  Porsi dan disambung; Cendol Pandan (`xxx.FGS.00069`) tetap di-drop** (2026-08-10) — root cause
+  outlier `Kuantitas` ekstrem (30–5250) di ketiga item `xxx.`-prefixed ternyata cuma beda satuan
+  pencatatan: periode awal (2025-01-24 → 03-24, 6 cabang) dicatat dalam **Gr**, periode setelahnya
+  (mulai Jun 2025, 18 cabang) dicatat dalam **Porsi**. Setiap nilai `Kuantitas` mentah pada ketiga
+  item itu adalah kelipatan bulat presisi dari satu angka tetap (dicek: 100% baris habis dibagi
+  tanpa sisa) — kemungkinan besar itu berat-per-porsi resep asli: 125 gram/porsi (Cendol Pandan),
+  **40 gram/porsi (Santan Cendol), 30 gram/porsi (Gula Cendol)**. `normalize_items.py` sekarang
+  punya `GRAM_TO_PORSI_FACTORS = {"xxx.FGS.00070": 40, "xxx.FGS.00071": 30}` +
+  `convert_gram_items_to_porsi()` (dipanggil di `load_and_normalize`, sebelum `exclude_items`)
+  yang mengonversi `Kuantitas`/`Satuan` untuk Santan/Gula Cendol sebelum masuk tahap merge —
+  nama kedua item ini identik di kedua periode, jadi lewat conditional-merge rule yang sudah ada
+  dan jadi satu seri waktu utuh 2025-01-24 → 12-28 dalam Porsi (1147 baris masing-masing, tidak
+  ada overlap tanggal+cabang). **Cendol Pandan diputuskan tetap di-drop** (bukan dikonversi+
+  disambung) — beda dari Santan/Gula Cendol, nama di dua sisi tidak identik (`Cendol Pandan - FG`
+  vs `Cendol - FG`) dan datanya jarang bahkan selama periode aktifnya (cuma 32 dari 60 hari
+  kalender terisi, 6 cabang, trailing off sebelum berhenti total 2025-03-24) — pola lebih mirip
+  pilot kecil yang sepi peminat, jadi diputuskan cukup di-exclude tanpa perlu tunggu konfirmasi
+  rename dari data owner. `EXCLUDED_ITEMS` (`normalize_items.py:135`) sekarang
+  `{"xxx.FGS.00066", "xxx.FGS.00069"}`. Test terkait: `TestConvertGramItemsToPorsi` (4 test),
+  `test_merges_santan_and_gula_cendol_across_xxx_prefix_gap`,
+  `test_drops_discontinued_cendol_pandan_by_default` di `test_normalize_items.py`.
   **Catatan verifikasi penting:** `eda.ipynb` membaca `dataset/dataset.csv` mentah langsung
   (tidak lewat `normalize_items.load_and_normalize()`), jadi cell apa pun di notebook itu —
-  termasuk `extreme_rows` §3 — akan **tetap** menampilkan ke-4 item ini apa adanya selamanya;
-  itu bukan tanda exclude-nya gagal/terlewat. Jangan verifikasi exclude ini dari notebook EDA —
-  cek langsung lewat `normalize_items.load_and_normalize()` (atau `test_normalize_items.py`)
-  atau output akhir `dataset/model_ready/*.parquet` setiap kali pipeline di-generate ulang.
-- [ ] **`EXCLUDED_BRANCHES = {"Kebab Saudagar - Kutabumi"}`** (`normalize_items.py:91`) — cabang
+  termasuk `extreme_rows` §3 — akan **tetap** menampilkan item yang sudah di-exclude/Kuantitas
+  dalam gram apa adanya selamanya; itu bukan tanda exclude/konversinya gagal/terlewat. Jangan
+  verifikasi exclude/konversi/merge ini dari notebook EDA — cek langsung lewat
+  `normalize_items.load_and_normalize()` (atau `test_normalize_items.py`) atau output akhir
+  `dataset/model_ready/*.parquet` setiap kali pipeline di-generate ulang.
+- [x] **`xxx.FGS.00067`/`00068` (Ayam Crispy Original / Spicy) di-exclude, bukan digabung**
+  (2026-08-10) — `EXPLICIT_ITEM_RENAMES` sebelumnya memaksa `xxx.FGS.00067` ("Ayam Crispy
+  Original") direlabel jadi kode `FGS-00068` dengan nama "Ayam Crispy Spicy", menggabungkan
+  keduanya jadi satu series. Investigasi data menemukan ini kemungkinan besar **salah**: ada 190
+  kombinasi tanggal+cabang di mana Original dan Spicy sama-sama tercatat di hari yang sama dengan
+  kuantitas berbeda (indikasi dua varian rasa yang dijual paralel selama Jan–Sep 2025, bukan satu
+  produk yang di-rename), dan keputusan itu ternyata tidak terdokumentasi di
+  `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md` §1 — bertentangan dengan
+  prinsip umum desain di dokumen itu sendiri (nama tidak cocok = jangan digabung, persis alasan
+  Cendol Pandan dipisah). **Dikonfirmasi data owner (2026-08-10): kedua menu ini sudah tidak ada
+  saat ini** (discontinued) — karena itu, alih-alih memperbaiki merge-nya, keduanya langsung
+  di-exclude (`EXCLUDED_ITEMS` di `normalize_items.py:135` sekarang mencakup
+  `xxx.FGS.00067`/`00068`; `EXPLICIT_ITEM_RENAMES` dikosongkan jadi `{}`), konsisten dengan
+  perlakuan Cendol Pandan. Test terkait:
+  `test_drops_discontinued_ayam_crispy_original_and_spicy_by_default`,
+  `test_default_renames_table_is_empty` di `test_normalize_items.py`.
+- [x] **`EXCLUDED_BRANCHES = {"Kebab Saudagar - Kutabumi"}`** (`normalize_items.py:104`) — cabang
   ini juga tampak di outlier Kuantitas ekstrem `eda.ipynb` §3 (WIP `Ayam Shawarma`, 1340).
-  Namanya tidak mengikuti pola `KY0NN - ...` cabang lain — konfirmasi apakah ini memang brand/
-  lini bisnis terpisah yang sengaja dikecualikan dari forecast Kebuli Yaman, bukan cabang yang
-  datanya hilang.
+  Namanya tidak mengikuti pola `KY0NN - ...` cabang lain. **Dikonfirmasi data owner (2026-08-09):
+  cabang ini sudah tidak beroperasi/tidak digunakan lagi** — exclude di kode sudah benar sesuai
+  keputusan bisnis, tidak perlu tindakan lebih lanjut.
 - [ ] **`Kota Override` & mapping `KY069`→`KY011`** di `dataset/outlet_name_overrides.csv` —
   8 baris override kota (Tangerang, Bogor, Bekasi, dll — kemungkinan nama kota di `outlets.csv`
   salah/beda format) dan satu baris `KY069 - Kebuli Yaman Bekasi Galaxy` di-map ke outlet
@@ -154,13 +182,15 @@ oleh yang paham datanya".
 
 ## 🟢 Sanity check rutin (jalankan tiap kali dataset di-refresh atau sebelum training)
 
-- [ ] **Verifikasi `EXCLUDED_ITEMS` (`xxx.FGS.00066/69/70/71`) benar-benar tidak muncul di
-  `dataset/model_ready/*.parquet`** — penting untuk diingat karena `eda.ipynb` **tidak bisa**
-  dipakai untuk verifikasi ini (baca `dataset.csv` mentah, lihat catatan di poin 🟠 "Item
-  ber-prefix `xxx.`" di atas). Cek lewat kode langsung, mis.
-  `normalize_items.load_and_normalize()["Kode Barang"].isin(normalize_items.EXCLUDED_ITEMS).sum() == 0`,
-  supaya item trial/discontinued ini tidak diam-diam kembali masuk kalau raw CSV bulanan
-  ternyata memakai kode SKU baru untuk produk serupa.
+- [ ] **Verifikasi `EXCLUDED_ITEMS` (`xxx.FGS.00066/67/68/69`) benar-benar tidak muncul
+  di `dataset/model_ready/*.parquet`, dan Santan/Gula Cendol (`xxx.FGS.00070/71`) sudah dalam
+  Satuan Porsi (bukan Gr)** — penting untuk diingat karena `eda.ipynb` **tidak bisa** dipakai
+  untuk verifikasi ini (baca `dataset.csv` mentah, lihat catatan di poin 🟠 "Santan Cendol / Gula
+  Cendol ... dikonversi" dan "Ayam Crispy Original / Spicy" di atas). Cek lewat kode langsung, mis.
+  `normalize_items.load_and_normalize()["Kode Barang"].isin(normalize_items.EXCLUDED_ITEMS).sum() == 0`
+  dan `(normalize_items.load_and_normalize()["Satuan"] == "Gr").sum() == 0` untuk kode Cendol,
+  supaya item trial/discontinued tidak diam-diam kembali masuk dan konversi satuan tidak diam-diam
+  terlewat kalau raw CSV bulanan berubah format.
 - [ ] Soft-check negative `Kuantitas` (`eda.ipynb` §8) — lihat poin 🟠 di atas.
 - [ ] `calendar_features.check_year_coverage` (`calendar_features.py:168`) — akan raise
   `ValueError` otomatis kalau data punya tahun yang `RAMADAN_PERIODS`/`EID_AL_FITR_DATES`/
