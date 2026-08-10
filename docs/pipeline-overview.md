@@ -158,10 +158,11 @@ Still open before the data can be fully trusted for modelling:
 
 - Re-run `prepare_forecast_data.py` whenever any pipeline script changes, so
   the exported parquet reflects the current code.
-- A handful of outlet `Kota Override` values and one duplicate-branch mapping
-  (`KY069` → `KY011`, "Bekasi Galaxy") in
-  `dataset/outlet_name_overrides.csv` are best-guess corrections, not yet
-  confirmed by the data owner.
+- 8 outlet `Kota Override` values in `dataset/outlet_name_overrides.csv` are
+  still best-guess corrections, not yet confirmed by the data owner. (The two
+  duplicate-branch mappings in the same file — `KY069` → `KY011` "Bekasi
+  Galaxy" and `TOD M1 Bandara` → `KY051` — were confirmed by the data owner
+  on 2026-08-10 as old code/name for the same branch, not distinct branches.)
 - `kawasan`/`hari_pengiriman` provenance in `dataset/outlet_mapping.csv` is
   not yet confirmed by the data owner either — the pipeline uses it as-is.
 - The 7 QA assertions currently live only in the notebook — a plain

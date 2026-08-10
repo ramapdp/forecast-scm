@@ -98,13 +98,22 @@ oleh yang paham datanya".
   Namanya tidak mengikuti pola `KY0NN - ...` cabang lain. **Dikonfirmasi data owner (2026-08-09):
   cabang ini sudah tidak beroperasi/tidak digunakan lagi** — exclude di kode sudah benar sesuai
   keputusan bisnis, tidak perlu tindakan lebih lanjut.
-- [ ] **`Kota Override` & mapping `KY069`→`KY011`** di `dataset/outlet_name_overrides.csv` —
-  8 baris override kota (Tangerang, Bogor, Bekasi, dll — kemungkinan nama kota di `outlets.csv`
-  salah/beda format) dan satu baris `KY069 - Kebuli Yaman Bekasi Galaxy` di-map ke outlet
-  `KY011 - Kebuli Yaman Bekasi Galaxy` — sudah ditandai di `pipeline-overview.md` §3 sebagai
-  "best-guess corrections, not yet confirmed by the data owner". Perlu sign-off eksplisit,
-  terutama mapping KY069→KY011 karena efeknya menggabungkan histori dua kode cabang jadi satu
-  seri waktu.
+- [x] **Mapping `KY069`→`KY011` dan `TOD M1 Bandara`→`KY051` di `dataset/outlet_name_overrides.csv`
+  dikonfirmasi data owner (2026-08-10)** — `KY069 - Kebuli Yaman Bekasi Galaxy` adalah nama dan
+  kode lama dari `KY011 - Kebuli Yaman Bekasi Galaxy` (kota: Bekasi), dan `TOD M1 Bandara` adalah
+  nama lama dari `KY051 - kebuli Yaman TOD M1 Bandara` (kota: Tangerang) — bukan dua cabang
+  berbeda. Konsisten dengan `outlets.csv` (`KY051` → Kota Tangerang baris 44, `KY011` → Kota
+  Bekasi baris 47), jadi kedua baris ini tidak perlu isi kolom `Kota Override` (kota sudah
+  resolve benar lewat `outlets_df` via `match_branch_to_outlet`/`normalize_kota` di
+  `outlet_features.py`). Penggabungan histori `KY069`→`KY011` dan `TOD M1 Bandara`→`KY051` di
+  pipeline sudah tervalidasi sebagai keputusan yang benar.
+- [ ] **8 baris `Kota Override` lain** di `dataset/outlet_name_overrides.csv` (Tangerang, Bogor,
+  Bekasi, dll untuk `KY001`, `KY010`, `KY012`, `KY021`, `KY016`, `KY036`, `KY041`, `KY057`) —
+  masih belum dikonfirmasi data owner. Ini beda dari mapping cabang di atas: baris-baris ini
+  `Nama Cabang` = `Nama Outlet` (tidak ada penggabungan cabang), tapi kolom `Kota Override`
+  mengoreksi/mengisi nama kota secara manual, kemungkinan karena nilai `Kota` di `outlets.csv`
+  untuk cabang-cabang itu salah/kosong/beda format. Perlu sign-off eksplisit sebelum dianggap
+  benar permanen.
 - [ ] **Outlet relocation belum di-wire ke pipeline (`docs/outlet_relocation_notes.md`)** —
   dokumen ini murni referensi manual, tidak direferensikan di `utils/*.py` manapun (cek: grep
   "reloc" di seluruh `utils/` nol hasil). Cross-check ke data aktual (2026-08-09): 8 dari 9
@@ -208,10 +217,11 @@ oleh yang paham datanya".
 1. ~~**🔴 Selesaikan integrasi region/lead-time**~~ — selesai 2026-08-08 (lihat §🔴 di atas).
    Provenance `outlet_mapping.csv` masih belum dikonfirmasi data owner (🟠 di bawah) — pipeline
    berjalan di atas data as-is sesuai arahan eksplisit, bukan menunggu konfirmasi.
-2. **🟠 Kumpulkan semua konfirmasi data owner** dalam satu putaran (item `xxx.`, cabang
-   dikecualikan, kota override/KY069, outlet relocation (67.020 baris/9,66% berpotensi hilang),
-   kategori 27-SKU, KY056, provenance `kawasan`/`hari_pengiriman`) — banyak yang bisa ditanyakan
-   sekaligus ke orang yang sama.
+2. **🟠 Kumpulkan sisa konfirmasi data owner** dalam satu putaran (8 baris kota override,
+   outlet relocation (67.020 baris/9,66% berpotensi hilang), kategori 27-SKU, KY056, provenance
+   `kawasan`/`hari_pengiriman`) — banyak yang bisa ditanyakan sekaligus ke orang yang sama.
+   (item `xxx.`, cabang dikecualikan, dan mapping `KY069`→`KY011`/`TOD M1 Bandara`→`KY051` sudah
+   dikonfirmasi.)
 3. **🟡 Kerjakan gap engineering** yang tidak butuh menunggu jawaban (QA assertion ke script,
    re-run parquet) sambil menunggu 2; canonicalize kategori setelah dapat jawabannya.
 4. **🟢 Jalankan sanity check rutin** setiap refresh dataset bulanan berikutnya — terutama
