@@ -159,6 +159,49 @@ def canonicalize_branch_names(
     return result
 
 
+# Physical relocation dates, confirmed by data owner (2026-08-11) — see
+# docs/outlet_relocation_notes.md. Keyed by canonical `Nama Outlet` (the name
+# branches are renamed to by canonicalize_branch_names), since merged old/new
+# branch codes share one canonical identity by the time this runs.
+#
+# Tigaraksa/Cadas/Citayam/Bintara: EXACT dates — the first day of native data
+# under the new code, directly observable in the raw data (old code stops,
+# new code starts within days).
+#
+# Mayor Oking/Cikarang Pusat/Teluk Pucung/Bukit Gading Balaraja/Grand Wisata
+# Bekasi: the old code never stops appearing in the current data — data owner
+# confirmed (2026-08-11) these relocations happened after the dataset's
+# coverage ends, so no exact date is derivable. These use the LAST date the
+# old code appears as a lower-bound proxy: every pre-relocation row correctly
+# gets a negative days_since_relocation, but the magnitude under-estimates
+# the true distance to relocation (which happened sometime after this date).
+# Re-derive properly once a data refresh shows the old code stop / a new
+# code start.
+RELOCATION_DATES: dict[str, pd.Timestamp] = {
+    "KY056 - Kebuli Yaman Tigaraksa": pd.Timestamp("2024-03-01"),
+    "Kebuli Yaman Cadas": pd.Timestamp("2025-10-03"),
+    "Kebuli Yaman Citayam": pd.Timestamp("2025-11-07"),
+    "Kebuli Yaman Bintara": pd.Timestamp("2025-11-28"),
+    "Kebuli Yaman Mayor Oking": pd.Timestamp("2025-12-31"),  # lower bound
+    "Kebuli Yaman Cikarang Pusat": pd.Timestamp("2025-11-30"),  # lower bound
+    "Kebuli Yaman Teluk Pucung": pd.Timestamp("2025-12-31"),  # lower bound
+    "Kebuli Yaman Bukit Gading Balaraja": pd.Timestamp("2025-12-31"),  # lower bound
+    "Kebuli Yaman Grand Wisata Bekasi": pd.Timestamp("2025-12-31"),  # lower bound
+}
+
+
+def add_relocation_feature(
+    df: pd.DataFrame,
+    relocation_dates: dict[str, pd.Timestamp] = RELOCATION_DATES,
+    branch_col: str = "Nama Cabang",
+    date_col: str = "Tanggal",
+) -> pd.DataFrame:
+    result = df.copy()
+    relocation_date = result[branch_col].map(relocation_dates)
+    result["days_since_relocation"] = (result[date_col] - relocation_date).dt.days
+    return result
+
+
 def build_outlet_features(
     branch_names: list[str], outlets_df: pd.DataFrame, overrides_df: pd.DataFrame
 ) -> pd.DataFrame:

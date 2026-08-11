@@ -326,5 +326,64 @@ class TestApplyRegionFeatures(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
 
+class TestAddRelocationFeature(unittest.TestCase):
+    def test_negative_for_rows_before_relocation_date(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["Kebuli Yaman Cadas"],
+            "Tanggal": pd.to_datetime(["2025-09-28"]),
+        })
+        dates = {"Kebuli Yaman Cadas": pd.Timestamp("2025-10-03")}
+        result = outlet_features.add_relocation_feature(df, dates)
+        self.assertEqual(result.iloc[0]["days_since_relocation"], -5)
+
+    def test_zero_on_relocation_date_itself(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["Kebuli Yaman Cadas"],
+            "Tanggal": pd.to_datetime(["2025-10-03"]),
+        })
+        dates = {"Kebuli Yaman Cadas": pd.Timestamp("2025-10-03")}
+        result = outlet_features.add_relocation_feature(df, dates)
+        self.assertEqual(result.iloc[0]["days_since_relocation"], 0)
+
+    def test_positive_for_rows_after_relocation_date(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["Kebuli Yaman Cadas"],
+            "Tanggal": pd.to_datetime(["2025-10-10"]),
+        })
+        dates = {"Kebuli Yaman Cadas": pd.Timestamp("2025-10-03")}
+        result = outlet_features.add_relocation_feature(df, dates)
+        self.assertEqual(result.iloc[0]["days_since_relocation"], 7)
+
+    def test_nan_for_branch_not_in_relocation_dates(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["KY007 - Kebuli Yaman Cibubur"],
+            "Tanggal": pd.to_datetime(["2025-10-10"]),
+        })
+        dates = {"Kebuli Yaman Cadas": pd.Timestamp("2025-10-03")}
+        result = outlet_features.add_relocation_feature(df, dates)
+        self.assertTrue(math.isnan(result.iloc[0]["days_since_relocation"]))
+
+    def test_resolves_independent_branches_separately(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["Kebuli Yaman Cadas", "Kebuli Yaman Bintara"],
+            "Tanggal": pd.to_datetime(["2025-10-03", "2025-11-28"]),
+        })
+        dates = {
+            "Kebuli Yaman Cadas": pd.Timestamp("2025-10-03"),
+            "Kebuli Yaman Bintara": pd.Timestamp("2025-11-28"),
+        }
+        result = outlet_features.add_relocation_feature(df, dates)
+        self.assertEqual(result["days_since_relocation"].tolist(), [0, 0])
+
+    def test_does_not_mutate_original_dataframe(self):
+        df = pd.DataFrame({
+            "Nama Cabang": ["Kebuli Yaman Cadas"],
+            "Tanggal": pd.to_datetime(["2025-10-03"]),
+        })
+        dates = {"Kebuli Yaman Cadas": pd.Timestamp("2025-10-03")}
+        outlet_features.add_relocation_feature(df, dates)
+        self.assertNotIn("days_since_relocation", df.columns)
+
+
 if __name__ == "__main__":
     unittest.main()

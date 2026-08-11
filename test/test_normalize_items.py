@@ -242,6 +242,36 @@ class TestCanonicalizeItemCategories(unittest.TestCase):
         normalize_items.canonicalize_item_categories(df)
         self.assertEqual(df["Kategori Barang"].iloc[0], "Minuman")
 
+    def test_leaves_wip_to_fg_transition_time_varying_not_a_rename(self):
+        # WIP-2 and Barang Jadi (FG) are genuinely different categories
+        # (confirmed by data owner, 2026-08-10), unlike Minuman/Snack which
+        # are the same category relabeled — so unlike those, this pair must
+        # NOT be collapsed to the latest category.
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00001", "FGS-00001"],
+            "Kategori Barang": ["Barang Semi FG (WIP-2)", "Barang Jadi (FG)"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-03-01"]),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(
+            list(result["Kategori Barang"]),
+            ["Barang Semi FG (WIP-2)", "Barang Jadi (FG)"],
+        )
+
+    def test_applies_explicit_override_for_club_mineral_600ml(self):
+        # FGS-00014 (Club Mineral 600ml) was recorded as WIP-2 early on but
+        # is actually a drink — confirmed by data owner (2026-08-10) it
+        # should be Minuman - FG for its entire history, not time-varying.
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00014", "FGS-00014"],
+            "Kategori Barang": ["Barang Semi FG (WIP-2)", "Minuman - FG"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-03-01"]),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(
+            list(result["Kategori Barang"]), ["Minuman - FG", "Minuman - FG"]
+        )
+
 
 class TestExcludeItems(unittest.TestCase):
     def test_drops_rows_for_excluded_item(self):

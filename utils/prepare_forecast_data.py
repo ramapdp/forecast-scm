@@ -221,6 +221,7 @@ def build_featured_dataset(
     df = add_targets(df)
     df = outlet_features.apply_region_features(df, region_df)
     df = apply_outlet_features(df, outlets_df, overrides_df)
+    df = outlet_features.add_relocation_feature(df)
     df = add_lead_time_target(df)
     df = add_lag_features(df, qty_col="Kuantitas_capped")
     df = add_rolling_features(df, qty_col="Kuantitas_capped")

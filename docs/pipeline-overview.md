@@ -93,6 +93,14 @@ the whole thing end to end, no QA assertions). Order:
    - `outlet_features.apply_outlet_features`: joins static per-branch
      features — `kota`, `has_shopee`, `has_gofood`, `has_grabfood`, and the
      derived `can_order_online`.
+   - `outlet_features.add_relocation_feature`: `days_since_relocation` for
+     branches merged from a physically-relocated old branch code (negative
+     before the relocation date, 0 on it, positive after; `NaN` for
+     non-relocated branches). Exists because `canonicalize_branch_names` runs
+     before the two steps above, so a relocated branch's `kota`/`kawasan`
+     reflect its *current* location for its *entire* history, including
+     pre-relocation rows recorded at the old (often different-city) location —
+     this flag lets the modelling phase account for that regime shift.
    - `add_lead_time_target`: the core business target,
      `target_lead_time_cumulative` — sum of raw `Kuantitas` over the
      strictly-forward window `(H+1 .. H+lead_time_days)`, i.e. cumulative
@@ -163,8 +171,6 @@ Still open before the data can be fully trusted for modelling:
   duplicate-branch mappings in the same file — `KY069` → `KY011` "Bekasi
   Galaxy" and `TOD M1 Bandara` → `KY051` — were confirmed by the data owner
   on 2026-08-10 as old code/name for the same branch, not distinct branches.)
-- `kawasan`/`hari_pengiriman` provenance in `dataset/outlet_mapping.csv` is
-  not yet confirmed by the data owner either — the pipeline uses it as-is.
 - The 7 QA assertions currently live only in the notebook — a plain
   `python3 -m utils.prepare_forecast_data` run does not re-verify them.
 

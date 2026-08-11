@@ -102,60 +102,125 @@ oleh yang paham datanya".
   dikonfirmasi data owner (2026-08-10)** — `KY069 - Kebuli Yaman Bekasi Galaxy` adalah nama dan
   kode lama dari `KY011 - Kebuli Yaman Bekasi Galaxy` (kota: Bekasi), dan `TOD M1 Bandara` adalah
   nama lama dari `KY051 - kebuli Yaman TOD M1 Bandara` (kota: Tangerang) — bukan dua cabang
-  berbeda. Konsisten dengan `outlets.csv` (`KY051` → Kota Tangerang baris 44, `KY011` → Kota
-  Bekasi baris 47), jadi kedua baris ini tidak perlu isi kolom `Kota Override` (kota sudah
-  resolve benar lewat `outlets_df` via `match_branch_to_outlet`/`normalize_kota` di
-  `outlet_features.py`). Penggabungan histori `KY069`→`KY011` dan `TOD M1 Bandara`→`KY051` di
-  pipeline sudah tervalidasi sebagai keputusan yang benar.
-- [ ] **8 baris `Kota Override` lain** di `dataset/outlet_name_overrides.csv` (Tangerang, Bogor,
-  Bekasi, dll untuk `KY001`, `KY010`, `KY012`, `KY021`, `KY016`, `KY036`, `KY041`, `KY057`) —
-  masih belum dikonfirmasi data owner. Ini beda dari mapping cabang di atas: baris-baris ini
-  `Nama Cabang` = `Nama Outlet` (tidak ada penggabungan cabang), tapi kolom `Kota Override`
-  mengoreksi/mengisi nama kota secara manual, kemungkinan karena nilai `Kota` di `outlets.csv`
-  untuk cabang-cabang itu salah/kosong/beda format. Perlu sign-off eksplisit sebelum dianggap
-  benar permanen.
-- [ ] **Outlet relocation belum di-wire ke pipeline (`docs/outlet_relocation_notes.md`)** —
-  dokumen ini murni referensi manual, tidak direferensikan di `utils/*.py` manapun (cek: grep
-  "reloc" di seluruh `utils/` nol hasil). Cross-check ke data aktual (2026-08-09): 8 dari 9
-  "old outlet" di catatan (Tambun/KY020, Antapani/KY035, Aryana Karawaci/KY046, Ciomas/KY047,
-  Bantarjati Bogor/KY052, Dukuh Zamrud/KY059, Condet/KY028, Ciputat Timur/KY055) ada di
-  `dataset.csv` mentah tapi **tidak ada** di `outlets.csv`, sehingga
-  `outlet_features.filter_matched_branches` membuang seluruh historinya (67.020 baris, 9,66%
-  dari seluruh dataset) alih-alih menyambungkannya ke outlet baru hasil relokasi — pola yang
-  seharusnya sama seperti `KY069→KY011` di `outlet_name_overrides.csv`, tapi belum diterapkan
-  ke ke-6 relokasi "verified" (Tambun→Mayor Oking, Antapani→Tigaraksa, Aryana Karawaci→Cadas,
-  Ciomas→Cikarang Pusat, Bantarjati Bogor→Teluk Pucung, Dukuh Zamrud→Bukit Gading Balaraja) di
-  catatan itu. Anomali tambahan: `Cinere` (KY029) dicatat sebagai outlet lama yang relokasi ke
-  Bintara (pending), tapi KY029 masih **aktif** di `outlets.csv` saat ini — catatan relokasi
-  kemungkinan belum sinkron dengan status outlet terkini. Konfirmasi ke data owner: (1) apakah
-  6 relokasi verified perlu digabung historinya via `outlet_name_overrides.csv` seperti
-  KY069→KY011, (2) status Cinere/Bintara — sudah terjadi atau masih rencana, (3) 3 outlet
-  target yang belum terdaftar (Grand Wisata Bekasi, Citayem/Citayam, Bintara) perlu ditambahkan
-  ke `outlets.json`/`outlets.csv` dulu sebelum bisa masuk pipeline forecast.
-- [ ] **Provenance `kawasan`/`hari_pengiriman` di `dataset/outlet_mapping.csv`** — file ini baru
-  (belum ter-commit) dan belum ada dokumentasi dari mana sumbernya (tim SCM langsung? asumsi
-  manual?). Sebelum dipakai untuk target lead-time (lihat 🔴 di atas), pastikan sumbernya resmi
-  dari tim SCM, bukan tebakan sementara — kalau salah, target cumulative demand yang dihasilkan
-  ikut salah untuk semua cabang.
-- [ ] **1 cabang di bawah threshold completeness 95%** — KY056 (Kebuli Yaman Tigaraksa), 92,3%
-  (`eda.ipynb` §4, konsisten di run 2026-08-07). Konfirmasi: gap pelaporan, outlet tutup
-  sementara, atau outlet baru?
-- [ ] **27 dari 109 SKU (24,8%) tercatat di lebih dari satu `Kategori Barang`** sepanjang waktu
+  berbeda. Penggabungan histori `KY069`→`KY011` dan `TOD M1 Bandara`→`KY051` di pipeline sudah
+  tervalidasi sebagai keputusan yang benar.
+- [x] **`Kota Override` untuk semua 16 baris di `dataset/outlet_name_overrides.csv` sudah
+  dilengkapi & diverifikasi (2026-08-11)** — data owner mengisi langsung kolom `Kota Override`
+  untuk seluruh baris (termasuk `KY069`/`TOD M1 Bandara` dan 6 baris relokasi baru di bawah, yang
+  sebelumnya dibiarkan kosong). Satu koreksi dari asumsi awal saya: **`KY001` (Kutabumi Pusat)
+  final-nya `Kabupaten Tangerang`**, bukan `Kota Tangerang` seperti tebakan awal berdasarkan
+  kolom `Kecamatan` (`Jatiuwung`) di `outlets.csv` — alamatnya sendiri menyebut "Pasar Kemis"
+  (kecamatan di Kabupaten Tangerang), jadi kolom `Kecamatan` di `outlets.csv` kemungkinan yang
+  keliru, bukan override-nya. Diverifikasi lewat `match_branch_to_outlet`/`normalize_kota`: 16/16
+  baris resolve ke kota yang benar, 0 mismatch (untuk 8 baris relokasi/mapping, nilai override
+  konsisten dengan `Kota` asli outlet tujuan di `outlets.csv`, jadi murni pelengkap eksplisit
+  tanpa mengubah hasil akhir). 195 test suite tetap lolos (data-only change).
+- [x] **6 relokasi "verified" di-wire ke pipeline, dikonfirmasi data owner (2026-08-11)** —
+  fisik outlet memang pindah lokasi untuk keenamnya (Tambun/KY020→Mayor Oking,
+  Antapani/KY035→Tigaraksa/KY056, Aryana Karawaci/KY046→Cadas, Ciomas/KY047→Cikarang Pusat,
+  Bantarjati Bogor/KY052→Teluk Pucung, Dukuh Zamrud/KY059→Bukit Gading Balaraja). 6 baris baru
+  ditambahkan ke `dataset/outlet_name_overrides.csv` (pola sama seperti `KY069`→`KY011`), sudah
+  diverifikasi `match_branch_to_outlet` me-resolve keenamnya dengan benar, 195 test suite tetap
+  lolos (data-only change, tidak mengubah logika kode), dan
+  `dataset/model_ready/{train,test}.parquet` sudah di-regenerate (1.417.311 train + 52.067 test
+  rows, naik dari 1.291.740+48.340 sebelumnya). Nama cabang lama sudah tidak muncul lagi di
+  output, semuanya tergabung ke kode baru — termasuk **KY056 Tigaraksa yang histori aslinya kini
+  mundur sampai 2024-01-01** (lewat Antapani) alih-alih 2024-03-01 seperti sebelumnya, berkat
+  penyambungan ini.
+- [x] **3 relokasi "pending" di-wire ke pipeline, dikonfirmasi data owner (2026-08-11)** — Condet
+  (KY028)→Grand Wisata Bekasi (Kota Bekasi), Ciputat Timur (KY055)→Citayam (Kota Depok), Cinere
+  (KY029)→Bintara (Kota Bekasi); ketiganya outlet baru pakai histori outlet lama. Ketiga outlet
+  baru didaftarkan ke `outlets.csv` (alamat/kecamatan/kota/channel dari data owner), dan 3 baris
+  mapping ditambahkan ke `outlet_name_overrides.csv`. Diverifikasi `match_branch_to_outlet`
+  me-resolve ketiganya dengan benar, 195 test suite tetap lolos, parquet di-regenerate (1.467.822
+  train + 55.046 test rows). Menarik: raw `dataset.csv` ternyata **sudah** punya kode native untuk
+  ketiga outlet baru ini (`KY070 - Cadas`, `KY071 - Citayam`, `KY072 - Bintara`) yang mulai
+  tepat setelah kode lama berhenti (Aryana Karawaci→Cadas: 2025-09-28→2025-10-03; Ciputat
+  Timur→Citayam: 2025-10-30→2025-11-07; Cinere→Bintara: 2025-11-26→2025-11-28) — mengonfirmasi
+  independen bahwa relokasi-relokasi ini nyata dan waktunya presisi.
+- [x] **Ditemukan & ditangani: fitur lokasi (`kota`/`kawasan`) ikut ter-relabel mundur untuk
+  seluruh histori cabang yang direlokasi** — karena `canonicalize_branch_names` jalan sebelum
+  `apply_region_features`/`apply_outlet_features` di `prepare_forecast_data.py`, histori
+  pra-relokasi (mis. Bintara periode 2024, saat itu masih Cinere di Kota Depok) ikut diberi label
+  `kota` **pasca**-relokasi (Kota Bekasi) untuk seluruh baris, bukan cuma baris pasca-relokasi.
+  Ini relevan karena tiap kota/daerah punya behavior demand berbeda. **Mitigasi**: fitur baru
+  `days_since_relocation` ditambahkan (`outlet_features.add_relocation_feature`, dipanggil di
+  `prepare_forecast_data.py::build_featured_dataset` setelah `apply_outlet_features`) — nilai
+  negatif untuk baris pra-relokasi, 0 di hari relokasi, positif setelahnya; `NaN` untuk cabang
+  yang tidak direlokasi. Dihitung dari `RELOCATION_DATES` (`outlet_features.py`), keyed by nama
+  outlet kanonik. Test baru: `TestAddRelocationFeature` (6 test, TDD merah→hijau) di
+  `test_outlet_features.py`. Diverifikasi di output akhir: **9/9 cabang relokasi** sekarang punya
+  nilai (sebelumnya sempat kelewat satu — Condet→Grand Wisata Bekasi — ketahuan pas verifikasi
+  jumlah cabang di parquet, sudah ditambahkan).
+
+  Dua jenis tanggal, beda presisi:
+  - **4 cabang dengan tanggal exact** (Antapani→Tigaraksa, Aryana Karawaci→Cadas, Ciputat
+    Timur→Citayam, Cinere→Bintara) — raw `dataset.csv` sudah punya kode native untuk outlet
+    barunya yang mulai tepat setelah kode lama berhenti, jadi tanggal transisinya langsung
+    terbaca dari data (lihat detail di poin relokasi "pending" di atas).
+  - **5 cabang dengan tanggal lower-bound proxy** (Tambun→Mayor Oking, Ciomas→Cikarang Pusat,
+    Bantarjati Bogor→Teluk Pucung, Dukuh Zamrud→Bukit Gading Balaraja, Condet→Grand Wisata
+    Bekasi) — **dikonfirmasi data owner (2026-08-11): relokasi fisiknya sudah terjadi saat ini,
+    tapi terjadi setelah cakupan dataset berakhir** (kode lama tidak pernah berhenti muncul
+    sampai baris terakhir data), jadi tanggal exact tidak bisa diturunkan. Dipakai tanggal
+    **terakhir kode lama muncul di data** sebagai lower bound (mis. Tambun: 2025-12-31) — semua
+    baris dapat `days_since_relocation` negatif yang benar arahnya, tapi magnitude-nya
+    under-estimate (jarak asli ke relokasi pasti lebih jauh). Didokumentasikan jelas di komentar
+    `RELOCATION_DATES`; perlu di-re-derive begitu ada refresh data yang menunjukkan kode lama
+    berhenti / kode baru muncul.
+
+  Ini murni fitur data-prep (fakta tanggal) — keputusan cara pakainya di modeling (down-weight
+  histori lama, dsb.) didelegasikan ke tahap modeling. Dibahas juga implikasinya untuk LSTM: NaN
+  bermasalah untuk neural net (perlu imputasi eksplisit, beda dari tree-based model yang native
+  handle NaN), dan sliding window yang mencakup tanggal transisi berpotensi mencampur pola
+  demand kota lama+baru dalam satu sequence — dicatat sebagai pertimbangan modeling, bukan
+  blocker data-prep.
+- [x] **Provenance `kawasan`/`hari_pengiriman` di `dataset/outlet_mapping.csv` dikonfirmasi data
+  owner (2026-08-10)** — data ini resmi dari tim SCM (jadwal pengiriman per kawasan), bukan
+  asumsi/tebakan manual. Target `target_lead_time_cumulative` yang dibangun darinya (lihat 🔴 di
+  atas) aman dipakai untuk semua cabang.
+- [x] **1 cabang di bawah threshold completeness 95%** — KY056 (Kebuli Yaman Tigaraksa), 92,3%
+  (`eda.ipynb` §4, konsisten di run 2026-08-07). **Dikonfirmasi data owner (2026-08-10): restoran
+  tutup sementara** selama periode kosong tersebut, bukan gap pelaporan atau outlet baru — gap-nya
+  satu blok kontinu 52 hari (2024-10-01 s/d 2024-11-21), data lengkap sebelum dan sesudahnya
+  (2024-03-01 s/d 2024-09-30 dan 2024-11-22 s/d 2025-12-31). Tidak perlu tindakan lebih lanjut di
+  data-prep — 52 hari kosong itu representasi valid dari toko tutup, bukan data hilang yang perlu
+  diisi/diperbaiki. Kalau tahap modeling nanti sensitif ke gap operasional seperti ini (mis. lag/
+  rolling features yang melewati periode tutup), pertimbangkan sebagai catatan desain modeling,
+  bukan lagi isu data-prep.
+- [x] **27 dari 109 SKU (24,8%) tercatat di lebih dari satu `Kategori Barang`** sepanjang waktu
   (`eda.ipynb` §2, mis. `Minuman`→`Minuman - FG`, `Barang Semi FG (WIP-2)`→`Barang Jadi (FG)`,
-  `Snack`→`Snack (FG)`). Pola pasangannya konsisten, terlihat seperti rename taksonomi kategori
-  pertengahan 2024, bukan noise input. **Sudah ditangani di kode** — `normalize_items.py` kini
-  punya `canonicalize_item_categories` (dipanggil di `load_and_normalize`, sebelum
-  `reaggregate_daily`), yang membekukan tiap `Kode Barang` ke `Kategori Barang` dari baris
-  ber-`Tanggal` terbaru, dengan test di `TestCanonicalizeItemCategories` +
-  `TestLoadAndNormalize.test_canonicalizes_category_relabel_across_time_end_to_end`
-  (`test_normalize_items.py`). Yang masih kurang cuma **sign-off data owner**: keputusan "pakai
-  kategori terbaru" ini masih asumsi dari pola tanggal, belum dikonfirmasi eksplisit bahwa ini
-  memang rename taksonomi disengaja (bukan, misalnya, dua produk berbeda yang kebetulan pakai
-  kode SKU yang sama).
-- [ ] **Negative Kuantitas** — 0 baris di run terakhir (anomali KY011 2024-02-29 sudah resolved,
-  `eda.ipynb` §8 soft-check), tapi `CLAUDE.md` menegaskan ini belum dikonfirmasi permanen ke
-  data owner. **Jalankan ulang soft-check ini setiap kali `dataset.csv` di-refresh bulanan** —
-  jangan asumsikan aman selamanya hanya karena sudah bersih bulan ini.
+  `Snack`→`Snack (FG)`). **Dikonfirmasi data owner (2026-08-10) dengan detail per-pasangan**,
+  ternyata bukan satu aturan seragam:
+  - `Minuman`↔`Minuman - FG` (16 SKU) dan `Snack`↔`Snack (FG)` (2 SKU): **kategori yang sama**,
+    cuma beda label lama/baru — pakai kategori terbaru (varian `(FG)`) untuk seluruh histori.
+  - `Barang Semi FG (WIP-2)`↔`Barang Jadi (FG)` (8 SKU, mis. `FGS-00001` Ayam Kebuli, `FGS-00002`
+    Kambing Kebuli): **kategori yang memang berbeda** (bukan rename) — TIDAK boleh disamakan,
+    tetap time-varying sesuai kategori tercatat aslinya per baris.
+  - `FGS-00014` (Club Mineral 600ml): sempat tercatat WIP-2 di awal tapi **seharusnya selalu
+    Minuman - FG** — override eksplisit per-SKU, bukan mengikuti pola pasangan mana pun.
+  - Agregasi juga harus menghormati kategori final ini (dikonfirmasi user).
+
+  Kode diupdate: `normalize_items.py::canonicalize_item_categories` sekarang pakai
+  `CATEGORY_SYNONYMS` (`{"Minuman": "Minuman - FG", "Snack": "Snack (FG)"}`) untuk collapse
+  pasangan yang benar-benar sinonim, dan `EXPLICIT_CATEGORY_OVERRIDES`
+  (`{"FGS-00014": "Minuman - FG"}`) untuk override satu SKU — SKU dengan kategori yang genuinely
+  berbeda (WIP-2/FG) dibiarkan time-varying, tidak lagi dipaksa ke kategori terbaru seperti
+  perilaku lama. Verifikasi di data penuh: 8 SKU WIP-2/FG tetap 2 kategori berbeda per baris,
+  semua SKU Minuman/Snack + `FGS-00014` collapse jadi 1 kategori. Test baru:
+  `test_leaves_wip_to_fg_transition_time_varying_not_a_rename`,
+  `test_applies_explicit_override_for_club_mineral_600ml`
+  (`TestCanonicalizeItemCategories`, `test_normalize_items.py`) — ditulis TDD (merah dulu, lalu
+  hijau), plus 195 test suite penuh lolos tanpa regresi. `dataset/model_ready/{train,test}.parquet`
+  sudah di-regenerate ulang (`python3 -m utils.prepare_forecast_data`) dengan logika baru ini.
+- [x] **Negative Kuantitas dikonfirmasi data owner (2026-08-10)** — root cause anomali KY011
+  2024-02-29 adalah **salah input dari sistem sumbernya**, dan `dataset/excel/feb-24_No_Minus.xlsx`
+  (dipakai via `dataset/csv/feb-24.csv`) dikonfirmasi sebagai versi final yang benar. Verifikasi:
+  0 baris negatif di `dataset/csv/feb-24.csv` (45.581 baris) maupun `dataset/dataset.csv`
+  (693.563 baris); 26 baris KY011 tanggal 29 Feb 2024 semuanya positif. **Tetap jalankan ulang
+  soft-check ini (`eda.ipynb` §8) setiap kali `dataset.csv` di-refresh bulanan** — konfirmasi ini
+  soal insiden yang sudah terjadi, bukan jaminan sistem sumber tidak akan salah input lagi ke
+  depannya.
 
 ## 🟡 Gap engineering yang belum tergarap (tidak butuh keputusan data owner, murni kerjaan kode)
 
@@ -215,15 +280,12 @@ oleh yang paham datanya".
 ## Prioritas & urutan pengerjaan yang disarankan
 
 1. ~~**🔴 Selesaikan integrasi region/lead-time**~~ — selesai 2026-08-08 (lihat §🔴 di atas).
-   Provenance `outlet_mapping.csv` masih belum dikonfirmasi data owner (🟠 di bawah) — pipeline
-   berjalan di atas data as-is sesuai arahan eksplisit, bukan menunggu konfirmasi.
-2. **🟠 Kumpulkan sisa konfirmasi data owner** dalam satu putaran (8 baris kota override,
-   outlet relocation (67.020 baris/9,66% berpotensi hilang), kategori 27-SKU, KY056, provenance
-   `kawasan`/`hari_pengiriman`) — banyak yang bisa ditanyakan sekaligus ke orang yang sama.
-   (item `xxx.`, cabang dikecualikan, dan mapping `KY069`→`KY011`/`TOD M1 Bandara`→`KY051` sudah
-   dikonfirmasi.)
-3. **🟡 Kerjakan gap engineering** yang tidak butuh menunggu jawaban (QA assertion ke script,
-   re-run parquet) sambil menunggu 2; canonicalize kategori setelah dapat jawabannya.
+2. ~~**🟠 Kumpulkan konfirmasi data owner**~~ — semua item sudah dikonfirmasi & di-wire, termasuk
+   seluruh 9 relokasi outlet (6 verified + 3 pending, lihat §🟠 di atas) dan fitur mitigasi
+   `days_since_relocation` (9/9 cabang terisi — 4 tanggal exact, 5 lower-bound proxy pending
+   re-derivation begitu data owner punya tanggal exact atau data refresh menunjukkan transisinya).
+3. **🟡 Kerjakan gap engineering** yang tersisa (QA assertion ke script) — tidak ada lagi yang
+   menunggu jawaban data owner.
 4. **🟢 Jalankan sanity check rutin** setiap refresh dataset bulanan berikutnya — terutama
    `check_year_coverage` begitu data 2026 mulai masuk.
 

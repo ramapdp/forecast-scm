@@ -86,6 +86,21 @@ def canonicalize_item_names(
     return result
 
 
+CATEGORY_SYNONYMS: dict[str, str] = {
+    "Minuman": "Minuman - FG",
+    "Snack": "Snack (FG)",
+}
+
+# FGS-00014 (Club Mineral 600ml) was recorded as WIP-2 early on but is
+# actually a drink, confirmed by data owner (2026-08-10) — Barang Semi FG
+# (WIP-2) and Barang Jadi (FG) are genuinely different categories (unlike
+# Minuman/Snack above), so this SKU needs an explicit override rather than
+# falling under the synonym-collapse rule.
+EXPLICIT_CATEGORY_OVERRIDES: dict[str, str] = {
+    "FGS-00014": "Minuman - FG",
+}
+
+
 def canonicalize_item_categories(
     df: pd.DataFrame,
     code_col: str = "Kode Barang",
@@ -93,9 +108,20 @@ def canonicalize_item_categories(
     date_col: str = "Tanggal",
 ) -> pd.DataFrame:
     result = df.copy()
-    latest_rows = result.loc[result.groupby(code_col)[date_col].idxmax()]
-    canonical = latest_rows.set_index(code_col)[category_col]
-    result[category_col] = result[code_col].map(canonical)
+    normalized = result[category_col].replace(CATEGORY_SYNONYMS)
+
+    # Only collapse a SKU's history to one category when every recorded
+    # category is the same after synonym normalization (e.g. Minuman /
+    # Minuman - FG). Genuinely different categories (e.g. WIP-2 vs Barang
+    # Jadi (FG)) are left time-varying, as recorded.
+    single_category = normalized.groupby(result[code_col]).transform("nunique") == 1
+    result.loc[single_category, category_col] = normalized.loc[single_category]
+
+    override_mask = result[code_col].isin(EXPLICIT_CATEGORY_OVERRIDES)
+    result.loc[override_mask, category_col] = result.loc[override_mask, code_col].map(
+        EXPLICIT_CATEGORY_OVERRIDES
+    )
+
     return result
 
 
