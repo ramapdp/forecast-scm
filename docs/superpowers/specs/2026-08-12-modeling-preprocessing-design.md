@@ -167,16 +167,41 @@ are unit-testable and callable from the notebook.
 
 ### 3.1 `add_event_flag()` → `is_event_driven`
 
-Reads a new file `dataset/event_driven_items.csv` with 70 rows
-(`Kode Barang`, `Nama Barang`, `is_event_driven`), filled in by the data owner.
-A pre-filled draft will be prepared with Aqiqah items and Box Loyang variants
-marked `true` for the data owner to correct.
+Reads `dataset/event_driven_items.csv` — 70 rows, one per SKU, filled in by the
+data owner. Only `is_event_driven` is authoritative; the remaining columns are
+supporting evidence to make the decision quick.
 
-Not derived by a name rule: `Lunch Box` (`PCG-00001`) contains the word "Box"
-but is ordinary daily packaging, while `Lunch Box Aqiqah` (`PCG-00002`) is
-event-driven. Candidate event SKUs visible in the data are `FGS-00018` and
-`FGS-00034` (Kambing Kebuli Aqiqah Betina / Jantan), `PCG-00002`, and
-`PCG-00006`/`00007`/`00008` (Box Loyang Mini / Sedang / Besar).
+A draft was generated on 2026-08-12 (semicolon-delimited, UTF-8-BOM, matching
+the repo's other data files) with rows ranked by `prioritas_cek`: 14 rows need a
+real decision, 17 warrant a glance, 39 are clearly not event-driven.
+
+**The draft is derived from demand shape, not from item names**, because names
+proved unreliable in both directions. The signature of event ordering is *rare
+but bulk*: `adi_rata2 >= 50` (moves roughly once every 50+ days) **and**
+`rata2_saat_bergerak >= 30` (ships dozens of units when it does). Slow-moving
+ordinary items share the first property but not the second — they move one or
+two units at a time.
+
+Two corrections the data produced against a name-based guess:
+
+- **Box Loyang (`PCG-00006`/`00007`/`00008`) is almost certainly *not*
+  event-driven.** Its statistics are identical to plain Loyang
+  (`PCG-00003`/`00004`/`00005`) and Cup Sambal Loyang
+  (`PCG-00011`/`00012`/`00013`) — 28.4% zero days, ADI 1.6, 59 branches for the
+  Mini size. All three families move as a bundle, and Loyang Mini is close to
+  smooth daily demand. Drafted `false`, flagged for confirmation.
+- **`PCG-00027` (Mika Bento) and `PCG-00028` (Cup 60 ml) probably *are*
+  event-driven**, despite names that suggest routine packaging. Both show the
+  bulk signature — ADI 58.6 / 88.3 with mean 38.5 / 84.3 units when moving —
+  the same shape as the confirmed Aqiqah items. Drafted `true`, flagged for
+  confirmation.
+
+Confirmed-by-name event SKUs, which the demand shape also supports:
+`FGS-00018` and `FGS-00034` (Kambing Kebuli Aqiqah Betina / Jantan, ADI 85.9 /
+132.5) and `PCG-00002` (Lunch Box Aqiqah, ADI 75.0).
+
+A name rule would also mis-handle `Lunch Box` (`PCG-00001`), which contains
+"Box" but is ordinary daily packaging.
 
 ### 3.2 `classify_pairs()` → `demand_segment`
 
@@ -387,6 +412,7 @@ by the modeling spec, not this one.
 |---|---|
 | 9 | **5 relocation dates are still lower-bound proxies** (Mayor Oking, Cikarang Pusat, Teluk Pucung, Bukit Gading Balaraja, Grand Wisata Bekasi) — need exact dates when available |
 | 10 | **`calendar_features.py` covers only 2024–2025** — must be extended before 2026 data arrives, or `check_year_coverage` raises and the pipeline fails hard |
+| 11 | **`FGS.00048` (Kambing Oven) totals 4 units across 18 months at 1 branch** — noticed while building the event-driven draft. It shares number 00048 with `FGS-00048` (Kentang Mustofa Mie Goreng), separated only by dot vs. dash; `normalize_items.py` correctly keeps them apart because the names differ, so this is not a bug. But at that volume it is a candidate for `EXCLUDED_ITEMS` alongside the other discontinued SKUs — worth asking whether the item is still sold |
 
 Only items 1 and 2 need to be chased now. The rest have workable defaults and
 can proceed in parallel.
