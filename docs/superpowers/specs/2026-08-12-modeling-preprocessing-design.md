@@ -70,8 +70,10 @@ Of those, **393 (37%) last appeared in 2025Q4**, immediately before the test
 window. There are **0 new pairs** in December, so the test set itself has no
 cold-start cases.
 
-**NaN structure.** Eight calendar-proximity columns are 84–97% null
-(`days_until_ramadan`, `days_since_eid_al_fitr`, …), `days_since_relocation` is
+**NaN structure.** Ten calendar-proximity columns are 84.6–96.7% null
+(`days_into_ramadan`, `days_until_ramadan`, and `days_since_`/`days_until_`
+pairs for Eid al-Fitr, Eid al-Adha, Independence Day, and New Year),
+`days_since_relocation` is
 84.4% null, `baseline_ratio` 14.4%, and lag/rolling columns 1.4–5.5%.
 
 **No ML dependencies exist yet.** `requirements.txt` has pandas, numpy,
@@ -313,15 +315,16 @@ Forest gets light imputation inside the adapter.
 
 Sliding window per pair producing a `(n_samples, 28, n_features)` tensor.
 
-**NaN imputation.** The eight calendar-proximity columns are only defined within
-a ±15-day window, so null means *"more than 15 days away"*. Imputing `0` would
+**NaN imputation.** The ten calendar-proximity columns are only defined within
+a ±15-day window (±30 for Ramadan), so null means *"outside that window"*.
+Imputing `0` would
 assert `days_until_eid_al_fitr = 0`, i.e. *"today is Eid"*, on 96% of rows —
 turning a useful feature into an actively harmful one. The sentinel must sit
 outside the window and preserve ordinal meaning.
 
 | Column | % null | What null means | Imputation |
 |---|---|---|---|
-| `days_until/since_*` (8 event columns) | 84–97% | outside the ±15-day window | **`30`** |
+| 10 event-proximity columns (`days_into_ramadan`, `days_until_ramadan`, and `days_since_`/`days_until_` for Eid al-Fitr, Eid al-Adha, Independence Day, New Year) | 84.6–96.7% | outside the proximity window | **`99`** — safely beyond every window, including Ramadan's ±30 |
 | `days_since_relocation` | 84.4% | branch never relocated | `0` **+ indicator `was_relocated`** |
 | `baseline_ratio` | 14.4% | pair ineligible for capping (<30 real days) | `1.0` **+ indicator `has_baseline`** |
 | `lag_*`, `roll_*` | 1.4–5.5% | series warm-up | removed by the L=28 cut |
