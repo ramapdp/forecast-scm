@@ -96,5 +96,53 @@ class TestClassifyPairs(unittest.TestCase):
         self.assertEqual(result["demand_segment"].nunique(), 1)
 
 
+class TestAssignFolds(unittest.TestCase):
+    def _frame(self, dates):
+        return pd.DataFrame({"Tanggal": pd.to_datetime(dates)})
+
+    def test_july_2025_is_fold_1(self):
+        result = modeling_prep.assign_folds(self._frame(["2025-07-15"]))
+        self.assertEqual(result.iloc[0]["fold_id"], 1)
+
+    def test_november_2025_is_fold_5(self):
+        result = modeling_prep.assign_folds(self._frame(["2025-11-15"]))
+        self.assertEqual(result.iloc[0]["fold_id"], 5)
+
+    def test_rows_before_july_2025_have_no_fold(self):
+        result = modeling_prep.assign_folds(self._frame(["2024-05-01", "2025-06-30"]))
+        self.assertTrue(result["fold_id"].isna().all())
+
+    def test_december_2025_has_no_fold_because_it_is_the_locked_test_set(self):
+        result = modeling_prep.assign_folds(self._frame(["2025-12-15"]))
+        self.assertTrue(result["fold_id"].isna().all())
+
+    def test_month_boundaries_land_in_the_right_fold(self):
+        result = modeling_prep.assign_folds(
+            self._frame(["2025-07-01", "2025-07-31", "2025-08-01"])
+        )
+        self.assertEqual(list(result["fold_id"]), [1, 1, 2])
+
+    def test_train_mask_excludes_the_validation_month_itself(self):
+        df = self._frame(["2025-06-30", "2025-07-15", "2025-08-15"])
+        mask = modeling_prep.fold_train_mask(df, fold_id=1)
+        self.assertEqual(list(mask), [True, False, False])
+
+    def test_train_mask_expands_for_later_folds(self):
+        df = self._frame(["2025-06-30", "2025-07-15", "2025-08-15"])
+        mask = modeling_prep.fold_train_mask(df, fold_id=2)
+        self.assertEqual(list(mask), [True, True, False])
+
+    def test_no_validation_row_ever_appears_in_its_own_training_mask(self):
+        df = self._frame([
+            "2025-06-15", "2025-07-15", "2025-08-15",
+            "2025-09-15", "2025-10-15", "2025-11-15",
+        ])
+        folded = modeling_prep.assign_folds(df)
+        for fold in range(1, 6):
+            train = modeling_prep.fold_train_mask(df, fold_id=fold)
+            valid = folded["fold_id"] == fold
+            self.assertFalse((train & valid).any(), f"kebocoran di fold {fold}")
+
+
 if __name__ == "__main__":
     unittest.main()
