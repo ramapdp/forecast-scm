@@ -211,5 +211,64 @@ class TestEncodeCategoricals(unittest.TestCase):
             self.assertEqual(modeling_prep.load_category_mapping(path), mapping)
 
 
+class TestImputeFeatures(unittest.TestCase):
+    def _frame(self, **overrides):
+        base = {col: [np.nan] for col in modeling_prep.EVENT_PROXIMITY_COLS}
+        base["days_since_relocation"] = [np.nan]
+        base["baseline_ratio"] = [np.nan]
+        base.update({k: [v] for k, v in overrides.items()})
+        return pd.DataFrame(base)
+
+    def test_event_proximity_nulls_become_the_sentinel_not_zero(self):
+        result = modeling_prep.impute_features(self._frame())
+        for col in modeling_prep.EVENT_PROXIMITY_COLS:
+            self.assertEqual(
+                result.iloc[0][col], modeling_prep.EVENT_PROXIMITY_SENTINEL,
+                f"{col} salah diimputasi",
+            )
+            self.assertNotEqual(result.iloc[0][col], 0.0)
+
+    def test_sentinel_is_above_the_largest_real_value(self):
+        """days_until_ramadan reaches 70 in the real data, so any sentinel at
+        or below that would be indistinguishable from a genuine observation."""
+        self.assertGreater(modeling_prep.EVENT_PROXIMITY_SENTINEL, 70)
+
+    def test_there_are_ten_event_proximity_columns(self):
+        self.assertEqual(len(modeling_prep.EVENT_PROXIMITY_COLS), 10)
+
+    def test_real_event_proximity_values_are_left_alone(self):
+        result = modeling_prep.impute_features(self._frame(days_until_ramadan=5.0))
+        self.assertEqual(result.iloc[0]["days_until_ramadan"], 5.0)
+
+    def test_missing_relocation_becomes_zero_with_a_false_indicator(self):
+        result = modeling_prep.impute_features(self._frame())
+        self.assertEqual(result.iloc[0]["days_since_relocation"], 0.0)
+        self.assertFalse(bool(result.iloc[0]["was_relocated"]))
+
+    def test_relocation_day_zero_is_distinguishable_from_never_relocated(self):
+        """0 is a legitimate value meaning 'relocated today'; without the
+        indicator it would be identical to 'never relocated'."""
+        relocated = modeling_prep.impute_features(self._frame(days_since_relocation=0.0))
+        never = modeling_prep.impute_features(self._frame())
+        self.assertEqual(
+            relocated.iloc[0]["days_since_relocation"],
+            never.iloc[0]["days_since_relocation"],
+        )
+        self.assertTrue(bool(relocated.iloc[0]["was_relocated"]))
+        self.assertFalse(bool(never.iloc[0]["was_relocated"]))
+
+    def test_missing_baseline_ratio_becomes_one_with_a_false_indicator(self):
+        result = modeling_prep.impute_features(self._frame())
+        self.assertEqual(result.iloc[0]["baseline_ratio"], 1.0)
+        self.assertFalse(bool(result.iloc[0]["has_baseline"]))
+
+    def test_no_nulls_remain_in_the_imputed_columns(self):
+        result = modeling_prep.impute_features(self._frame())
+        targets = modeling_prep.EVENT_PROXIMITY_COLS + [
+            "days_since_relocation", "baseline_ratio",
+        ]
+        self.assertFalse(result[targets].isna().any().any())
+
+
 if __name__ == "__main__":
     unittest.main()

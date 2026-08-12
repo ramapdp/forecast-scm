@@ -220,3 +220,43 @@ def save_category_mapping(mapping: dict, path: str = CATEGORY_MAPPING_FILE) -> N
 def load_category_mapping(path: str = CATEGORY_MAPPING_FILE) -> dict:
     with open(path, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+# Only defined inside their proximity window (+/-15 days, +/-30 for Ramadan),
+# so null means "outside that window" -- NOT zero, which would read as "the
+# event is today" on 84-97% of rows.
+EVENT_PROXIMITY_COLS = [
+    "days_into_ramadan",
+    "days_until_ramadan",
+    "days_since_eid_al_fitr",
+    "days_until_eid_al_fitr",
+    "days_since_eid_al_adha",
+    "days_until_eid_al_adha",
+    "days_since_independence_day",
+    "days_until_independence_day",
+    "days_since_new_year",
+    "days_until_new_year",
+]
+
+# Must exceed every genuine value. days_until_ramadan reaches 70, so 30 would
+# collide with real observations.
+EVENT_PROXIMITY_SENTINEL = 99.0
+
+
+def impute_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill the nulls a neural net cannot consume, preserving each column's
+    meaning. Tree models do not need this, but both adapters run it so the two
+    see identical values.
+    """
+    result = df.copy()
+
+    for col in EVENT_PROXIMITY_COLS:
+        result[col] = result[col].fillna(EVENT_PROXIMITY_SENTINEL)
+
+    result["was_relocated"] = result["days_since_relocation"].notna()
+    result["days_since_relocation"] = result["days_since_relocation"].fillna(0.0)
+
+    result["has_baseline"] = result["baseline_ratio"].notna()
+    result["baseline_ratio"] = result["baseline_ratio"].fillna(1.0)
+
+    return result
