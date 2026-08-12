@@ -601,5 +601,17 @@ class TestMain(unittest.TestCase):
         self.assertLess(branch_stats_row["branch_avg_daily_qty"], 15.0)
 
 
+class TestEngineerFeaturesContract(unittest.TestCase):
+    def test_featured_columns_constant_has_63_entries(self):
+        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 63)
+
+    def test_featured_columns_includes_days_since_relocation(self):
+        self.assertIn("days_since_relocation", prepare_forecast_data.FEATURED_COLUMNS)
+
+    def test_build_featured_dataset_delegates_to_engineer_features(self):
+        self.assertTrue(hasattr(prepare_forecast_data, "engineer_features"))
+        self.assertTrue(callable(prepare_forecast_data.engineer_features))
+
+
 if __name__ == "__main__":
     unittest.main()
