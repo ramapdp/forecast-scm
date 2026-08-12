@@ -173,6 +173,15 @@ Still open before the data can be fully trusted for modelling:
   on 2026-08-10 as old code/name for the same branch, not distinct branches.)
 - The 7 QA assertions currently live only in the notebook — a plain
   `python3 -m utils.prepare_forecast_data` run does not re-verify them.
+- `dataset/outlet_mapping.csv` was missing 3 branches (Kebuli Yaman Bintara,
+  Citayam, Grand Wisata Bekasi — matched fine against `outlets.csv` for
+  `kota`/online-channel features, but absent from this file), leaving
+  `kawasan`, `hari_pengiriman`, `lead_time_days`, and
+  `target_lead_time_cumulative` null for their ~82k rows. Added as of
+  2026-08-11 with `kawasan=2`/`hari_pengiriman=Selasa dan Jumat`, inferred
+  from every other Kota Depok/Kota Bekasi branch in the file (all of which
+  share that same region/schedule) — not yet confirmed by the data owner.
+  `kawasan` is now non-null for all matched branches in `featured.parquet`.
 
 ## 4. Expected modelling phase (not yet built)
 
