@@ -18,6 +18,28 @@ LAG_DAYS = [1, 2, 3, 7, 14, 21, 28]
 ROLLING_WINDOWS = [7, 14, 28]
 MODEL_READY_DIR = str(BASE_DIR / "dataset/model_ready")
 
+# The exact columns engineer_features() produces. Asserted by main() so a
+# feature added on one code path but not the other fails loudly instead of
+# silently producing a short parquet.
+FEATURED_COLUMNS = [
+    "Kode Barang", "Nama Cabang", "Tanggal", "Kuantitas", "Kategori Barang",
+    "Nama Barang", "day_of_week", "day_of_month", "month", "is_weekend",
+    "is_national_holiday", "is_ramadan", "days_into_ramadan", "days_until_ramadan",
+    "is_eid_al_fitr", "days_since_eid_al_fitr", "days_until_eid_al_fitr",
+    "is_eid_al_adha", "days_since_eid_al_adha", "days_until_eid_al_adha",
+    "is_independence_day", "days_since_independence_day", "days_until_independence_day",
+    "is_new_year", "days_since_new_year", "days_until_new_year",
+    "baseline_ratio", "is_spike", "Kuantitas_capped",
+    "target_h1", "target_h2", "target_h3", "target_h4", "target_h5", "target_h6", "target_h7",
+    "lag_1", "lag_2", "lag_3", "lag_7", "lag_14", "lag_21", "lag_28",
+    "roll_mean_7", "roll_std_7", "roll_mean_14", "roll_std_14",
+    "roll_mean_28", "roll_std_28",
+    "kawasan", "hari_pengiriman", "lead_time_days", "kota",
+    "has_shopee", "has_gofood", "has_grabfood", "can_order_online",
+    "target_lead_time_cumulative", "days_since_relocation",
+    "branch_avg_daily_qty", "branch_demand_cv", "branch_volume_tier", "branch_age_days",
+]
+
 
 def add_targets(
     df: pd.DataFrame,
@@ -192,6 +214,40 @@ def export_featured(df: pd.DataFrame, output_dir: str = MODEL_READY_DIR) -> None
     df.to_parquet(out / "featured.parquet", index=False)
 
 
+def engineer_features(
+    df: pd.DataFrame,
+    outlets_df: pd.DataFrame,
+    overrides_df: pd.DataFrame,
+    region_df: pd.DataFrame,
+    cutoff: pd.Timestamp = TEST_START,
+    min_pair_history: int = outlier_handling.MIN_PAIR_HISTORY,
+    spike_ratio_threshold: float = outlier_handling.SPIKE_RATIO_THRESHOLD,
+) -> pd.DataFrame:
+    """Single definition of the feature-engineering step order.
+
+    Both the scripted pipeline and notebook/data-processing.ipynb call this,
+    so a step added here can never be missed by one of the two paths.
+    """
+    df = calendar_features.add_calendar_features(df)
+    pair_baseline = outlier_handling.compute_pair_baseline(
+        df, cutoff=cutoff, min_history=min_pair_history
+    )
+    df = outlier_handling.apply_outlier_capping(
+        df, pair_baseline, ratio_threshold=spike_ratio_threshold
+    )
+    df = add_targets(df)
+    df = outlet_features.apply_region_features(df, region_df)
+    df = apply_outlet_features(df, outlets_df, overrides_df)
+    df = outlet_features.add_relocation_feature(df)
+    df = add_lead_time_target(df)
+    df = add_lag_features(df, qty_col="Kuantitas_capped")
+    df = add_rolling_features(df, qty_col="Kuantitas_capped")
+    branch_stats = compute_branch_stats(df, cutoff=cutoff, qty_col="Kuantitas_capped")
+    df = apply_branch_stats(df, branch_stats)
+    df = add_branch_age_days(df)
+    return df
+
+
 def build_featured_dataset(
     input_path: str = normalize_items.RAW_DATA_FILE,
     min_history_days: int = build_panel.MIN_HISTORY_DAYS,
@@ -211,24 +267,39 @@ def build_featured_dataset(
     df = normalize_items.reaggregate_daily(df)
     df = build_panel.build_dense_panel(df)
     df = build_panel.filter_min_history(df, cutoff=cutoff, min_days=min_history_days)
-    df = calendar_features.add_calendar_features(df)
-    pair_baseline = outlier_handling.compute_pair_baseline(
-        df, cutoff=cutoff, min_history=min_pair_history
+    return engineer_features(
+        df,
+        outlets_df=outlets_df,
+        overrides_df=overrides_df,
+        region_df=region_df,
+        cutoff=cutoff,
+        min_pair_history=min_pair_history,
+        spike_ratio_threshold=spike_ratio_threshold,
     )
-    df = outlier_handling.apply_outlier_capping(
-        df, pair_baseline, ratio_threshold=spike_ratio_threshold
+
+
+def run_qa_checks(df: pd.DataFrame) -> None:
+    """Assertions that previously lived only in notebook/data-processing.ipynb.
+
+    Called from main() so the scripted path is verified too. Raises
+    AssertionError with an Indonesian message naming the failure.
+    """
+    assert (df["Kuantitas"] >= 0).all(), "Ditemukan Kuantitas negatif"
+
+    dupes = df.duplicated(subset=["Kode Barang", "Nama Cabang", "Tanggal"]).sum()
+    assert dupes == 0, f"Ditemukan {dupes} baris duplikat (item, cabang, tanggal)"
+
+    assert (df["Kuantitas_capped"] <= df["Kuantitas"]).all(), (
+        "Kuantitas_capped melebihi Kuantitas mentah"
     )
-    df = add_targets(df)
-    df = outlet_features.apply_region_features(df, region_df)
-    df = apply_outlet_features(df, outlets_df, overrides_df)
-    df = outlet_features.add_relocation_feature(df)
-    df = add_lead_time_target(df)
-    df = add_lag_features(df, qty_col="Kuantitas_capped")
-    df = add_rolling_features(df, qty_col="Kuantitas_capped")
-    branch_stats = compute_branch_stats(df, cutoff=cutoff, qty_col="Kuantitas_capped")
-    df = apply_branch_stats(df, branch_stats)
-    df = add_branch_age_days(df)
-    return df
+
+    assert (df["kota"] != "Unknown").all(), "Ditemukan cabang dengan kota 'Unknown'"
+
+    assert df["kawasan"].notna().all(), "Ditemukan cabang tanpa kawasan"
+
+    kota_per_cabang = df.groupby("Nama Cabang", observed=True)["kota"].nunique()
+    bad = kota_per_cabang[kota_per_cabang > 1]
+    assert bad.empty, f"Cabang memetakan ke lebih dari satu kota: {list(bad.index)}"
 
 
 def main(
@@ -252,6 +323,9 @@ def main(
         min_pair_history=min_pair_history,
         spike_ratio_threshold=spike_ratio_threshold,
     )
+    run_qa_checks(df)
+    missing = [c for c in FEATURED_COLUMNS if c not in df.columns]
+    assert not missing, f"Kolom hilang dari featured dataset: {missing}"
     export_featured(df, output_dir)
     train, test = split_train_test(df, cutoff=cutoff)
     export_splits(train, test, output_dir)

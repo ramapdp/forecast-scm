@@ -1,9 +1,11 @@
 # Data Processing & Modelling Pipeline Overview
 
 This document explains, end to end, how raw transactional exports become
-model-ready data, and what the (not-yet-built) modelling phase is expected to
-do with it. For the detailed design rationale behind individual stages, see
-the dated specs in `docs/superpowers/specs/`.
+model-ready data — through cleaning, feature engineering, and the
+modeling-preprocessing stage that feeds XGBoost, Random Forest, and LSTM — and
+what the model-training phase, which is not yet built, is expected to do with
+it. For the detailed design rationale behind individual stages, see the dated
+specs in `docs/superpowers/specs/`.
 
 ## 1. Inputs
 
@@ -128,13 +130,30 @@ the whole thing end to end, no QA assertions). Order:
    test window when the target date would fall past 2025-12-31.
 11. **Export splits** — `export_splits` writes `dataset/model_ready/train.parquet`
     and `dataset/model_ready/test.parquet`.
-12. **QA checks** (notebook only, not run by the plain script) — row-count
-    sanity vs. the panel, no duplicate (item, branch, date) rows, no negative
-    `Kuantitas`, Ramadan/Eid spot-checks on known dates, a lag/rolling-window
-    leakage spot-check, outlet-join sanity checks (no `kota == "Unknown"`,
-    no branch mapping to more than one city), no branch missing `kawasan`,
-    and split-integrity checks in `train_test_split.ipynb` (no dates crossing
-    the cutoff wrong, target NaN rates near the boundary).
+12. **QA checks** — `prepare_forecast_data.run_qa_checks()` runs from both the
+    script and the notebook: no negative `Kuantitas`, no duplicate
+    (item, branch, date) rows, `Kuantitas_capped` never exceeding raw, no
+    `kota == "Unknown"`, no branch missing `kawasan`, and no branch mapping to
+    more than one city. `main()` additionally asserts the output carries every
+    column in `FEATURED_COLUMNS` (63). Notebook-only extras remain: a
+    lag/rolling leakage spot-check, per-outlet date ranges, the visual QA
+    section, and split-integrity checks in `train_test_split.ipynb`.
+13. **Modeling preprocessing** (`utils/modeling_prep.py`, run via
+    `notebook/modeling_prep.ipynb` or `python3 -m utils.modeling_prep`) —
+    adds `is_event_driven` (per-SKU, from `dataset/event_driven_items.csv`),
+    `demand_segment` (Syntetos-Boylan ADI/CV², computed from the training
+    period only), `fold_id` (five expanding walk-forward folds over Jul–Nov
+    2025; December stays unlabelled as the locked test set), meaning-preserving
+    NaN imputation with the indicator columns `was_relocated` / `has_baseline`,
+    and integer categorical indices with the mapping persisted to
+    `dataset/model_ready/category_mapping.json`. Exports
+    `dataset/model_ready/model_input.parquet` (1,522,868 rows × 75 columns).
+14. **Model adapters** — `to_tabular()` for XGBoost/Random Forest and
+    `to_sequences()` for the LSTM (28-day windows ending at the prediction row
+    inclusive). Both drop each pair's first 28 warm-up rows, which costs 5.48%
+    of training rows and zero test rows. `validate_contract()` asserts both
+    expose identical `(pair, date)` sets, targets, and fold assignments, so a
+    model comparison cannot silently rest on different row sets.
 
 ```
 raw .xlsx/.csv
@@ -153,14 +172,26 @@ raw .xlsx/.csv
   → export_featured            (dataset/model_ready/featured.parquet)
   → split_train_test → export_splits
   → dataset/model_ready/{train,test}.parquet
+
+  → modeling_prep.py           (event flag → demand segment → folds →
+                                 imputation → categorical encoding)
+  → export_model_input         (dataset/model_ready/model_input.parquet)
+  → to_tabular()   → XGBoost, Random Forest
+    to_sequences() → LSTM          (bound by validate_contract())
 ```
+
+Stages 1–12 are defined once each: `build_featured_dataset()` composes the
+load→panel half, and `engineer_features()` the feature half. The notebook calls
+those functions rather than re-listing their steps, so the two paths cannot
+drift apart (they previously did — the notebook's hand-copied sequence missed
+`add_relocation_feature`, silently exporting a 62-column `featured.parquet`).
 
 ## 3. What's already model-ready vs. still open
 
-Fully implemented and verified against the actual parquet output: all 12
+Fully implemented and verified against the actual parquet output: all 14
 stages above, including outlet/location features, region/lead-time features,
-the cumulative lead-time target, and outlier/demand-spike handling (these are
-already wired into `prepare_forecast_data.py`, not a pending addition).
+the cumulative lead-time target, outlier/demand-spike handling, and the
+modeling-preprocessing stage with its two adapters.
 
 Still open before the data can be fully trusted for modelling:
 
@@ -171,8 +202,20 @@ Still open before the data can be fully trusted for modelling:
   duplicate-branch mappings in the same file — `KY069` → `KY011` "Bekasi
   Galaxy" and `TOD M1 Bandara` → `KY051` — were confirmed by the data owner
   on 2026-08-10 as old code/name for the same branch, not distinct branches.)
-- The 7 QA assertions currently live only in the notebook — a plain
-  `python3 -m utils.prepare_forecast_data` run does not re-verify them.
+- `dataset/event_driven_items.csv` is a draft derived from demand shape, not
+  yet confirmed by the data owner. 14 of the 70 SKUs need a real decision —
+  see the spec's Part 6 for the three questions that resolve them.
+- The target service level (which quantile the models are trained against,
+  default 0.9, possibly higher for FG than Packaging) is unconfirmed.
+- `dataset/outlet_mapping.csv` was missing 3 branches (Kebuli Yaman Bintara,
+  Citayam, Grand Wisata Bekasi — matched fine against `outlets.csv` for
+  `kota`/online-channel features, but absent from this file), leaving
+  `kawasan`, `hari_pengiriman`, `lead_time_days`, and
+  `target_lead_time_cumulative` null for their ~82k rows. Added as of
+  2026-08-11 with `kawasan=2`/`hari_pengiriman=Selasa dan Jumat`, inferred
+  from every other Kota Depok/Kota Bekasi branch in the file (all of which
+  share that same region/schedule) — not yet confirmed by the data owner.
+  `kawasan` is now non-null for all matched branches in `featured.parquet`.
 
 ## 4. Expected modelling phase (not yet built)
 
@@ -180,19 +223,32 @@ Everything below is intentionally out of scope for the data-prep pipeline
 and remains to be designed/implemented separately:
 
 - **Model comparison**: Random Forest vs. XGBoost vs. LSTM, forecasting
-  `target_h1`…`target_h7` at (item, branch) daily granularity.
-- **Categorical encoding strategy** for `Kode Barang`, `Nama Cabang`,
-  `Kategori Barang`, `kota` — currently exported as plain, unencoded
-  identifiers; each model family will need its own encoding choice
-  (e.g. target/frequency encoding for trees, embeddings for LSTM).
-- **LSTM-specific prep**: sequence windowing per (item, branch) pair and
-  numeric feature scaling — not needed for tree-based models but required
-  for a recurrent model.
-- **Validation strategy**: only a single December-2025 holdout exists today;
-  a rolling-window / walk-forward validation scheme is a likely follow-up
-  for more robust model selection.
+  `target_lead_time_cumulative` — total demand until the next delivery — at
+  (item, branch) daily granularity. `target_h1`…`target_h4` are retained as
+  auxiliary targets so a prediction can be decomposed day by day for the SCM
+  team; `target_h5`…`target_h7` go unused because `lead_time_days` never
+  exceeds 4.
+- **Quantile (pinball) loss** rather than mean regression: a stockout costs
+  more than overstock, especially for FG, and a mean forecast stocks out
+  roughly half the time by construction. All three families support this —
+  XGBoost via `reg:quantileerror`, Random Forest via quantile forests, LSTM
+  via a custom pinball loss. Training may use `log1p` (both adapters accept
+  `log_target`), which is bias-free here because quantiles are equivariant
+  under monotonic transforms.
+- **Per-segment evaluation**: metrics reported by `demand_segment`, not just
+  globally. 75.7% of pairs are intermittent or lumpy, so a single global MAE
+  is dominated by pairs where predicting zero is easy.
+- **Explainability**: day-by-day decomposition for all models, plus SHAP for
+  the winner. LSTM has no TreeSHAP equivalent, so if it wins on accuracy its
+  weaker explainability is part of the recommendation, not a disqualification.
 - **Cold-start / fallback handling**: (item, branch) pairs dropped by the
   60-day minimum-history filter currently have no forecast at all — a
-  fallback strategy (e.g. category-level averages) is undecided.
-- **Evaluation metrics & horizon weighting**: how h1 vs. h7 forecast error
-  should be weighted/compared across models is not yet defined.
+  fallback strategy (e.g. category-level averages) is undecided. Separately,
+  1,059 of 2,979 pairs stopped appearing before December 2025 and are
+  therefore never evaluated.
+- **Evaluation metrics**: how pinball loss, fill rate, and waste should be
+  weighted against each other is not yet defined.
+
+Now implemented and no longer open: categorical encoding, LSTM sequence
+windowing and scaling, and the walk-forward validation scheme — see stages
+13–14 above.

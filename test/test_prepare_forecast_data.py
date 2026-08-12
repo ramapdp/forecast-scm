@@ -601,5 +601,71 @@ class TestMain(unittest.TestCase):
         self.assertLess(branch_stats_row["branch_avg_daily_qty"], 15.0)
 
 
+class TestEngineerFeaturesContract(unittest.TestCase):
+    def test_featured_columns_constant_has_63_entries(self):
+        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 63)
+
+    def test_featured_columns_includes_days_since_relocation(self):
+        self.assertIn("days_since_relocation", prepare_forecast_data.FEATURED_COLUMNS)
+
+    def test_build_featured_dataset_delegates_to_engineer_features(self):
+        self.assertTrue(hasattr(prepare_forecast_data, "engineer_features"))
+        self.assertTrue(callable(prepare_forecast_data.engineer_features))
+
+
+def _qa_frame():
+    """Minimal frame that satisfies every run_qa_checks assertion."""
+    return pd.DataFrame({
+        "Kode Barang": ["FGS-00001", "FGS-00001"],
+        "Nama Cabang": ["KY001 - A", "KY001 - A"],
+        "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+        "Kuantitas": [10.0, 12.0],
+        "Kuantitas_capped": [10.0, 12.0],
+        "kota": ["Kota Tangerang", "Kota Tangerang"],
+        "kawasan": [1, 1],
+    })
+
+
+class TestRunQaChecks(unittest.TestCase):
+    def test_passes_on_a_clean_frame(self):
+        self.assertIsNone(prepare_forecast_data.run_qa_checks(_qa_frame()))
+
+    def test_rejects_negative_kuantitas(self):
+        df = _qa_frame()
+        df.loc[0, "Kuantitas"] = -1.0
+        with self.assertRaisesRegex(AssertionError, "negatif"):
+            prepare_forecast_data.run_qa_checks(df)
+
+    def test_rejects_duplicate_pair_date_rows(self):
+        df = _qa_frame()
+        df.loc[1, "Tanggal"] = df.loc[0, "Tanggal"]
+        with self.assertRaisesRegex(AssertionError, "duplikat"):
+            prepare_forecast_data.run_qa_checks(df)
+
+    def test_rejects_capped_exceeding_raw(self):
+        df = _qa_frame()
+        df.loc[0, "Kuantitas_capped"] = 999.0
+        with self.assertRaisesRegex(AssertionError, "capped"):
+            prepare_forecast_data.run_qa_checks(df)
+
+    def test_rejects_unknown_kota(self):
+        df = _qa_frame()
+        df.loc[0, "kota"] = "Unknown"
+        with self.assertRaisesRegex(AssertionError, "kota"):
+            prepare_forecast_data.run_qa_checks(df)
+
+    def test_rejects_null_kawasan(self):
+        df = _qa_frame()
+        df.loc[0, "kawasan"] = None
+        with self.assertRaisesRegex(AssertionError, "kawasan"):
+            prepare_forecast_data.run_qa_checks(df)
+
+    def test_rejects_branch_mapped_to_two_cities(self):
+        df = _qa_frame()
+        df.loc[1, "kota"] = "Kota Bekasi"
+        with self.assertRaisesRegex(AssertionError, "lebih dari satu kota"):
+            prepare_forecast_data.run_qa_checks(df)
+
+
 if __name__ == "__main__":
     unittest.main()
