@@ -418,6 +418,52 @@ class TestLogTarget(unittest.TestCase):
         restored = modeling_prep.inverse_log_target(np.log1p(original))
         self.assertTrue(np.allclose(restored, original))
 
+    def test_contract_still_holds_when_both_adapters_use_log(self):
+        df = _pair_frame(40)
+        tab = modeling_prep.to_tabular(df, feature_cols=["feat_a"], log_target=True)
+        seq = modeling_prep.to_sequences(df, feature_cols=["feat_a"], log_target=True)
+        self.assertIsNone(modeling_prep.validate_contract(tab, seq))
+
+
+class TestValidateContract(unittest.TestCase):
+    def _pair(self):
+        df = _pair_frame(40)
+        tabular = modeling_prep.to_tabular(df, feature_cols=["feat_a"])
+        sequences = modeling_prep.to_sequences(df, feature_cols=["feat_a"])
+        return tabular, sequences
+
+    def test_matching_adapters_pass(self):
+        tabular, sequences = self._pair()
+        self.assertIsNone(modeling_prep.validate_contract(tabular, sequences))
+
+    def test_rejects_differing_row_counts(self):
+        tabular, sequences = self._pair()
+        tabular["keys"] = tabular["keys"].iloc[:-1]
+        with self.assertRaisesRegex(AssertionError, "jumlah baris"):
+            modeling_prep.validate_contract(tabular, sequences)
+
+    def test_rejects_same_count_but_different_dates(self):
+        """Equal lengths are not enough — the actual rows must match."""
+        tabular, sequences = self._pair()
+        tabular["keys"] = tabular["keys"].copy()
+        tabular["keys"].loc[0, "Tanggal"] = pd.Timestamp("1999-01-01")
+        with self.assertRaisesRegex(AssertionError, "baris berbeda"):
+            modeling_prep.validate_contract(tabular, sequences)
+
+    def test_rejects_differing_targets(self):
+        tabular, sequences = self._pair()
+        tabular["y"] = tabular["y"].copy()
+        tabular["y"].iloc[0] = -12345.0
+        with self.assertRaisesRegex(AssertionError, "target"):
+            modeling_prep.validate_contract(tabular, sequences)
+
+    def test_rejects_differing_fold_assignments(self):
+        tabular, sequences = self._pair()
+        tabular["fold_id"] = tabular["fold_id"].copy()
+        tabular["fold_id"].iloc[0] = 3.0
+        with self.assertRaisesRegex(AssertionError, "fold"):
+            modeling_prep.validate_contract(tabular, sequences)
+
 
 if __name__ == "__main__":
     unittest.main()

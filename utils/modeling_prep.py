@@ -392,3 +392,70 @@ def to_sequences(
         "keys": pd.DataFrame(key_rows, columns=pair_cols + [date_col]),
         "fold_id": pd.Series(folds, dtype="float64"),
     }
+
+
+def validate_contract(tabular: dict, sequences: dict) -> None:
+    """Guarantee the two adapters expose the same rows, targets, and folds.
+
+    Without this, "the LSTM is 8% better" could really mean "the LSTM was
+    evaluated on a different 5% of the rows".
+    """
+    tabular_keys = tabular["keys"].reset_index(drop=True)
+    sequence_keys = sequences["keys"].reset_index(drop=True)
+
+    assert len(tabular_keys) == len(sequence_keys), (
+        f"Adapter menghasilkan jumlah baris berbeda: "
+        f"tabular {len(tabular_keys)}, sequence {len(sequence_keys)}"
+    )
+
+    tabular_set = set(map(tuple, tabular_keys.to_numpy()))
+    sequence_set = set(map(tuple, sequence_keys.to_numpy()))
+    assert tabular_set == sequence_set, (
+        f"Adapter menghasilkan baris berbeda: "
+        f"{len(tabular_set - sequence_set)} hanya di tabular, "
+        f"{len(sequence_set - tabular_set)} hanya di sequence"
+    )
+
+    tabular_y = np.asarray(tabular["y"], dtype="float64")
+    sequence_y = np.asarray(sequences["y"], dtype="float64")
+    assert np.allclose(tabular_y, sequence_y, equal_nan=True), (
+        "Nilai target berbeda antar adapter"
+    )
+
+    tabular_fold = np.asarray(tabular["fold_id"], dtype="float64")
+    sequence_fold = np.asarray(sequences["fold_id"], dtype="float64")
+    assert np.allclose(tabular_fold, sequence_fold, equal_nan=True), (
+        "Pembagian fold berbeda antar adapter"
+    )
+
+
+def build_model_input(
+    featured_path: str = FEATURED_FILE,
+    event_items_path: str = EVENT_ITEMS_FILE,
+    cutoff: pd.Timestamp = TEST_START,
+) -> pd.DataFrame:
+    df = pd.read_parquet(featured_path)
+    df = add_event_flag(df, load_event_items(event_items_path))
+    df = classify_pairs(df, cutoff=cutoff)
+    df = assign_folds(df)
+    df = impute_features(df)
+
+    mapping = build_category_mapping(df, cutoff=cutoff)
+    save_category_mapping(mapping)
+    df = encode_categoricals(df, mapping)
+    return df
+
+
+def export_model_input(df: pd.DataFrame, path: str = MODEL_INPUT_FILE) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path, index=False)
+
+
+def main() -> None:
+    df = build_model_input()
+    export_model_input(df)
+    print(f"Wrote {len(df):,} rows x {len(df.columns)} columns to {MODEL_INPUT_FILE}")
+
+
+if __name__ == "__main__":
+    main()
