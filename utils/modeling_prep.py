@@ -260,3 +260,48 @@ def impute_features(df: pd.DataFrame) -> pd.DataFrame:
     result["baseline_ratio"] = result["baseline_ratio"].fillna(1.0)
 
     return result
+
+
+def drop_warmup_rows(
+    df: pd.DataFrame,
+    lookback: int = LOOKBACK,
+    pair_cols: list = None,
+    date_col: str = DATE_COL,
+) -> pd.DataFrame:
+    """Keep rows whose zero-based position within their own pair is >= lookback.
+
+    These are exactly the rows an LSTM can build a full window for, and exactly
+    the rows where lag_28 is non-null. Both adapters cut here so their row sets
+    match.
+    """
+    pair_cols = pair_cols or PAIR_COLS
+    result = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
+    position = result.groupby(pair_cols, observed=True).cumcount()
+    return result[position >= lookback].reset_index(drop=True)
+
+
+def to_tabular(
+    df: pd.DataFrame,
+    feature_cols: list,
+    target_col: str = TARGET_COL,
+    lookback: int = LOOKBACK,
+    pair_cols: list = None,
+    date_col: str = DATE_COL,
+    log_target: bool = False,
+) -> dict:
+    """Adapter for XGBoost and Random Forest: a flat table, NaNs left in place.
+
+    Pass the same log_target value here and to to_sequences(), or the contract
+    check will fail.
+    """
+    pair_cols = pair_cols or PAIR_COLS
+    frame = drop_warmup_rows(df, lookback=lookback, pair_cols=pair_cols, date_col=date_col)
+    if log_target:
+        frame = frame.copy()
+        frame[target_col] = np.log1p(frame[target_col])
+    return {
+        "X": frame[feature_cols].reset_index(drop=True),
+        "y": frame[target_col].reset_index(drop=True),
+        "keys": frame[pair_cols + [date_col]].reset_index(drop=True),
+        "fold_id": frame["fold_id"].reset_index(drop=True),
+    }

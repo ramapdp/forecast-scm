@@ -270,5 +270,64 @@ class TestImputeFeatures(unittest.TestCase):
         self.assertFalse(result[targets].isna().any().any())
 
 
+def _pair_frame(n_rows, item="I1", branch="B1", start="2024-01-01"):
+    return pd.DataFrame({
+        "Kode Barang": [item] * n_rows,
+        "Nama Cabang": [branch] * n_rows,
+        "Tanggal": pd.date_range(start, periods=n_rows, freq="D"),
+        "feat_a": np.arange(n_rows, dtype=float),
+        "target_lead_time_cumulative": np.arange(n_rows, dtype=float) * 2,
+        "fold_id": [np.nan] * n_rows,
+    })
+
+
+class TestDropWarmupRows(unittest.TestCase):
+    def test_drops_exactly_the_first_lookback_rows_of_each_pair(self):
+        df = _pair_frame(40)
+        result = modeling_prep.drop_warmup_rows(df, lookback=28)
+        self.assertEqual(len(result), 12)
+
+    def test_first_surviving_row_is_at_position_lookback(self):
+        df = _pair_frame(40)
+        result = modeling_prep.drop_warmup_rows(df, lookback=28)
+        self.assertEqual(
+            result.iloc[0]["Tanggal"], pd.Timestamp("2024-01-01") + pd.Timedelta(days=28)
+        )
+
+    def test_a_pair_shorter_than_the_lookback_disappears_entirely(self):
+        result = modeling_prep.drop_warmup_rows(_pair_frame(10), lookback=28)
+        self.assertEqual(len(result), 0)
+
+    def test_each_pair_gets_its_own_warmup_cut(self):
+        df = pd.concat([_pair_frame(40, item="I1"), _pair_frame(40, item="I2")],
+                       ignore_index=True)
+        result = modeling_prep.drop_warmup_rows(df, lookback=28)
+        self.assertEqual(len(result), 24)
+        self.assertEqual(result.groupby("Kode Barang").size().tolist(), [12, 12])
+
+
+class TestToTabular(unittest.TestCase):
+    def test_returns_the_expected_keys(self):
+        out = modeling_prep.to_tabular(_pair_frame(40), feature_cols=["feat_a"])
+        self.assertEqual(set(out), {"X", "y", "keys", "fold_id"})
+
+    def test_x_contains_only_the_requested_features(self):
+        out = modeling_prep.to_tabular(_pair_frame(40), feature_cols=["feat_a"])
+        self.assertEqual(list(out["X"].columns), ["feat_a"])
+
+    def test_all_parts_have_the_same_length(self):
+        out = modeling_prep.to_tabular(_pair_frame(40), feature_cols=["feat_a"])
+        self.assertEqual(len(out["X"]), 12)
+        self.assertEqual(len(out["y"]), 12)
+        self.assertEqual(len(out["keys"]), 12)
+        self.assertEqual(len(out["fold_id"]), 12)
+
+    def test_keys_identify_pair_and_date(self):
+        out = modeling_prep.to_tabular(_pair_frame(40), feature_cols=["feat_a"])
+        self.assertEqual(
+            list(out["keys"].columns), ["Kode Barang", "Nama Cabang", "Tanggal"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
