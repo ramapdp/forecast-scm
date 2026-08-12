@@ -278,6 +278,30 @@ def build_featured_dataset(
     )
 
 
+def run_qa_checks(df: pd.DataFrame) -> None:
+    """Assertions that previously lived only in notebook/data-processing.ipynb.
+
+    Called from main() so the scripted path is verified too. Raises
+    AssertionError with an Indonesian message naming the failure.
+    """
+    assert (df["Kuantitas"] >= 0).all(), "Ditemukan Kuantitas negatif"
+
+    dupes = df.duplicated(subset=["Kode Barang", "Nama Cabang", "Tanggal"]).sum()
+    assert dupes == 0, f"Ditemukan {dupes} baris duplikat (item, cabang, tanggal)"
+
+    assert (df["Kuantitas_capped"] <= df["Kuantitas"]).all(), (
+        "Kuantitas_capped melebihi Kuantitas mentah"
+    )
+
+    assert (df["kota"] != "Unknown").all(), "Ditemukan cabang dengan kota 'Unknown'"
+
+    assert df["kawasan"].notna().all(), "Ditemukan cabang tanpa kawasan"
+
+    kota_per_cabang = df.groupby("Nama Cabang", observed=True)["kota"].nunique()
+    bad = kota_per_cabang[kota_per_cabang > 1]
+    assert bad.empty, f"Cabang memetakan ke lebih dari satu kota: {list(bad.index)}"
+
+
 def main(
     input_path: str = normalize_items.RAW_DATA_FILE,
     output_dir: str = MODEL_READY_DIR,
@@ -299,6 +323,9 @@ def main(
         min_pair_history=min_pair_history,
         spike_ratio_threshold=spike_ratio_threshold,
     )
+    run_qa_checks(df)
+    missing = [c for c in FEATURED_COLUMNS if c not in df.columns]
+    assert not missing, f"Kolom hilang dari featured dataset: {missing}"
     export_featured(df, output_dir)
     train, test = split_train_test(df, cutoff=cutoff)
     export_splits(train, test, output_dir)
