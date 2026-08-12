@@ -2010,7 +2010,15 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 - [ ] `featured.parquet` has 63 columns including `days_since_relocation`
 - [ ] `model_input.parquet` exists with `is_event_driven`, `demand_segment`, `fold_id`, `was_relocated`, `has_baseline`, and seven `*_idx` columns
-- [ ] `category_mapping.json` and `scaler_params.json` exist under `dataset/model_ready/`
+- [ ] `category_mapping.json` exists under `dataset/model_ready/`
+
+  **Corrected during execution:** an earlier draft of this list also required
+  `scaler_params.json` here. That was wrong. Scaling is fit *per fold* (§4.3),
+  so there is no single global scaler for `build_model_input()` to persist —
+  writing one would contradict the anti-leakage rule in the same design. The
+  `fit_scaler` / `save_scaler` / `load_scaler` utilities are implemented and
+  tested; the modeling stage calls them per fold and persists the parameters
+  for whichever window the production model is trained on.
 - [ ] `validate_contract()` passes on real data
 - [ ] Full suite green at 274 tests
 - [ ] No December 2025 row carries a `fold_id`
