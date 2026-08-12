@@ -305,3 +305,90 @@ def to_tabular(
         "keys": frame[pair_cols + [date_col]].reset_index(drop=True),
         "fold_id": frame["fold_id"].reset_index(drop=True),
     }
+
+
+def fit_scaler(df: pd.DataFrame, feature_cols: list) -> dict:
+    """Per-feature mean and std. Fit on one fold's training rows only —
+    fitting globally would leak December statistics into the July fold.
+    """
+    scaler = {}
+    for col in feature_cols:
+        mean = float(df[col].mean())
+        std = float(df[col].std(ddof=0))
+        scaler[col] = (mean, std if std > 0 else 1.0)
+    return scaler
+
+
+def apply_scaler(df: pd.DataFrame, scaler: dict, feature_cols: list) -> pd.DataFrame:
+    result = df.copy()
+    for col in feature_cols:
+        mean, std = scaler[col]
+        result[col] = (result[col] - mean) / std
+    return result
+
+
+def save_scaler(scaler: dict, path: str = SCALER_FILE) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    serializable = {col: list(params) for col, params in scaler.items()}
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(serializable, handle, indent=2, sort_keys=True)
+
+
+def load_scaler(path: str = SCALER_FILE) -> dict:
+    with open(path, encoding="utf-8") as handle:
+        return {col: tuple(params) for col, params in json.load(handle).items()}
+
+
+def inverse_log_target(values: np.ndarray) -> np.ndarray:
+    """Undo log1p on predictions. Exact for quantile models: quantiles are
+    equivariant under monotonic transforms, so expm1(q_a(log1p(y))) == q_a(y).
+    """
+    return np.expm1(values)
+
+
+def to_sequences(
+    df: pd.DataFrame,
+    feature_cols: list,
+    target_col: str = TARGET_COL,
+    lookback: int = LOOKBACK,
+    pair_cols: list = None,
+    date_col: str = DATE_COL,
+    log_target: bool = False,
+) -> dict:
+    """Adapter for the LSTM: one (lookback, n_features) window per predictable
+    row, the window ending at that row inclusive.
+
+    Produces exactly the rows drop_warmup_rows() keeps, so to_tabular() and
+    to_sequences() agree — see validate_contract(). Pass the same log_target
+    value to both adapters or the contract check will fail.
+    """
+    pair_cols = pair_cols or PAIR_COLS
+    frame = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
+    if log_target:
+        frame = frame.copy()
+        frame[target_col] = np.log1p(frame[target_col])
+
+    windows, targets, key_rows, folds = [], [], [], []
+    for _, group in frame.groupby(pair_cols, observed=True, sort=False):
+        values = group[feature_cols].to_numpy(dtype="float32")
+        target_values = group[target_col].to_numpy(dtype="float32")
+        fold_values = group["fold_id"].to_numpy()
+        keys = group[pair_cols + [date_col]].to_numpy()
+
+        for position in range(lookback, len(group)):
+            windows.append(values[position - lookback + 1 : position + 1])
+            targets.append(target_values[position])
+            key_rows.append(keys[position])
+            folds.append(fold_values[position])
+
+    if windows:
+        stacked = np.stack(windows).astype("float32")
+    else:
+        stacked = np.empty((0, lookback, len(feature_cols)), dtype="float32")
+
+    return {
+        "X": stacked,
+        "y": np.asarray(targets, dtype="float32"),
+        "keys": pd.DataFrame(key_rows, columns=pair_cols + [date_col]),
+        "fold_id": pd.Series(folds, dtype="float64"),
+    }

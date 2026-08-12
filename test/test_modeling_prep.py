@@ -329,5 +329,95 @@ class TestToTabular(unittest.TestCase):
         )
 
 
+class TestScaler(unittest.TestCase):
+    def test_scaled_column_has_zero_mean_and_unit_std(self):
+        df = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0]})
+        scaler = modeling_prep.fit_scaler(df, ["a"])
+        scaled = modeling_prep.apply_scaler(df, scaler, ["a"])
+        self.assertAlmostEqual(scaled["a"].mean(), 0.0, places=6)
+        self.assertAlmostEqual(scaled["a"].std(ddof=0), 1.0, places=6)
+
+    def test_constant_column_does_not_divide_by_zero(self):
+        df = pd.DataFrame({"a": [7.0, 7.0, 7.0]})
+        scaler = modeling_prep.fit_scaler(df, ["a"])
+        scaled = modeling_prep.apply_scaler(df, scaler, ["a"])
+        self.assertTrue(np.isfinite(scaled["a"]).all())
+
+    def test_scaler_fit_on_train_is_applied_unchanged_to_validation(self):
+        train = pd.DataFrame({"a": [1.0, 2.0, 3.0]})
+        valid = pd.DataFrame({"a": [10.0]})
+        scaler = modeling_prep.fit_scaler(train, ["a"])
+        scaled = modeling_prep.apply_scaler(valid, scaler, ["a"])
+        mean, std = scaler["a"]
+        self.assertAlmostEqual(scaled.iloc[0]["a"], (10.0 - mean) / std, places=6)
+
+    def test_scaler_survives_a_save_load_round_trip(self):
+        import tempfile, os
+        scaler = modeling_prep.fit_scaler(pd.DataFrame({"a": [1.0, 2.0]}), ["a"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "scaler.json")
+            modeling_prep.save_scaler(scaler, path)
+            self.assertEqual(modeling_prep.load_scaler(path), scaler)
+
+
+class TestToSequences(unittest.TestCase):
+    def test_tensor_has_shape_samples_lookback_features(self):
+        out = modeling_prep.to_sequences(_pair_frame(40), feature_cols=["feat_a"], lookback=28)
+        self.assertEqual(out["X"].shape, (12, 28, 1))
+
+    def test_window_ends_at_the_prediction_row_inclusive(self):
+        """The prediction row's own features (lags, calendar) are known at
+        prediction time, so the window must include them."""
+        out = modeling_prep.to_sequences(_pair_frame(40), feature_cols=["feat_a"], lookback=28)
+        # feat_a == row position, so the first sample predicts position 28 and
+        # its window must be positions 1..28.
+        self.assertEqual(out["X"][0, -1, 0], 28.0)
+        self.assertEqual(out["X"][0, 0, 0], 1.0)
+
+    def test_target_matches_the_prediction_row(self):
+        out = modeling_prep.to_sequences(_pair_frame(40), feature_cols=["feat_a"], lookback=28)
+        self.assertEqual(out["y"][0], 56.0)  # position 28 * 2
+
+    def test_keys_identify_the_prediction_row_not_the_window_start(self):
+        out = modeling_prep.to_sequences(_pair_frame(40), feature_cols=["feat_a"], lookback=28)
+        self.assertEqual(
+            out["keys"].iloc[0]["Tanggal"],
+            pd.Timestamp("2024-01-01") + pd.Timedelta(days=28),
+        )
+
+    def test_a_pair_shorter_than_the_lookback_produces_no_samples(self):
+        out = modeling_prep.to_sequences(_pair_frame(10), feature_cols=["feat_a"], lookback=28)
+        self.assertEqual(out["X"].shape[0], 0)
+
+    def test_windows_never_span_two_pairs(self):
+        df = pd.concat([_pair_frame(40, item="I1"), _pair_frame(40, item="I2")],
+                       ignore_index=True)
+        out = modeling_prep.to_sequences(df, feature_cols=["feat_a"], lookback=28)
+        self.assertEqual(out["X"].shape[0], 24)
+        self.assertTrue((out["X"] <= 39.0).all())
+
+    def test_tensor_is_float32(self):
+        out = modeling_prep.to_sequences(_pair_frame(40), feature_cols=["feat_a"], lookback=28)
+        self.assertEqual(out["X"].dtype, np.float32)
+
+
+class TestLogTarget(unittest.TestCase):
+    def test_log_target_transforms_y_in_both_adapters(self):
+        df = _pair_frame(40)
+        tab = modeling_prep.to_tabular(df, feature_cols=["feat_a"], log_target=True)
+        seq = modeling_prep.to_sequences(df, feature_cols=["feat_a"], log_target=True)
+        self.assertAlmostEqual(float(tab["y"].iloc[0]), float(np.log1p(56.0)), places=5)
+        self.assertAlmostEqual(float(seq["y"][0]), float(np.log1p(56.0)), places=5)
+
+    def test_log_target_defaults_to_off(self):
+        out = modeling_prep.to_tabular(_pair_frame(40), feature_cols=["feat_a"])
+        self.assertEqual(float(out["y"].iloc[0]), 56.0)
+
+    def test_inverse_returns_the_original_scale(self):
+        original = np.array([0.0, 5.0, 488.0, 3067.0])
+        restored = modeling_prep.inverse_log_target(np.log1p(original))
+        self.assertTrue(np.allclose(restored, original))
+
+
 if __name__ == "__main__":
     unittest.main()
