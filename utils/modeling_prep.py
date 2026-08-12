@@ -52,3 +52,69 @@ def add_event_flag(
         )
     result["is_event_driven"] = mapped.astype(bool)
     return result
+
+
+# Syntetos-Boylan cut-offs. ADI = average interval between non-zero demand
+# days; CV2 = squared coefficient of variation of the non-zero quantities.
+ADI_THRESHOLD = 1.32
+CV2_THRESHOLD = 0.49
+
+TEST_START = pd.Timestamp("2025-12-01")
+
+
+def compute_pair_demand_stats(
+    df: pd.DataFrame,
+    cutoff: pd.Timestamp = TEST_START,
+    qty_col: str = "Kuantitas",
+    pair_cols: list = None,
+    date_col: str = DATE_COL,
+) -> pd.DataFrame:
+    """ADI and CV2 per pair, computed from the training period only.
+
+    Deriving these from the full series would leak post-cutoff behaviour into
+    a feature the model trains on.
+    """
+    pair_cols = pair_cols or PAIR_COLS
+    train = df[df[date_col] < cutoff]
+    grouped = train.groupby(pair_cols, observed=True)[qty_col]
+
+    n_days = grouped.size()
+    n_nonzero = grouped.apply(lambda s: int((s > 0).sum()))
+    nz_mean = grouped.apply(lambda s: s[s > 0].mean())
+    nz_std = grouped.apply(lambda s: s[s > 0].std(ddof=0))
+
+    adi = n_days / n_nonzero.replace(0, np.nan)
+    cv2 = (nz_std / nz_mean.replace(0, np.nan)) ** 2
+
+    return pd.DataFrame({"adi": adi, "cv2": cv2.fillna(0.0)})
+
+
+def _segment_label(adi: float, cv2: float) -> str:
+    if pd.isna(adi):
+        # Never moved during the training period — treat as the hardest case.
+        return "lumpy"
+    if adi < ADI_THRESHOLD:
+        return "smooth" if cv2 < CV2_THRESHOLD else "erratic"
+    return "intermittent" if cv2 < CV2_THRESHOLD else "lumpy"
+
+
+def classify_pairs(
+    df: pd.DataFrame,
+    cutoff: pd.Timestamp = TEST_START,
+    qty_col: str = "Kuantitas",
+    pair_cols: list = None,
+    date_col: str = DATE_COL,
+) -> pd.DataFrame:
+    pair_cols = pair_cols or PAIR_COLS
+    stats = compute_pair_demand_stats(
+        df, cutoff=cutoff, qty_col=qty_col, pair_cols=pair_cols, date_col=date_col
+    )
+    labels = stats.apply(lambda r: _segment_label(r["adi"], r["cv2"]), axis=1)
+    labels.name = "demand_segment"
+
+    result = df.copy()
+    result["demand_segment"] = (
+        result.set_index(pair_cols).index.map(labels).astype(object)
+    )
+    result["demand_segment"] = result["demand_segment"].fillna("lumpy")
+    return result
