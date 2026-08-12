@@ -144,5 +144,72 @@ class TestAssignFolds(unittest.TestCase):
             self.assertFalse((train & valid).any(), f"kebocoran di fold {fold}")
 
 
+class TestEncodeCategoricals(unittest.TestCase):
+    def _frame(self, kota, dates=None):
+        dates = dates or ["2024-01-01"] * len(kota)
+        return pd.DataFrame({"kota": kota, "Tanggal": pd.to_datetime(dates)})
+
+    def test_unknown_token_is_index_zero(self):
+        mapping = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi"]), cols=["kota"]
+        )
+        self.assertEqual(mapping["kota"][modeling_prep.UNKNOWN_TOKEN], 0)
+
+    def test_known_values_get_stable_sorted_indices(self):
+        mapping = modeling_prep.build_category_mapping(
+            self._frame(["Kota Depok", "Kota Bekasi"]), cols=["kota"]
+        )
+        self.assertEqual(mapping["kota"]["Kota Bekasi"], 1)
+        self.assertEqual(mapping["kota"]["Kota Depok"], 2)
+
+    def test_mapping_ignores_values_seen_only_after_the_cutoff(self):
+        df = self._frame(
+            ["Kota Bekasi", "Kota Baru"], ["2024-01-01", "2025-12-15"]
+        )
+        mapping = modeling_prep.build_category_mapping(
+            df, cutoff=pd.Timestamp("2025-12-01"), cols=["kota"]
+        )
+        self.assertNotIn("Kota Baru", mapping["kota"])
+
+    def test_unseen_value_encodes_to_unknown_index(self):
+        mapping = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi"]), cols=["kota"]
+        )
+        result = modeling_prep.encode_categoricals(
+            self._frame(["Kota Antah Berantah"]), mapping, cols=["kota"]
+        )
+        self.assertEqual(result.iloc[0]["kota_idx"], modeling_prep.UNKNOWN_INDEX)
+
+    def test_adding_a_new_branch_does_not_shift_existing_indices(self):
+        """A 60th branch opening must not renumber the other 59, or every
+        previously trained model silently breaks."""
+        before = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi", "Kota Depok"]), cols=["kota"]
+        )
+        frame = self._frame(["Kota Bekasi", "Kota Depok", "Kota Antah Berantah"])
+        after = modeling_prep.encode_categoricals(frame, before, cols=["kota"])
+        self.assertEqual(after.iloc[0]["kota_idx"], before["kota"]["Kota Bekasi"])
+        self.assertEqual(after.iloc[1]["kota_idx"], before["kota"]["Kota Depok"])
+
+    def test_encoded_column_is_integer_dtype(self):
+        mapping = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi"]), cols=["kota"]
+        )
+        result = modeling_prep.encode_categoricals(
+            self._frame(["Kota Bekasi"]), mapping, cols=["kota"]
+        )
+        self.assertTrue(pd.api.types.is_integer_dtype(result["kota_idx"]))
+
+    def test_mapping_survives_a_save_load_round_trip(self):
+        import tempfile, os
+        mapping = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi", "Kota Depok"]), cols=["kota"]
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "mapping.json")
+            modeling_prep.save_category_mapping(mapping, path)
+            self.assertEqual(modeling_prep.load_category_mapping(path), mapping)
+
+
 if __name__ == "__main__":
     unittest.main()

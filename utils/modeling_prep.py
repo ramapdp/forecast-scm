@@ -158,3 +158,65 @@ def fold_train_mask(
     if not 1 <= fold_id <= len(fold_starts):
         raise ValueError(f"fold_id harus 1..{len(fold_starts)}, dapat {fold_id}")
     return df[date_col] < fold_starts[fold_id - 1]
+
+
+CATEGORICAL_COLS = [
+    "Kode Barang",
+    "Nama Cabang",
+    "Kategori Barang",
+    "kota",
+    "hari_pengiriman",
+    "branch_volume_tier",
+    "demand_segment",
+]
+
+UNKNOWN_TOKEN = "<UNKNOWN>"
+UNKNOWN_INDEX = 0
+
+
+def build_category_mapping(
+    df: pd.DataFrame,
+    cutoff: pd.Timestamp = TEST_START,
+    cols: list = None,
+    date_col: str = DATE_COL,
+) -> dict:
+    """Fit value -> index maps from the training period only.
+
+    Fitting on train only is a correctness requirement, not tidiness: SCM reruns
+    this weekly on fresh data, and a 60th branch opening next month must not
+    renumber the existing 59 and silently invalidate a trained model.
+    """
+    cols = cols or CATEGORICAL_COLS
+    train = df[df[date_col] < cutoff] if date_col in df.columns else df
+    mapping = {}
+    for col in cols:
+        values = sorted(str(v) for v in train[col].dropna().unique())
+        mapping[col] = {UNKNOWN_TOKEN: UNKNOWN_INDEX}
+        for index, value in enumerate(values, start=1):
+            mapping[col][value] = index
+    return mapping
+
+
+def encode_categoricals(
+    df: pd.DataFrame,
+    mapping: dict,
+    cols: list = None,
+) -> pd.DataFrame:
+    cols = cols or CATEGORICAL_COLS
+    result = df.copy()
+    for col in cols:
+        result[f"{col}_idx"] = (
+            result[col].astype(str).map(mapping[col]).fillna(UNKNOWN_INDEX).astype(int)
+        )
+    return result
+
+
+def save_category_mapping(mapping: dict, path: str = CATEGORY_MAPPING_FILE) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(mapping, handle, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def load_category_mapping(path: str = CATEGORY_MAPPING_FILE) -> dict:
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
