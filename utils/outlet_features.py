@@ -198,6 +198,35 @@ def apply_region_features(
     return result.drop(columns=["day_of_week_tmp"])
 
 
+def add_delivery_day_flag(
+    df: pd.DataFrame,
+    date_col: str = "Tanggal",
+    schedule_col: str = "hari_pengiriman",
+) -> pd.DataFrame:
+    """Mark the rows that fall on one of the branch's own shipping days.
+
+    Head office ships twice a week, so only these rows are a real decision
+    point — 29.1% of the December test window. On them lead_time_days is only
+    ever 3 or 4; the 1-2 day rows never drive a shipment. Training on every day
+    is still right, but a metric that averages over all of them answers a
+    question nobody asks.
+
+    Computed on the small set of distinct (weekday, schedule) pairs and merged
+    back, the same way apply_region_features handles lead_time_days.
+    """
+    result = df.copy()
+    result["_weekday_tmp"] = result[date_col].dt.weekday
+    combos = result[["_weekday_tmp", schedule_col]].drop_duplicates().dropna()
+    combos["is_delivery_day"] = [
+        row._1 in parse_delivery_days(getattr(row, schedule_col))
+        for row in combos.itertuples()
+    ]
+    result = result.merge(combos, on=["_weekday_tmp", schedule_col], how="left")
+    # A branch with no recorded schedule has no delivery day, not an unknown one.
+    result["is_delivery_day"] = result["is_delivery_day"].fillna(False).astype(bool)
+    return result.drop(columns=["_weekday_tmp"])
+
+
 def _strip_for_matching(nama_cabang: str) -> str:
     stripped = PREFIX_RE.sub("", nama_cabang)
     stripped = TRAILING_PAREN_RE.sub("", stripped)
@@ -299,6 +328,30 @@ RELOCATION_DATES: dict[str, pd.Timestamp] = {
     "Kebuli Yaman Teluk Pucung": pd.Timestamp("2025-12-31"),  # lower bound
     "Kebuli Yaman Bukit Gading Balaraja": pd.Timestamp("2025-12-31"),  # lower bound
     "Kebuli Yaman Grand Wisata Bekasi": pd.Timestamp("2025-12-31"),  # lower bound
+}
+
+# The five entries above whose date is a lower-bound proxy rather than an
+# observed move. Kept as a named set so OBSERVED_RELOCATION_DATES stays derived
+# from one list: a data refresh that pins a real date only has to move the
+# branch out of here.
+LOWER_BOUND_RELOCATIONS = {
+    "Kebuli Yaman Mayor Oking",
+    "Kebuli Yaman Cikarang Pusat",
+    "Kebuli Yaman Teluk Pucung",
+    "Kebuli Yaman Bukit Gading Balaraja",
+    "Kebuli Yaman Grand Wisata Bekasi",
+}
+
+# Relocations that actually happen inside the data's coverage, and therefore
+# mark a real break in the demand series. These are the only ones passed to
+# build_dense_panel as segment breakpoints: a lower-bound date sits at or past
+# the last day of data, so breaking there would carve a one-day segment out of
+# the test window and strip its lag features for a move that has not happened
+# yet. days_since_relocation still uses the full RELOCATION_DATES table.
+OBSERVED_RELOCATION_DATES: dict[str, pd.Timestamp] = {
+    branch: date
+    for branch, date in RELOCATION_DATES.items()
+    if branch not in LOWER_BOUND_RELOCATIONS
 }
 
 
