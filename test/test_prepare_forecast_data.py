@@ -602,11 +602,14 @@ class TestMain(unittest.TestCase):
 
 
 class TestEngineerFeaturesContract(unittest.TestCase):
-    def test_featured_columns_constant_has_63_entries(self):
-        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 63)
+    def test_featured_columns_constant_has_64_entries(self):
+        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 64)
 
     def test_featured_columns_includes_days_since_relocation(self):
         self.assertIn("days_since_relocation", prepare_forecast_data.FEATURED_COLUMNS)
+
+    def test_featured_columns_includes_segment_id(self):
+        self.assertIn("segment_id", prepare_forecast_data.FEATURED_COLUMNS)
 
     def test_build_featured_dataset_delegates_to_engineer_features(self):
         self.assertTrue(hasattr(prepare_forecast_data, "engineer_features"))
@@ -665,6 +668,51 @@ class TestRunQaChecks(unittest.TestCase):
         df.loc[1, "kota"] = "Kota Bekasi"
         with self.assertRaisesRegex(AssertionError, "lebih dari satu kota"):
             prepare_forecast_data.run_qa_checks(df)
+
+
+class TestSegmentAwareFeatures(unittest.TestCase):
+    def _panel(self):
+        # One pair, two segments: 2024-01-01..2024-01-05 and 2024-03-01..2024-03-05.
+        dates = list(pd.date_range("2024-01-01", periods=5, freq="D"))
+        dates += list(pd.date_range("2024-03-01", periods=5, freq="D"))
+        return pd.DataFrame({
+            "Kode Barang": ["A"] * 10, "Nama Cabang": ["X"] * 10,
+            "Tanggal": dates, "Kuantitas": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "segment_id": [1] * 5 + [2] * 5,
+        })
+
+    def test_targets_do_not_jump_across_a_segment_boundary(self):
+        result = prepare_forecast_data.add_targets(
+            self._panel(), pair_cols=prepare_forecast_data.SEGMENT_COLS
+        )
+        last_of_segment_1 = result[
+            (result["segment_id"] == 1) & (result["Tanggal"] == pd.Timestamp("2024-01-05"))
+        ]
+        self.assertTrue(pd.isna(last_of_segment_1["target_h1"].iloc[0]))
+
+    def test_targets_would_jump_without_segment_cols(self):
+        # Guards the guard: with plain PAIR_COLS the target silently reaches
+        # across the closure, which is the bug segmentation exists to prevent.
+        result = prepare_forecast_data.add_targets(
+            self._panel(), pair_cols=prepare_forecast_data.PAIR_COLS
+        )
+        last_of_segment_1 = result[result["Tanggal"] == pd.Timestamp("2024-01-05")]
+        self.assertEqual(last_of_segment_1["target_h1"].iloc[0], 6)
+
+    def test_lags_do_not_cross_a_segment_boundary(self):
+        result = prepare_forecast_data.add_lag_features(
+            self._panel(), pair_cols=prepare_forecast_data.SEGMENT_COLS
+        )
+        first_of_segment_2 = result[result["Tanggal"] == pd.Timestamp("2024-03-01")]
+        self.assertTrue(pd.isna(first_of_segment_2["lag_1"].iloc[0]))
+
+    def test_rolling_does_not_cross_a_segment_boundary(self):
+        panel = self._panel()
+        result = prepare_forecast_data.add_rolling_features(
+            panel, pair_cols=prepare_forecast_data.SEGMENT_COLS, windows=[3]
+        )
+        first_of_segment_2 = result[result["Tanggal"] == pd.Timestamp("2024-03-01")]
+        self.assertTrue(pd.isna(first_of_segment_2["roll_mean_3"].iloc[0]))
 
 
 if __name__ == "__main__":

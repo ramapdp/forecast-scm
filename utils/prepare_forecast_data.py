@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -11,6 +13,11 @@ from . import outlier_handling
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 PAIR_COLS = build_panel.PAIR_COLS
+SEGMENT_COL = build_panel.SEGMENT_COL
+# The grouping key for every shift-based feature. Grouping by pair alone would
+# let a lag, rolling window, or target reach across a closure gap and treat two
+# sides of a months-long shutdown as consecutive days.
+SEGMENT_COLS = PAIR_COLS + [SEGMENT_COL]
 TEST_START = build_panel.TEST_START
 BRANCH_COL = "Nama Cabang"
 TARGET_HORIZONS = range(1, 8)
@@ -23,7 +30,7 @@ MODEL_READY_DIR = str(BASE_DIR / "dataset/model_ready")
 # silently producing a short parquet.
 FEATURED_COLUMNS = [
     "Kode Barang", "Nama Cabang", "Tanggal", "Kuantitas", "Kategori Barang",
-    "Nama Barang", "day_of_week", "day_of_month", "month", "is_weekend",
+    "Nama Barang", "segment_id", "day_of_week", "day_of_month", "month", "is_weekend",
     "is_national_holiday", "is_ramadan", "days_into_ramadan", "days_until_ramadan",
     "is_eid_al_fitr", "days_since_eid_al_fitr", "days_until_eid_al_fitr",
     "is_eid_al_adha", "days_since_eid_al_adha", "days_until_eid_al_adha",
@@ -235,13 +242,13 @@ def engineer_features(
     df = outlier_handling.apply_outlier_capping(
         df, pair_baseline, ratio_threshold=spike_ratio_threshold
     )
-    df = add_targets(df)
+    df = add_targets(df, pair_cols=SEGMENT_COLS)
     df = outlet_features.apply_region_features(df, region_df)
     df = apply_outlet_features(df, outlets_df, overrides_df)
     df = outlet_features.add_relocation_feature(df)
-    df = add_lead_time_target(df)
-    df = add_lag_features(df, qty_col="Kuantitas_capped")
-    df = add_rolling_features(df, qty_col="Kuantitas_capped")
+    df = add_lead_time_target(df, pair_cols=SEGMENT_COLS)
+    df = add_lag_features(df, pair_cols=SEGMENT_COLS, qty_col="Kuantitas_capped")
+    df = add_rolling_features(df, pair_cols=SEGMENT_COLS, qty_col="Kuantitas_capped")
     branch_stats = compute_branch_stats(df, cutoff=cutoff, qty_col="Kuantitas_capped")
     df = apply_branch_stats(df, branch_stats)
     df = add_branch_age_days(df)
@@ -255,17 +262,27 @@ def build_featured_dataset(
     outlets_path: str = outlet_features.OUTLETS_FILE,
     overrides_path: str = outlet_features.OVERRIDES_FILE,
     region_path: str = outlet_features.REGION_MAPPING_FILE,
+    closures_path: str = outlet_features.CLOSURES_FILE,
     min_pair_history: int = outlier_handling.MIN_PAIR_HISTORY,
     spike_ratio_threshold: float = outlier_handling.SPIKE_RATIO_THRESHOLD,
 ) -> pd.DataFrame:
     outlets_df = outlet_features.load_outlets(outlets_path)
     overrides_df = outlet_features.load_overrides(overrides_path)
     region_df = outlet_features.load_region_mapping(region_path)
+    closures = outlet_features.load_closures(closures_path)
     df = normalize_items.load_and_normalize(input_path)
     df = outlet_features.filter_matched_branches(df, outlets_df, overrides_df)
     df = outlet_features.canonicalize_branch_names(df, outlets_df, overrides_df)
     df = normalize_items.reaggregate_daily(df)
-    df = build_panel.build_dense_panel(df)
+
+    for finding in outlet_features.detect_unrecorded_gaps(df, closures):
+        print(
+            f"[WARN] Cabang {finding['branch']!r} punya gap {finding['gap_days']} hari "
+            f"({finding['gap_start'].date()}..{finding['gap_end'].date()}) "
+            f"belum tercatat di {closures_path} — hari-hari itu akan diisi nol."
+        )
+
+    df = build_panel.build_dense_panel(df, closures=closures)
     df = build_panel.filter_min_history(df, cutoff=cutoff, min_days=min_history_days)
     return engineer_features(
         df,
