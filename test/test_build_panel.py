@@ -100,5 +100,65 @@ class TestFilterMinHistory(unittest.TestCase):
         self.assertEqual(len(result), 70)
 
 
+class TestDensePanelSegments(unittest.TestCase):
+    def _pair_frame(self):
+        # Two active blocks either side of a closure: Jan 1-3 and Mar 1-3.
+        dates = ["2024-01-01", "2024-01-02", "2024-01-03",
+                 "2024-03-01", "2024-03-02", "2024-03-03"]
+        return pd.DataFrame({
+            "Kode Barang": ["A"] * 6, "Nama Cabang": ["X"] * 6,
+            "Tanggal": pd.to_datetime(dates), "Kuantitas": [1] * 6,
+            "Kategori Barang": ["Barang Jadi (FG)"] * 6, "Nama Barang": ["Widget"] * 6,
+        })
+
+    def test_without_closures_output_matches_legacy_behaviour(self):
+        df = self._pair_frame()
+        result = build_panel.build_dense_panel(df)
+        # Jan 1 -> Mar 3 inclusive is 63 days, all gap-filled as before.
+        self.assertEqual(len(result), 63)
+        self.assertEqual(set(result[build_panel.SEGMENT_COL]), {1})
+
+    def test_closure_removes_rows_and_starts_a_second_segment(self):
+        df = self._pair_frame()
+        closures = {"X": [(pd.Timestamp("2024-01-04"), pd.Timestamp("2024-03-01"))]}
+        result = build_panel.build_dense_panel(df, closures=closures).sort_values("Tanggal")
+        self.assertEqual(len(result), 6)
+        self.assertEqual(list(result[build_panel.SEGMENT_COL]), [1, 1, 1, 2, 2, 2])
+        self.assertTrue(
+            result[(result["Tanggal"] >= "2024-01-04") & (result["Tanggal"] < "2024-03-01")].empty
+        )
+
+    def test_open_ended_closure_truncates_the_tail(self):
+        df = self._pair_frame()
+        closures = {"X": [(pd.Timestamp("2024-01-04"), None)]}
+        result = build_panel.build_dense_panel(df, closures=closures)
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result["Tanggal"].max(), pd.Timestamp("2024-01-03"))
+        self.assertEqual(set(result[build_panel.SEGMENT_COL]), {1})
+
+    def test_closure_for_another_branch_has_no_effect(self):
+        df = self._pair_frame()
+        closures = {"Y": [(pd.Timestamp("2024-01-04"), pd.Timestamp("2024-03-01"))]}
+        result = build_panel.build_dense_panel(df, closures=closures)
+        self.assertEqual(len(result), 63)
+
+    def test_pair_entirely_inside_a_closure_is_dropped(self):
+        df = self._pair_frame()
+        other = df.copy()
+        other["Nama Cabang"] = "Z"
+        combined = pd.concat([df, other], ignore_index=True)
+        closures = {"Z": [(pd.Timestamp("2023-12-01"), pd.Timestamp("2024-06-01"))]}
+        result = build_panel.build_dense_panel(combined, closures=closures)
+        self.assertEqual(set(result["Nama Cabang"]), {"X"})
+
+    def test_every_segment_is_internally_dense(self):
+        df = self._pair_frame()
+        closures = {"X": [(pd.Timestamp("2024-01-04"), pd.Timestamp("2024-03-01"))]}
+        result = build_panel.build_dense_panel(df, closures=closures)
+        for _, group in result.groupby(["Kode Barang", "Nama Cabang", build_panel.SEGMENT_COL]):
+            spans = group["Tanggal"].sort_values().diff().dropna().dt.days
+            self.assertTrue((spans == 1).all())
+
+
 if __name__ == "__main__":
     unittest.main()
