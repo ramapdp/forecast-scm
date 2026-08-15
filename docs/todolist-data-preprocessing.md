@@ -17,6 +17,38 @@ bawah ini **bukan** "bangun pipeline-nya", tapi tiga kategori pekerjaan yang ter
 fitur yang belum selesai, konfirmasi keputusan yang sudah di-hardcode di kode, dan gap
 engineering yang belum tergarap.
 
+## ✅ Penanganan siklus hidup outlet (selesai, 2026-08-15)
+
+Lihat `docs/superpowers/specs/2026-08-15-outlet-lifecycle-handling-design.md`. Hari-hari saat
+sebuah cabang tidak beroperasi dulunya difabrikasi jadi baris `Kuantitas = 0` oleh reindex
+per-pasangan di `build_dense_panel` — 19.304 baris semacam itu ada di dataset, dan membuat
+`branch_avg_daily_qty` KY011 Bekasi Galaxy salah 3,6× (104,0 vs 371,3), menempatkannya sebagai
+cabang terkecil dari 59 padahal peringkat sebenarnya #46.
+
+- [x] `dataset/outlet_closures.csv` + `outlet_features.load_closures()` — interval
+  `[tanggal_tutup, tanggal_buka)` per cabang kanonik, gagal keras untuk tanggal tak valid,
+  terbalik, atau tumpang tindih.
+- [x] `build_dense_panel(closures=...)` membuang tanggal masa tutup dan memberi `segment_id`;
+  `closures=None` mereproduksi perilaku lama persis.
+- [x] `SEGMENT_COLS` dioper ke `add_targets`, `add_lag_features`, `add_rolling_features`,
+  `add_lead_time_target`, `drop_warmup_rows`, `to_tabular`, `to_sequences`.
+- [x] `detect_unrecorded_gaps()` memperingatkan gap ≥14 hari hilang yang belum tercatat.
+- [x] 3 asersi QA baru + 32 unit test baru (274 → 306).
+
+**Masih terbuka:**
+
+- [ ] **`KY068 - Kebuli Yaman Kramatwatu` gap 13 hari** (2025-06-28 s/d 2025-07-10) — persis di
+  bawah ambang peringatan. Tutup sementara atau celah pelaporan?
+- [ ] **`Kebuli Yaman Cikarang Pusat` masih tutup** — begitu buka, isi `tanggal_buka` di
+  `outlet_closures.csv` **dan** perbarui `RELOCATION_DATES` secara manual. Jangan diturunkan
+  otomatis: `KY056 Tigaraksa` ada di kedua tabel dengan tanggal yang tidak berhubungan
+  (relokasi 2024-03-01 vs tutup sementara Oktober 2024).
+- [ ] **`KY073 - Kebuli Yaman Cilebut`** (buka 2025-12-19, masih beroperasi) tidak dapat ramalan
+  karena nol hari sebelum cutoff. Bukan soal ambang — masuk sendiri di refresh berikutnya.
+- [ ] Empat relokasi bertanggal batas-bawah (`Mayor Oking`, `Teluk Pucung`,
+  `Bukit Gading Balaraja`, `Grand Wisata Bekasi`) kemungkinan menghasilkan pola tutup-buka yang
+  sama di refresh berikutnya; detektor akan menangkapnya setelah datanya masuk.
+
 ## 🔴 Prioritas tertinggi — integrasi region/lead-time (selesai, 2026-08-08)
 
 Lihat `docs/superpowers/specs/2026-08-08-lead-time-integration-design.md` untuk desain

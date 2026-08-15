@@ -60,9 +60,17 @@ the whole thing end to end, no QA assertions). Order:
 5. **Build a dense daily panel** — `build_panel.py` reindexes each
    (item, branch) pair to one row per calendar day across its own
    first-to-last observed date range, filling gaps with `Kuantitas = 0` and
-   forward-filling descriptive columns. Then `filter_min_history` drops
+   forward-filling descriptive columns. Dates inside a closure interval
+   recorded in `dataset/outlet_closures.csv` produce **no rows at all** — the
+   outlet did not exist then, so zero-filling would fabricate demand history —
+   and each contiguous run of kept dates is numbered into `segment_id`. Every
+   shift-based feature downstream groups by (pair, segment) so no lag, rolling
+   window, target, or LSTM sequence bridges a closure. `detect_unrecorded_gaps`
+   warns about transaction gaps of ≥14 missing days that the config does not
+   explain, but never acts on them. Then `filter_min_history` drops
    pairs with fewer than 60 days of history before the Dec-2025 cutoff
-   (insufficient for the longest lag/rolling window).
+   (insufficient for the longest lag/rolling window); it stays pair-level, since
+   history either side of a closure is still real history.
 6. **Calendar features** — `calendar_features.py` (`add_calendar_features`):
    day-of-week, day-of-month, month, weekend flag, Indonesian public
    holidays, and flags with days-until/days-since proximity features for
@@ -85,7 +93,7 @@ the whole thing end to end, no QA assertions). Order:
    - `add_targets`: forecast targets `target_h1`…`target_h7` (raw,
      **uncapped** `Kuantitas` shifted 1–7 days into the future — spikes are
      real demand the model should be evaluated against, not something to
-     hide from the label).
+     hide from the label), grouped by (pair, segment).
    - `outlet_features.apply_region_features`: joins `kawasan`/`hari_pengiriman`
      from `dataset/outlet_mapping.csv`, then computes `lead_time_days` per
      row — days from that row's transaction date to the *next* delivery day
@@ -122,7 +130,7 @@ the whole thing end to end, no QA assertions). Order:
      into features.
 9. **Export featured dataset** — `export_featured` writes
    `dataset/model_ready/featured.parquet`, the full unsplit cleaned +
-   feature-engineered table (currently 62 columns). This is the file
+   feature-engineered table (currently 1,503,564 rows × 64 columns). This is the file
    `notebook/train_test_split.ipynb` reads for the next stage.
 10. **Train/test split** — `split_train_test`: train = everything before
    2025-12-01; test = December 2025. A `target_h{n}`/
@@ -133,9 +141,11 @@ the whole thing end to end, no QA assertions). Order:
 12. **QA checks** — `prepare_forecast_data.run_qa_checks()` runs from both the
     script and the notebook: no negative `Kuantitas`, no duplicate
     (item, branch, date) rows, `Kuantitas_capped` never exceeding raw, no
-    `kota == "Unknown"`, no branch missing `kawasan`, and no branch mapping to
-    more than one city. `main()` additionally asserts the output carries every
-    column in `FEATURED_COLUMNS` (63). Notebook-only extras remain: a
+    `kota == "Unknown"`, no branch missing `kawasan`, no branch mapping to
+    more than one city, no row inside a recorded closure interval, `segment_id`
+    starting at 1 and contiguous per pair, and no date gap *within* a segment
+    (the density invariant `shift` depends on). `main()` additionally asserts
+    the output carries every column in `FEATURED_COLUMNS` (64). Notebook-only extras remain: a
     lag/rolling leakage spot-check, per-outlet date ranges, the visual QA
     section, and split-integrity checks in `train_test_split.ipynb`.
 13. **Modeling preprocessing** (`utils/modeling_prep.py`, run via
@@ -147,7 +157,7 @@ the whole thing end to end, no QA assertions). Order:
     NaN imputation with the indicator columns `was_relocated` / `has_baseline`,
     and integer categorical indices with the mapping persisted to
     `dataset/model_ready/category_mapping.json`. Exports
-    `dataset/model_ready/model_input.parquet` (1,522,868 rows × 75 columns).
+    `dataset/model_ready/model_input.parquet` (1,503,564 rows × 76 columns).
 14. **Model adapters** — `to_tabular()` for XGBoost/Random Forest and
     `to_sequences()` for the LSTM (28-day windows ending at the prediction row
     inclusive). Both drop each pair's first 28 warm-up rows, which costs 5.48%
@@ -163,7 +173,8 @@ raw .xlsx/.csv
   → outlet_features.filter_matched_branches
   → outlet_features.canonicalize_branch_names
   → normalize_items.reaggregate_daily (re-dedup after renaming)
-  → build_panel.py             (dense daily panel, min-history filter)
+  → build_panel.py             (dense daily panel per active segment,
+                                 min-history filter)
   → calendar_features.py       (calendar/holiday/high-season features)
   → outlier_handling.py        (per-pair spike detection + capping)
   → prepare_forecast_data.py   (targets [raw] → region/lead-time → outlet
