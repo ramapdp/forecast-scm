@@ -11,6 +11,14 @@ OVERRIDES_FILE = str(BASE_DIR / "dataset/outlet_name_overrides.csv")
 REGION_MAPPING_FILE = str(BASE_DIR / "dataset/outlet_mapping.csv")
 CLOSURES_FILE = str(BASE_DIR / "dataset/outlet_closures.csv")
 
+# Warn about transaction gaps of at least this many MISSING days that are not
+# recorded in outlet_closures.csv. Calibrated against the real data: the
+# longest clearly benign gap is 7 missing days (Citayam's relocation handover),
+# and at 14 exactly the two confirmed closures fire. KY068 Kramatwatu sits just
+# under at 13 missing days — worth asking the data owner about, not worth
+# lowering the threshold for.
+MIN_GAP_WARN_DAYS = 14
+
 PREFIX_RE = re.compile(r"^KY\d+\s*-\s*", re.IGNORECASE)
 TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
 
@@ -87,6 +95,54 @@ def load_closures(
                 )
 
     return closures
+
+
+def _gap_is_recorded(
+    branch: str,
+    gap_start: pd.Timestamp,
+    gap_end: pd.Timestamp,
+    closures: dict,
+) -> bool:
+    for start, end in closures.get(branch, []):
+        last_closed_day = gap_end if end is None else end - pd.Timedelta(days=1)
+        if start <= gap_start and gap_end <= last_closed_day:
+            return True
+    return False
+
+
+def detect_unrecorded_gaps(
+    df: pd.DataFrame,
+    closures: dict[str, list[tuple[pd.Timestamp, Optional[pd.Timestamp]]]],
+    branch_col: str = "Nama Cabang",
+    date_col: str = "Tanggal",
+    min_gap_days: int = MIN_GAP_WARN_DAYS,
+) -> list[dict]:
+    """Find long transaction gaps that outlet_closures.csv does not explain.
+
+    Returns findings rather than printing them, so the caller decides how to
+    report. Detection never segments anything on its own — outlet_closures.csv
+    stays the sole authority over what the pipeline treats as closed.
+    """
+    findings = []
+    for branch, group in df.groupby(branch_col, observed=True):
+        dates = pd.Series(sorted(pd.to_datetime(group[date_col]).unique()))
+        if len(dates) < 2:
+            continue
+        for position in range(1, len(dates)):
+            missing_days = (dates.iloc[position] - dates.iloc[position - 1]).days - 1
+            if missing_days < min_gap_days:
+                continue
+            gap_start = dates.iloc[position - 1] + pd.Timedelta(days=1)
+            gap_end = dates.iloc[position] - pd.Timedelta(days=1)
+            if _gap_is_recorded(branch, gap_start, gap_end, closures):
+                continue
+            findings.append({
+                "branch": branch,
+                "gap_start": gap_start,
+                "gap_end": gap_end,
+                "gap_days": missing_days,
+            })
+    return findings
 
 
 def parse_delivery_days(hari_pengiriman: str) -> set[int]:

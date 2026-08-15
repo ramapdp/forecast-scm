@@ -436,5 +436,62 @@ class TestLoadClosures(unittest.TestCase):
         self.assertIsNone(result["Kebuli Yaman Cikarang Pusat"][0][1])
 
 
+class TestDetectUnrecordedGaps(unittest.TestCase):
+    def _frame(self, branch, dates):
+        return pd.DataFrame({
+            "Nama Cabang": [branch] * len(dates),
+            "Tanggal": pd.to_datetime(dates),
+        })
+
+    def test_no_gap_yields_no_findings(self):
+        df = self._frame("A", pd.date_range("2024-01-01", periods=30, freq="D"))
+        self.assertEqual(outlet_features.detect_unrecorded_gaps(df, {}), [])
+
+    def test_gap_below_threshold_is_ignored(self):
+        dates = list(pd.date_range("2024-01-01", periods=5, freq="D"))
+        dates += list(pd.date_range("2024-01-16", periods=5, freq="D"))
+        df = self._frame("A", dates)
+        self.assertEqual(
+            outlet_features.detect_unrecorded_gaps(df, {}, min_gap_days=14), []
+        )
+
+    def test_unrecorded_gap_is_reported_with_missing_day_bounds(self):
+        dates = list(pd.date_range("2024-01-01", periods=5, freq="D"))
+        dates += list(pd.date_range("2024-02-01", periods=5, freq="D"))
+        df = self._frame("A", dates)
+        findings = outlet_features.detect_unrecorded_gaps(df, {}, min_gap_days=14)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["branch"], "A")
+        self.assertEqual(findings[0]["gap_start"], pd.Timestamp("2024-01-06"))
+        self.assertEqual(findings[0]["gap_end"], pd.Timestamp("2024-01-31"))
+        self.assertEqual(findings[0]["gap_days"], 26)
+
+    def test_recorded_gap_is_not_reported(self):
+        dates = list(pd.date_range("2024-01-01", periods=5, freq="D"))
+        dates += list(pd.date_range("2024-02-01", periods=5, freq="D"))
+        df = self._frame("A", dates)
+        closures = {"A": [(pd.Timestamp("2024-01-06"), pd.Timestamp("2024-02-01"))]}
+        self.assertEqual(
+            outlet_features.detect_unrecorded_gaps(df, closures, min_gap_days=14), []
+        )
+
+    def test_open_ended_closure_covers_a_trailing_gap(self):
+        dates = list(pd.date_range("2024-01-01", periods=5, freq="D"))
+        dates += list(pd.date_range("2024-02-01", periods=5, freq="D"))
+        df = self._frame("A", dates)
+        closures = {"A": [(pd.Timestamp("2024-01-06"), None)]}
+        self.assertEqual(
+            outlet_features.detect_unrecorded_gaps(df, closures, min_gap_days=14), []
+        )
+
+    def test_partially_recorded_gap_is_still_reported(self):
+        dates = list(pd.date_range("2024-01-01", periods=5, freq="D"))
+        dates += list(pd.date_range("2024-02-01", periods=5, freq="D"))
+        df = self._frame("A", dates)
+        closures = {"A": [(pd.Timestamp("2024-01-10"), pd.Timestamp("2024-01-20"))]}
+        findings = outlet_features.detect_unrecorded_gaps(df, closures, min_gap_days=14)
+        self.assertEqual(len(findings), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
