@@ -20,7 +20,7 @@ Columns (semicolon-delimited, UTF-8 with BOM, header row in Indonesian):
 
 | Column | Meaning |
 |---|---|
-| `Tanggal` | Transaction date, `DD Mon YYYY` (e.g. `01 Jan 2024`) |
+| `Tanggal` | **Pickup date**, `DD Mon YYYY` (e.g. `01 Jan 2024`) — the day goods were handed to the customer, *not* the day the order was placed (see the note below) |
 | `Kategori Barang` | Item category — e.g. `Bahan Baku (RM)` (raw material), `Barang Dalam Process (WIP-1)`, `Barang Jadi (FG)` (finished goods), `Minuman - FG`, `Packaging`, `Snack`, `Tambahan`, `Barang Umum` |
 | `Kode Barang` | SKU code, e.g. `FGS-00001` |
 | `Nama Barang` | Item name |
@@ -30,6 +30,7 @@ Columns (semicolon-delimited, UTF-8 with BOM, header row in Indonesian):
 
 Notes / quirks to be aware of when writing any ingestion code:
 
+- **`Tanggal` is the pickup date, not the order date** (confirmed by the data owner 2026-08-15). A customer who orders on Monday for Thursday pickup produces a row dated *Thursday*; the outlet manager relays that order to head office on Monday, but nothing is written until the goods actually leave. The POS deliberately does not store the order date, because orders can be cancelled and only realized transactions are recorded. Every series in this project therefore runs on the pickup-time axis — features and target are consistent on that axis, but they measure *realized* demand, not when demand arose. This is a hard limitation on forecast accuracy (head office already knows part of the coming days' demand from relayed orders, and that information exists in no dataset here), and the current business logic is that the model serves demand *outside* pre-orders — which the team handles separately. See `docs/batasan-penelitian.md` (B-1, B-2, B-3) before designing any feature or metric that assumes otherwise.
 - **Files partition time, not category** — together the five CSVs cover Jan 2024–Dec 2025 with no overlap: `jan-24.csv` (Jan 2024), `feb-24.csv` (Feb 2024), `mar-24.csv` (Mar 2024), `apr-des-24.csv` (Apr–Dec 2024), `jan-des-25.csv` (Jan–Dec 2025).
 - `jan-des-25.csv` has two extra trailing empty columns (9 fields vs. 7 in the other files) — strip these rather than assuming a uniform schema across files.
 - Some `Kode Barang`/`Nama Barang` values are prefixed with `xxx.` (e.g. `xxx.FGS-00003` / `xxx.Iga Sapi Kebuli`) in `apr-des-24.csv` — this looks like an in-source marker (possibly discontinued/excluded items) rather than a distinct SKU; confirm intent with the data owner before treating it as a normal product code.

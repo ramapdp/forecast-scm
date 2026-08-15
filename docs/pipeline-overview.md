@@ -199,6 +199,14 @@ drift apart (they previously did — the notebook's hand-copied sequence missed
 
 ## 3. What's already model-ready vs. still open
 
+Note first that some constraints are not "still open" work at all — they are
+properties of the data and the problem framing that no amount of code can fix.
+`docs/batasan-penelitian.md` is the register for those; the most consequential
+are that `Tanggal` records pickup rather than order date, that the order book is
+never stored (orders can be cancelled), and that the business needs the model for
+demand *outside* pre-orders while the target mixes both together.
+
+
 Fully implemented and verified against the actual parquet output: all 14
 stages above, including outlet/location features, region/lead-time features,
 the cumulative lead-time target, outlier/demand-spike handling, and the
