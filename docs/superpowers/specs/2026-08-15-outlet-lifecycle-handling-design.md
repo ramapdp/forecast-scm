@@ -268,17 +268,19 @@ recording the owner confirmation and date, matching the comment style of
 
 ## Open questions
 
-1. **Is Bekasi Galaxy a relocation or a same-site reopening?** It is currently
-   classified as a duplicate branch code, not a relocation, so this design adds
-   no `RELOCATION_DATES` entry for it — the closure interval alone is enough. If
-   the outlet physically moved, it should also get a relocation date so
-   `days_since_relocation` carries the regime shift.
-2. The four relocations still on lower-bound dates (`Mayor Oking`,
+1. The four relocations still on lower-bound dates (`Mayor Oking`,
    `Teluk Pucung`, `Bukit Gading Balaraja`, `Grand Wisata Bekasi`) will likely
    produce the same close-then-reopen pattern in the next refresh.
    `detect_unrecorded_gaps` will catch them, but only after the data arrives.
-3. The loss of 19,304 training rows must be reported as a data-quality
+2. The loss of 19,304 training rows must be reported as a data-quality
    correction, not as an unexplained reduction in sample size.
+
+## Resolved questions
+
+- **Bekasi Galaxy reopened at the same site** (owner-confirmed 2026-08-15). It
+  therefore gets no `RELOCATION_DATES` entry, `days_since_relocation` stays null
+  for it, and its existing classification as a duplicate branch code rather than
+  a relocation is correct. The closure interval alone describes its lifecycle.
 
 ## References
 
