@@ -9,8 +9,8 @@ dan **trade-off** dari setiap keputusan tersebut.
 Ditujukan sebagai bahan penyusunan laporan. Rujukan teknis berbahasa Inggris
 ada di `docs/pipeline-overview.md` dan `docs/superpowers/specs/*.md`.
 
-- Status kode: 14 tahap terimplementasi, **274 unit test lulus** (`.venv/bin/python3 -m unittest discover -p "test_*.py"`).
-- Tanggal dokumen: 2026-08-12.
+- Status kode: 14 tahap terimplementasi, **306 unit test lulus** (`.venv/bin/python3 -m unittest discover -p "test_*.py"`).
+- Tanggal dokumen: 2026-08-15.
 
 ---
 
@@ -48,6 +48,7 @@ dipersistensi, target harian sebagai dekomposisi, dan sebagainya).
 | `dataset/outlet_name_overrides.csv` | Koreksi manual nama cabang & kota ambigu | 10 baris |
 | `dataset/outlet_mapping.csv` | `kawasan` + `hari_pengiriman` per cabang | Dasar perhitungan lead time |
 | `dataset/event_driven_items.csv` | Penanda SKU yang permintaannya digerakkan pesanan acara | Draf, 5 dari 70 SKU ditandai `true` |
+| `dataset/outlet_closures.csv` | Interval outlet tidak beroperasi (tutup sementara, relokasi berjalan) | 3 baris, dikonfirmasi pemilik data 2026-08-15 |
 
 Kolom mentah: `Tanggal`, `Kategori Barang`, `Kode Barang`, `Nama Barang`,
 `Nama Cabang`, `Satuan`, `Kuantitas`.
@@ -71,7 +72,8 @@ File mentah .xlsx / .csv
   ├─ 2  aggregate_dataset.py        (gabung baris duplikat)
   ├─ 3  normalize_items.py          (bersihkan kode barang & satuan)
   ├─ 4  outlet_features             (filter + kanonikalisasi cabang)
-  ├─ 5  build_panel.py              (panel harian padat + filter riwayat min.)
+  ├─ 5  build_panel.py              (panel harian padat per segmen aktif +
+  │                                  filter riwayat min.)
   ├─ 6  calendar_features.py        (fitur kalender & musim tinggi)
   ├─ 7  outlier_handling.py         (deteksi & capping lonjakan)
   ├─ 8  prepare_forecast_data.py    (target, lead time, outlet, lag, rolling,
@@ -79,7 +81,7 @@ File mentah .xlsx / .csv
   ├─ 9  export_featured             → dataset/model_ready/featured.parquet
   ├─ 10 split_train_test            (train < 2025-12-01, test = Des 2025)
   ├─ 11 export_splits               → train.parquet / test.parquet
-  ├─ 12 run_qa_checks()             (7 asersi kualitas data)
+  ├─ 12 run_qa_checks()             (10 asersi kualitas data)
   │
   ├─ 13 modeling_prep.py            (event flag → segmen permintaan → fold →
   │                                  imputasi → encoding kategori)
@@ -93,10 +95,10 @@ Ukuran data setelah pipeline (terverifikasi dari file parquet):
 
 | Artefak | Baris | Kolom |
 |---|---|---|
-| `featured.parquet` | 1.522.868 | 63 |
-| `train.parquet` (sebelum 2025-12-01) | 1.467.822 | 63 |
-| `test.parquet` (Desember 2025) | 55.046 | 63 |
-| `model_input.parquet` | 1.522.868 | 75 |
+| `featured.parquet` | 1.503.564 | 64 |
+| `train.parquet` (sebelum 2025-12-01) | 1.448.518 | 64 |
+| `test.parquet` (Desember 2025) | 55.046 | 64 |
+| `model_input.parquet` | 1.503.564 | 76 |
 
 Cakupan: **70 SKU × 59 cabang = 2.979 pasangan aktif**, 731 hari kalender
 (2024-01-01 → 2025-12-31), 16 kota.
@@ -208,6 +210,51 @@ sebelum 2025-12-01 (`MIN_HISTORY_DAYS = 60`).
 |---|---|---|
 | Ambang 60 hari | Fitur lag/rolling terpanjang butuh 28 hari; di bawah 60 hari rasio NaN terlalu tinggi | **842 pasangan terbuang dan sama sekali tidak mendapat ramalan** — masalah *cold start* yang secara sadar ditunda ke fase pemodelan |
 
+### 5.1 Segmentasi pada periode outlet tutup
+
+Reindex per pasangan di atas punya satu titik buta: kalau sebuah cabang berhenti
+beroperasi selama beberapa bulan lalu buka lagi, `canonicalize_branch_names`
+menyatukan kode lama dan barunya jadi satu rentang kontinu, dan **seluruh masa
+tutup terisi `Kuantitas = 0`**. Hari-hari itu bukan permintaan nol; outletnya
+tidak ada.
+
+Solusinya: `dataset/outlet_closures.csv` mencatat interval
+`[tanggal_tutup, tanggal_buka)` per cabang. `build_dense_panel` membuang tanggal
+di dalam interval itu — **tidak menghasilkan baris sama sekali** — lalu memberi
+nomor `segment_id` (1, 2, …) pada setiap blok tanggal aktif yang kontinu. Semua
+fitur berbasis geser (`target_*`, `lag_*`, `roll_*`) dikelompokkan per
+`(pasangan, segmen)`, sehingga tidak ada satu pun yang melintasi masa tutup.
+
+**Contoh nyata — KY011 Bekasi Galaxy.** Kode lama bertransaksi 2024-01-01 s/d
+2024-02-29, kode baru `KY069` mulai 2025-07-18; di antaranya outlet tutup total
+16,5 bulan (dikonfirmasi pemilik data 2026-08-15, buka kembali di lokasi yang
+sama). Sebelum diperbaiki, 505 hari itu terisi nol palsu:
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Baris nol palsu | **17.640** (68,6% baris cabang ini) | 0 |
+| Hari yang masuk rata-rata | 700 | 196 |
+| `branch_avg_daily_qty` | 104,0 | **371,3** |
+| `branch_demand_cv` | 1,863 | **0,502** |
+| Peringkat volume | **#59 dari 59** (terkecil) | **#46** |
+
+Model sebelumnya diberi tahu bahwa cabang ini yang terkecil dan paling tidak
+stabil di seluruh jaringan. Keduanya keliru. `KY056 Tigaraksa` mengalami hal
+serupa dalam skala lebih kecil (tutup sementara 2024-10-01 s/d 2024-11-21,
+1.664 baris). Total **19.304 baris fabrikasi (1,27% dataset)** hilang dari data
+latih — ini koreksi kualitas data, bukan pengurangan sampel tanpa sebab.
+
+Sebuah **detektor** memindai gap transaksi ≥ 14 hari yang belum tercatat di
+`outlet_closures.csv` dan mencetak peringatan setiap run. Detektor tidak pernah
+menyegmentasi sendiri — file konfigurasi tetap satu-satunya otoritas, keputusan
+tetap di tangan manusia.
+
+| Keputusan | Alasan | Trade-off |
+|---|---|---|
+| Baris masa tutup **dihapus**, bukan diberi flag lalu dibuang belakangan | Kalau barisnya tetap ada, `lag_*` dan `roll_mean_*` sesudah buka tetap membaca nol-nol masa tutup | Perlu `segment_id` dan pengelompokan baru di 7 fungsi |
+| Identitas cabang **tidak** dipecah | Memecahnya membuang kontinuitas relokasi dan menjadikan setiap cabang yang buka lagi kasus cold start | Segmen setelah buka mengalami pemanasan lag/rolling lagi (28 hari pertama NaN) — memang benar, lokasi/rezim barunya tidak diprediksi oleh lag sebelum tutup |
+| Interval dari file manual, bukan deteksi otomatis | Heuristik "gap panjang = tutup" bisa salah membaca celah pelaporan | Butuh pemeliharaan manual; ditutup oleh peringatan detektor |
+
 **Fakta penting yang lahir dari tahap ini:** karena `Kuantitas` mentah tidak
 pernah bernilai 0 (`min = 1`, diverifikasi atas 692.993 baris), maka **setiap
 `Kuantitas == 0` di panel padat pasti hari isian-gap, bukan transaksi nyata**.
@@ -297,7 +344,7 @@ Urutan di dalam `engineer_features()`:
 
 | Langkah | Output | Catatan penting |
 |---|---|---|
-| `add_targets` | `target_h1`…`target_h7` | Dari `Kuantitas` **mentah**, digeser 1–7 hari ke depan |
+| `add_targets` | `target_h1`…`target_h7` | Dari `Kuantitas` **mentah**, digeser 1–7 hari ke depan, dikelompokkan per (pasangan, segmen) |
 | `apply_region_features` | `kawasan`, `hari_pengiriman`, `lead_time_days` | Lead time **bervariasi per baris** |
 | `apply_outlet_features` | `kota`, `has_shopee`, `has_gofood`, `has_grabfood`, `can_order_online` | Master data statis, tanpa risiko kebocoran |
 | `add_relocation_feature` | `days_since_relocation` | Negatif sebelum pindah, 0 di hari pindah, positif sesudah |
@@ -363,6 +410,7 @@ Bagian ini paling layak dikutip di laporan karena menyangkut validitas metodolog
 | Segmentasi permintaan (tahap 13) dari periode latih | Perilaku masa depan tidak bocor menjadi fitur |
 | Mapping kategori & scaler di-*fit* hanya di data latih (per fold) | Statistik Desember tidak bocor ke fold Juli |
 | Target selalu jendela **maju ketat** | Tidak pernah menyertakan hari berjalan |
+| Fitur bergeser dikelompokkan per (pasangan, segmen) | Lag, rolling, dan target tidak pernah melintasi periode outlet tutup — dua sisi masa tutup tidak diperlakukan sebagai hari berurutan |
 | `branch_age_days` | Aman secara inheren — hanya membaca masa lalu cabang itu sendiri |
 
 ---
@@ -379,11 +427,14 @@ Desember 2025.
 | Format **Parquet**, bukan CSV | 1,5 juta baris; parquet mempertahankan tipe data dan jauh lebih ringkas | Tidak bisa dibuka langsung di Excel |
 | `featured.parquet` disimpan sebagai artefak antara | Memisahkan "bersih + berfitur" dari "sudah displit" | Satu file tambahan yang harus dijaga kesinkronannya |
 
-**QA (`run_qa_checks()`)** — 7 asersi, dipanggil **baik dari notebook maupun dari
+**QA (`run_qa_checks()`)** — 10 asersi, dipanggil **baik dari notebook maupun dari
 script**: tidak ada `Kuantitas` negatif; tidak ada duplikat (item, cabang,
 tanggal); `Kuantitas_capped` tidak pernah melebihi nilai mentah; tidak ada
 `kota == "Unknown"`; tidak ada cabang tanpa `kawasan`; tidak ada cabang yang
-memetakan ke lebih dari satu kota; dan `main()` memastikan seluruh 63 kolom
+memetakan ke lebih dari satu kota; **tidak ada baris yang jatuh di dalam interval
+tutup yang tercatat**; **`segment_id` mulai dari 1 dan kontinu per pasangan**;
+**tidak ada lubang tanggal di dalam satu segmen** (invarian kepadatan yang
+diandalkan `shift`); dan `main()` memastikan seluruh 64 kolom
 `FEATURED_COLUMNS` hadir.
 
 ### Pelajaran penting: *drift* antara notebook dan script
@@ -410,8 +461,8 @@ terverifikasi.
 
 ## 10. Tahap 13 — Modeling preprocessing (`utils/modeling_prep.py`)
 
-Tahap ini mengubah `featured.parquet` (63 kolom) menjadi
-`model_input.parquet` (75 kolom) — satu sumber kebenaran yang dikonsumsi
+Tahap ini mengubah `featured.parquet` (64 kolom) menjadi
+`model_input.parquet` (76 kolom) — satu sumber kebenaran yang dikonsumsi
 ketiga keluarga model lewat adapter tipis.
 
 **Mengapa file terpisah, bukan menambah kolom di `featured.parquet`?**
@@ -648,6 +699,7 @@ Jendela geser per pasangan menghasilkan tensor `(n_samples, 28, n_features)`.
 | 10 | Peran notebook | Tetap penggerak utama, tetapi memanggil fungsi komposit | Notebook menuliskan ulang langkah | Kehilangan sebagian keterlihatan langkah; menghilangkan risiko *drift* |
 | 11 | Imputasi | Sentinel yang mempertahankan makna + indikator | `fillna(0)` | Dua kolom tambahan; mencegah fitur berubah menjadi racun |
 | 12 | Encoding | Indeks integer, mapping dipersistensi | One-hot langsung / encoding on-the-fly | Butuh manajemen artefak; wajib untuk inferensi mingguan yang stabil |
+| 13 | Periode outlet tutup | Panel disegmentasi, baris masa tutup dihapus, `segment_id` mengelompokkan semua fitur bergeser | Beri flag lalu buang belakangan / pecah identitas cabang | Satu kolom tambahan dan pemanasan lag ulang setelah buka; imbalannya 19.304 baris fabrikasi hilang dan statistik cabang jadi benar |
 
 ---
 
@@ -656,10 +708,10 @@ Jendela geser per pasangan menghasilkan tensor `(n_samples, 28, n_features)`.
 | File | Isi |
 |---|---|
 | `dataset/dataset.csv` | Gabungan 5 periode mentah |
-| `dataset/model_ready/featured.parquet` | 1.522.868 × 63 — bersih + berfitur, belum displit |
-| `dataset/model_ready/train.parquet` | 1.467.822 × 63 |
-| `dataset/model_ready/test.parquet` | 55.046 × 63 |
-| `dataset/model_ready/model_input.parquet` | 1.522.868 × 75 — sumber kebenaran untuk pemodelan |
+| `dataset/model_ready/featured.parquet` | 1.503.564 × 64 — bersih + berfitur, belum displit |
+| `dataset/model_ready/train.parquet` | 1.448.518 × 64 |
+| `dataset/model_ready/test.parquet` | 55.046 × 64 |
+| `dataset/model_ready/model_input.parquet` | 1.503.564 × 76 — sumber kebenaran untuk pemodelan |
 | `dataset/model_ready/category_mapping.json` | Mapping kategori → indeks (dari data latih) |
 | `dataset/model_ready/scaler_params.json` | Parameter standardisasi per fold |
 
@@ -729,6 +781,17 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
 
 **Ditunda, tidak menghambat**
 
+7b. `KY073 - Kebuli Yaman Cilebut` buka 2025-12-19 dan masih beroperasi, tetapi
+    **tidak punya satu hari pun sebelum cutoff 2025-12-01**, sehingga terbuang
+    `filter_min_history`. Menurunkan `MIN_HISTORY_DAYS` tidak menolong — ambang
+    berapa pun tetap mengecualikannya. Ia masuk sendirinya begitu punya ≥60 hari
+    sebelum cutoff berikutnya, tanpa perubahan kode.
+7c. `KY068 - Kebuli Yaman Kramatwatu` punya gap 13 hari (2025-06-28 s/d
+    2025-07-10) — persis di bawah ambang peringatan 14 hari. Perlu dikonfirmasi
+    apakah tutup sementara atau celah pelaporan.
+7d. `Kebuli Yaman Cikarang Pusat` masih tutup; begitu `tanggal_buka` diketahui,
+    isi ke `outlet_closures.csv` **dan** perbarui `RELOCATION_DATES` secara
+    manual (tidak diturunkan otomatis — lihat spec).
 8. 5 tanggal relokasi masih berupa perkiraan batas-bawah.
 9. `calendar_features.py` hanya mencakup 2024–2025; **harus diperluas sebelum
    data 2026 masuk**, atau pipeline gagal keras (disengaja).
@@ -752,6 +815,7 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
 |---|---|
 | **Pasangan / pair** | Kombinasi (Kode Barang, Nama Cabang) — satu deret waktu |
 | **Panel padat** | Tabel dengan satu baris per pasangan per hari kalender, gap diisi 0 |
+| **Segmen** | Blok tanggal aktif kontinu milik satu pasangan; dipisahkan oleh periode outlet tutup. Ditandai `segment_id` |
 | **Lead time** | Jumlah hari dari tanggal transaksi sampai hari pengiriman berikutnya |
 | **ADI** (*Average Demand Interval*) | Rata-rata jarak hari antar permintaan non-nol |
 | **CV²** | Kuadrat koefisien variasi kuantitas non-nol |
@@ -773,5 +837,6 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
 - `docs/superpowers/specs/2026-08-08-outlier-handling-design.md`
 - `docs/superpowers/specs/2026-08-08-lead-time-integration-design.md`
 - `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md`
+- `docs/superpowers/specs/2026-08-15-outlet-lifecycle-handling-design.md`
 - `docs/todolist-data-preprocessing.md` — konfirmasi pemilik data
 - `docs/outlet_relocation_notes.md` — catatan relokasi cabang
