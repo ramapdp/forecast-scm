@@ -140,10 +140,15 @@ are not already covered by a recorded interval. It **returns** findings; the
 caller prints them. Detection never segments anything on its own — the config
 file stays the single authority.
 
-`min_gap_days = 14` is calibrated against the real data: the longest clearly
-benign gap is 8 days (`Kebuli Yaman Citayam`, relocation handover) followed by
-5 days (`KY003 - Kebuli Yaman Serang`, `Kebuli Yaman Cadas`). Exactly three
-branches exceed 14 days, and all three are genuine lifecycle events.
+The threshold counts **missing days** (dates with no transaction between two
+consecutive transaction dates). `min_gap_days = 14` is calibrated against the
+real data: the longest clearly benign gap is 7 missing days
+(`Kebuli Yaman Citayam`, relocation handover), then 4 (`KY003 - Kebuli Yaman
+Serang`, `Kebuli Yaman Cadas`). At 14 the two confirmed closures fire
+(`KY011` 504 missing days, `KY056` 52) and nothing else does.
+`KY068 - Kebuli Yaman Kramatwatu` sits just below at 13 missing days
+(2025-06-28 → 2025-07-10) — worth asking the data owner about, but not worth
+lowering the threshold for.
 
 This also closes a documentation gap: `docs/dokumentasi-preprocessing-id.md` §4
 claims dropped branches are printed every run, but `filter_matched_branches`
@@ -200,11 +205,14 @@ findings. `engineer_features()` passes `pair_cols=SEGMENT_COLS` to `add_targets`
 **Cikarang Pusat.** One row in `outlet_closures.csv` from 2025-12-01 with an
 empty `tanggal_buka`. Zero effect on the current dataset — the pair already ends
 2025-11-30 — but the moment 2026 data arrives, the closed stretch is not
-fabricated. When `tanggal_buka` is eventually filled it becomes the authoritative
-source for `RELOCATION_DATES["Kebuli Yaman Cikarang Pusat"]`, replacing today's
-`2025-11-30  # lower bound`, with an assertion that the two never disagree.
-Deriving it in one place avoids exactly the notebook/script drift documented in
-`docs/dokumentasi-preprocessing-id.md` §9.
+fabricated. Once `tanggal_buka` is known it also replaces today's
+`RELOCATION_DATES["Kebuli Yaman Cikarang Pusat"] = 2025-11-30  # lower bound`.
+
+That update stays a **manual checklist item, not an automatic derivation**: the
+two tables do not correspond in general. `KY056 - Kebuli Yaman Tigaraksa`
+appears in both with unrelated dates — relocation 2024-03-01, temporary closure
+2024-10-01 → 2024-11-22 — so a blanket "reopening date is the relocation date"
+rule would corrupt it. Only relocations that *are* a closure qualify.
 
 **KY073 Cilebut.** No mechanical change, and `MIN_HISTORY_DAYS` stays **60**.
 Lowering the threshold cannot help: `filter_min_history` counts days *before the
