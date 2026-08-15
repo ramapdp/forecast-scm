@@ -26,7 +26,8 @@ specs in `docs/superpowers/specs/`.
 Run via `notebook/data-processing.ipynb` (interactive/QA, stops at the cleaned
 + feature-engineered `featured.parquet`) followed by `notebook/train_test_split.ipynb`
 (interactive, split + export), or `prepare_forecast_data.py` (scripted, runs
-the whole thing end to end, no QA assertions). Order:
+the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
+12). Order:
 
 1. **Merge raw periods** — `merge_dataset.py` combines the 5 period CSVs into
    one `dataset/dataset.csv`, normalizing to a consistent 7-column schema.
@@ -65,7 +66,14 @@ the whole thing end to end, no QA assertions). Order:
    outlet did not exist then, so zero-filling would fabricate demand history —
    and each contiguous run of kept dates is numbered into `segment_id`. Every
    shift-based feature downstream groups by (pair, segment) so no lag, rolling
-   window, target, or LSTM sequence bridges a closure. `detect_unrecorded_gaps`
+   window, target, or LSTM sequence bridges a closure. A relocation date from
+   `outlet_features.OBSERVED_RELOCATION_DATES` also starts a new segment, but
+   keeps every row: the outlet never stopped trading, it moved to a different
+   market, and its demand level shifts 2.18x-2.64x across the three moves with
+   enough post-move data to measure. Only relocations observable inside the
+   data qualify — the five lower-bound dates describe moves that happen after
+   coverage ends, so breaking there would carve a one-day segment out of the
+   test window. `detect_unrecorded_gaps`
    warns about transaction gaps of ≥14 missing days that the config does not
    explain, but never acts on them. Then `filter_min_history` drops
    pairs with fewer than 60 days of history before the Dec-2025 cutoff
@@ -87,8 +95,12 @@ the whole thing end to end, no QA assertions). Order:
    `median * 5`, *unless* the row falls in a known high-season window
    (Ramadan/Eid al-Fitr/Eid al-Adha/Independence Day/New Year), in which
    case the value is left uncapped since it's treated as a real recurring
-   pattern, not noise. `baseline_ratio` and `is_spike` are kept as features;
-   raw `Kuantitas` is preserved unchanged for target computation.
+   pattern, not noise. `baseline_ratio` and `is_spike` are kept as columns but
+   **excluded from `FEATURE_COLS`** — both are derived from the row's own day's
+   `Kuantitas`, while every lag and rolling feature stops at H-1, so admitting
+   them would make "known at prediction time" mean two things in one row. Raw
+   `Kuantitas` is preserved unchanged for target computation, and
+   `Kuantitas_capped` now also feeds a second target (stage 8).
 8. **Feature engineering** — `prepare_forecast_data.py::build_featured_dataset`:
    - `add_targets`: forecast targets `target_h1`…`target_h7` (raw,
      **uncapped** `Kuantitas` shifted 1–7 days into the future — spikes are
@@ -130,12 +142,16 @@ the whole thing end to end, no QA assertions). Order:
      into features.
 9. **Export featured dataset** — `export_featured` writes
    `dataset/model_ready/featured.parquet`, the full unsplit cleaned +
-   feature-engineered table (currently 1,503,564 rows × 64 columns). This is the file
+   feature-engineered table (currently 1,503,120 rows × 67 columns). This is the file
    `notebook/train_test_split.ipynb` reads for the next stage.
 10. **Train/test split** — `split_train_test`: train = everything before
    2025-12-01; test = December 2025. A `target_h{n}`/
    `target_lead_time_cumulative` is left as `NaN` rather than shrinking the
-   test window when the target date would fall past 2025-12-31.
+   test window when the target date would fall past 2025-12-31. Training rows
+   whose lead-time window reaches into December are **purged**
+   (`utils/purging.py`) rather than kept: their label is summed partly over
+   test-period demand. 6,188 rows before the fix, 0 after. `fold_train_mask()`
+   applies the same purge at each walk-forward fold boundary.
 11. **Export splits** — `export_splits` writes `dataset/model_ready/train.parquet`
     and `dataset/model_ready/test.parquet`.
 12. **QA checks** — `prepare_forecast_data.run_qa_checks()` runs from both the
@@ -154,16 +170,31 @@ the whole thing end to end, no QA assertions). Order:
     `demand_segment` (Syntetos-Boylan ADI/CV², computed from the training
     period only), `fold_id` (five expanding walk-forward folds over Jul–Nov
     2025; December stays unlabelled as the locked test set), meaning-preserving
-    NaN imputation with the indicator columns `was_relocated` / `has_baseline`,
+    NaN imputation with the indicator columns `was_relocated` / `has_baseline`
+    / `has_full_history` / `missing_history_count` (lag and rolling nulls are
+    filled too — an LSTM window reaches back over warm-up rows, so leaving them
+    put 5.43% of sequence windows out of reach while the tabular matrix stayed
+    clean),
     and integer categorical indices with the mapping persisted to
     `dataset/model_ready/category_mapping.json`. Exports
-    `dataset/model_ready/model_input.parquet` (1,503,564 rows × 76 columns).
+    `dataset/model_ready/model_input.parquet` (1,503,120 rows × 81 columns).
+    `FEATURE_COLS` pins the 56 columns all three models train on, deliberately
+    excluding `baseline_ratio` and `is_spike`: both derive from the row's own
+    day while every lag stops at H-1.
 14. **Model adapters** — `to_tabular()` for XGBoost/Random Forest and
     `to_sequences()` for the LSTM (28-day windows ending at the prediction row
-    inclusive). Both drop each pair's first 28 warm-up rows, which costs 5.48%
-    of training rows and zero test rows. `validate_contract()` asserts both
-    expose identical `(pair, date)` sets, targets, and fold assignments, so a
-    model comparison cannot silently rest on different row sets.
+    inclusive). Both drop each pair's first 28 warm-up rows, which costs 5.93%
+    of rows and 996 test rows (1.81%, nearly all at Bintara, which relocated on
+    28 November). `validate_contract()` asserts both expose identical
+    `(pair, date)` sets, targets, and fold assignments — and, unless
+    `require_finite=False`, that neither feature block contains NaN, since a
+    tree model consumes NaN natively while an LSTM turns it into NaN loss.
+15. **Evaluation floor** — `utils/evaluation.py` provides pinball loss,
+    quantile coverage, and three naive baselines, groupable by
+    `demand_segment` or `is_delivery_day`. `roll_mean_7 × lead_time_days`
+    reaches MAE 13.05 and pinball@0.9 6.61 on December with no model at all;
+    its coverage of 0.61 against a 0.9 service level is the plainest argument
+    for training on pinball rather than the mean.
 
 ```
 raw .xlsx/.csv
