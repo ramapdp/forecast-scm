@@ -9,6 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 OUTLETS_FILE = str(BASE_DIR / "dataset/outlets.csv")
 OVERRIDES_FILE = str(BASE_DIR / "dataset/outlet_name_overrides.csv")
 REGION_MAPPING_FILE = str(BASE_DIR / "dataset/outlet_mapping.csv")
+CLOSURES_FILE = str(BASE_DIR / "dataset/outlet_closures.csv")
 
 PREFIX_RE = re.compile(r"^KY\d+\s*-\s*", re.IGNORECASE)
 TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
@@ -31,6 +32,61 @@ def load_overrides(path: str = OVERRIDES_FILE) -> pd.DataFrame:
 
 def load_region_mapping(path: str = REGION_MAPPING_FILE) -> pd.DataFrame:
     return pd.read_csv(path, sep=";", encoding="utf-8-sig")
+
+
+def load_closures(
+    path: str = CLOSURES_FILE,
+) -> dict[str, list[tuple[pd.Timestamp, Optional[pd.Timestamp]]]]:
+    """Read recorded outlet closure intervals, keyed by canonical branch name.
+
+    Each interval is [tanggal_tutup, tanggal_buka) — closed from tanggal_tutup
+    inclusive through the day *before* tanggal_buka. An empty tanggal_buka
+    means the outlet is still closed through the end of the data.
+
+    Keyed on canonical `Nama Outlet` (like RELOCATION_DATES) because callers
+    consume this after canonicalize_branch_names has merged old branch codes
+    into their successors. Returns {} when the file is absent so the pipeline
+    still runs on a checkout that has no closures recorded yet.
+    """
+    if not Path(path).exists():
+        return {}
+
+    raw = pd.read_csv(path, sep=";", encoding="utf-8-sig", dtype=str)
+    closures: dict[str, list[tuple[pd.Timestamp, Optional[pd.Timestamp]]]] = {}
+
+    for _, row in raw.iterrows():
+        branch = str(row["Nama Outlet"]).strip()
+        start = pd.to_datetime(row["tanggal_tutup"], format="%Y-%m-%d", errors="coerce")
+        if pd.isna(start):
+            raise ValueError(
+                f"tanggal_tutup tidak valid untuk {branch!r}: {row['tanggal_tutup']!r}"
+            )
+
+        raw_end = row["tanggal_buka"]
+        if pd.isna(raw_end) or not str(raw_end).strip():
+            end = None
+        else:
+            end = pd.to_datetime(raw_end, format="%Y-%m-%d", errors="coerce")
+            if pd.isna(end):
+                raise ValueError(f"tanggal_buka tidak valid untuk {branch!r}: {raw_end!r}")
+            if end <= start:
+                raise ValueError(
+                    f"tanggal_buka <= tanggal_tutup untuk {branch!r}: "
+                    f"{end.date()} <= {start.date()}"
+                )
+
+        closures.setdefault(branch, []).append((start, end))
+
+    for branch, intervals in closures.items():
+        intervals.sort(key=lambda interval: interval[0])
+        for (earlier_start, earlier_end), (later_start, _) in zip(intervals, intervals[1:]):
+            if earlier_end is None or later_start < earlier_end:
+                raise ValueError(
+                    f"Interval tutup tumpang tindih untuk {branch!r}: "
+                    f"{earlier_start.date()} dan {later_start.date()}"
+                )
+
+    return closures
 
 
 def parse_delivery_days(hari_pengiriman: str) -> set[int]:

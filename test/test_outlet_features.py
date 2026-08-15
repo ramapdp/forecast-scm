@@ -1,4 +1,5 @@
 import math
+import tempfile
 import unittest
 
 import pandas as pd
@@ -383,6 +384,56 @@ class TestAddRelocationFeature(unittest.TestCase):
         dates = {"Kebuli Yaman Cadas": pd.Timestamp("2025-10-03")}
         outlet_features.add_relocation_feature(df, dates)
         self.assertNotIn("days_since_relocation", df.columns)
+
+
+class TestLoadClosures(unittest.TestCase):
+    def _write(self, body):
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8-sig"
+        )
+        tmp.write("Nama Outlet;tanggal_tutup;tanggal_buka;alasan\n" + body)
+        tmp.close()
+        return tmp.name
+
+    def test_parses_closed_and_reopened_interval(self):
+        path = self._write("Cabang A;2024-03-01;2025-07-18;tutup\n")
+        result = outlet_features.load_closures(path)
+        self.assertEqual(list(result), ["Cabang A"])
+        start, end = result["Cabang A"][0]
+        self.assertEqual(start, pd.Timestamp("2024-03-01"))
+        self.assertEqual(end, pd.Timestamp("2025-07-18"))
+
+    def test_empty_tanggal_buka_means_still_closed(self):
+        path = self._write("Cabang A;2025-12-01;;masih tutup\n")
+        result = outlet_features.load_closures(path)
+        self.assertIsNone(result["Cabang A"][0][1])
+
+    def test_missing_file_returns_empty_dict(self):
+        self.assertEqual(outlet_features.load_closures("/tmp/tidak-ada-file.csv"), {})
+
+    def test_unparseable_date_raises(self):
+        path = self._write("Cabang A;01 Mar 2024;2025-07-18;salah format\n")
+        with self.assertRaises(ValueError):
+            outlet_features.load_closures(path)
+
+    def test_reopen_before_close_raises(self):
+        path = self._write("Cabang A;2025-07-18;2024-03-01;terbalik\n")
+        with self.assertRaises(ValueError):
+            outlet_features.load_closures(path)
+
+    def test_overlapping_intervals_raise(self):
+        path = self._write(
+            "Cabang A;2024-01-01;2024-06-01;satu\nCabang A;2024-05-01;2024-08-01;dua\n"
+        )
+        with self.assertRaises(ValueError):
+            outlet_features.load_closures(path)
+
+    def test_real_file_has_the_three_confirmed_closures(self):
+        result = outlet_features.load_closures()
+        self.assertIn("KY011 - Kebuli Yaman Bekasi Galaxy", result)
+        self.assertIn("KY056 - Kebuli Yaman Tigaraksa", result)
+        self.assertIn("Kebuli Yaman Cikarang Pusat", result)
+        self.assertIsNone(result["Kebuli Yaman Cikarang Pusat"][0][1])
 
 
 if __name__ == "__main__":
