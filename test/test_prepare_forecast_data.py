@@ -626,6 +626,7 @@ def _qa_frame():
         "Kuantitas_capped": [10.0, 12.0],
         "kota": ["Kota Tangerang", "Kota Tangerang"],
         "kawasan": [1, 1],
+        "segment_id": [1, 1],
     })
 
 
@@ -713,6 +714,38 @@ class TestSegmentAwareFeatures(unittest.TestCase):
         )
         first_of_segment_2 = result[result["Tanggal"] == pd.Timestamp("2024-03-01")]
         self.assertTrue(pd.isna(first_of_segment_2["roll_mean_3"].iloc[0]))
+
+
+class TestSegmentQaChecks(unittest.TestCase):
+    def _minimal_featured(self):
+        dates = list(pd.date_range("2024-01-01", periods=3, freq="D"))
+        return pd.DataFrame({
+            "Kode Barang": ["A"] * 3, "Nama Cabang": ["X"] * 3,
+            "Tanggal": dates, "Kuantitas": [1.0, 2.0, 3.0],
+            "Kuantitas_capped": [1.0, 2.0, 3.0], "segment_id": [1, 1, 1],
+            "kota": ["Kota Tangerang"] * 3, "kawasan": [1, 1, 1],
+        })
+
+    def test_clean_frame_passes(self):
+        prepare_forecast_data.run_qa_checks(self._minimal_featured(), closures={})
+
+    def test_row_inside_a_closure_fails(self):
+        df = self._minimal_featured()
+        closures = {"X": [(pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03"))]}
+        with self.assertRaises(AssertionError):
+            prepare_forecast_data.run_qa_checks(df, closures=closures)
+
+    def test_segment_ids_not_starting_at_one_fail(self):
+        df = self._minimal_featured()
+        df["segment_id"] = [2, 2, 2]
+        with self.assertRaises(AssertionError):
+            prepare_forecast_data.run_qa_checks(df, closures={})
+
+    def test_date_gap_inside_one_segment_fails(self):
+        df = self._minimal_featured()
+        df.loc[2, "Tanggal"] = pd.Timestamp("2024-01-10")
+        with self.assertRaises(AssertionError):
+            prepare_forecast_data.run_qa_checks(df, closures={})
 
 
 if __name__ == "__main__":

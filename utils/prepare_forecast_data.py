@@ -295,7 +295,7 @@ def build_featured_dataset(
     )
 
 
-def run_qa_checks(df: pd.DataFrame) -> None:
+def run_qa_checks(df: pd.DataFrame, closures: Optional[dict] = None) -> None:
     """Assertions that previously lived only in notebook/data-processing.ipynb.
 
     Called from main() so the scripted path is verified too. Raises
@@ -318,6 +318,35 @@ def run_qa_checks(df: pd.DataFrame) -> None:
     bad = kota_per_cabang[kota_per_cabang > 1]
     assert bad.empty, f"Cabang memetakan ke lebih dari satu kota: {list(bad.index)}"
 
+    for branch, intervals in (closures or {}).items():
+        branch_rows = df[df["Nama Cabang"] == branch]
+        for start, end in intervals:
+            inside = (
+                branch_rows["Tanggal"] >= start
+                if end is None
+                else (branch_rows["Tanggal"] >= start) & (branch_rows["Tanggal"] < end)
+            )
+            assert not inside.any(), (
+                f"Ditemukan {int(inside.sum())} baris di dalam periode tutup "
+                f"{branch!r} ({start.date()}..)"
+            )
+
+    segment_starts = df.groupby(PAIR_COLS, observed=True)["segment_id"].min()
+    assert (segment_starts == 1).all(), "Ada pasangan yang segment_id-nya tidak mulai dari 1"
+
+    segment_counts = df.groupby(PAIR_COLS, observed=True)["segment_id"].nunique()
+    segment_maxima = df.groupby(PAIR_COLS, observed=True)["segment_id"].max()
+    assert (segment_counts == segment_maxima).all(), "segment_id tidak kontinu per pasangan"
+
+    spans = (
+        df.sort_values(SEGMENT_COLS + ["Tanggal"])
+        .groupby(SEGMENT_COLS, observed=True)["Tanggal"]
+        .diff()
+        .dt.days
+        .dropna()
+    )
+    assert (spans == 1).all(), "Ada lubang tanggal di dalam satu segmen"
+
 
 def main(
     input_path: str = normalize_items.RAW_DATA_FILE,
@@ -327,6 +356,7 @@ def main(
     outlets_path: str = outlet_features.OUTLETS_FILE,
     overrides_path: str = outlet_features.OVERRIDES_FILE,
     region_path: str = outlet_features.REGION_MAPPING_FILE,
+    closures_path: str = outlet_features.CLOSURES_FILE,
     min_pair_history: int = outlier_handling.MIN_PAIR_HISTORY,
     spike_ratio_threshold: float = outlier_handling.SPIKE_RATIO_THRESHOLD,
 ) -> None:
@@ -337,10 +367,11 @@ def main(
         outlets_path=outlets_path,
         overrides_path=overrides_path,
         region_path=region_path,
+        closures_path=closures_path,
         min_pair_history=min_pair_history,
         spike_ratio_threshold=spike_ratio_threshold,
     )
-    run_qa_checks(df)
+    run_qa_checks(df, closures=outlet_features.load_closures(closures_path))
     missing = [c for c in FEATURED_COLUMNS if c not in df.columns]
     assert not missing, f"Kolom hilang dari featured dataset: {missing}"
     export_featured(df, output_dir)
