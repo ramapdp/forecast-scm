@@ -127,6 +127,9 @@ def canonicalize_item_categories(
 
 AGG_SPEC = {"Kuantitas": "sum", "Kategori Barang": "first", "Nama Barang": "first", "Satuan": "first"}
 
+# Kebab Saudagar is a different brand that briefly issued goods through this
+# system (2025-12-20..2025-12-31, 137 rows). Data owner confirmed 2026-08-15
+# that it is no longer operating and its data is not needed.
 EXCLUDED_BRANCHES = {"Kebab Saudagar - Kutabumi"}
 
 
