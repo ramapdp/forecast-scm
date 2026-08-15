@@ -465,5 +465,45 @@ class TestValidateContract(unittest.TestCase):
             modeling_prep.validate_contract(tabular, sequences)
 
 
+class TestSegmentAwareAdapters(unittest.TestCase):
+    def _frame(self):
+        dates = list(pd.date_range("2024-01-01", periods=6, freq="D"))
+        dates += list(pd.date_range("2024-06-01", periods=6, freq="D"))
+        return pd.DataFrame({
+            "Kode Barang": ["A"] * 12, "Nama Cabang": ["X"] * 12,
+            "Tanggal": dates, "segment_id": [1] * 6 + [2] * 6,
+            "feat": list(range(12)), "target_lead_time_cumulative": list(range(12)),
+            "fold_id": [float("nan")] * 12,
+        })
+
+    def test_warmup_is_cut_per_segment(self):
+        result = modeling_prep.drop_warmup_rows(self._frame(), lookback=3)
+        # 3 rows survive in each of the two segments, not 9 across one series.
+        self.assertEqual(len(result), 6)
+        self.assertEqual(sorted(result["segment_id"].unique()), [1, 2])
+        self.assertEqual(result["Tanggal"].min(), pd.Timestamp("2024-01-04"))
+
+    def test_frames_without_segment_id_still_group_by_pair(self):
+        df = self._frame().drop(columns=["segment_id"])
+        result = modeling_prep.drop_warmup_rows(df, lookback=3)
+        self.assertEqual(len(result), 9)
+
+    def test_sequences_never_bridge_two_segments(self):
+        result = modeling_prep.to_sequences(
+            self._frame(), feature_cols=["feat"], lookback=3
+        )
+        self.assertEqual(len(result["X"]), 6)
+        for window in result["X"]:
+            values = [int(v) for v in window[:, 0]]
+            self.assertTrue(all(b - a == 1 for a, b in zip(values, values[1:])))
+
+    def test_adapters_agree_on_segmented_input(self):
+        df = self._frame()
+        tabular = modeling_prep.to_tabular(df, feature_cols=["feat"], lookback=3)
+        sequences = modeling_prep.to_sequences(df, feature_cols=["feat"], lookback=3)
+        modeling_prep.validate_contract(tabular, sequences)
+        self.assertIn("segment_id", tabular["keys"].columns)
+
+
 if __name__ == "__main__":
     unittest.main()

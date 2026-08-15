@@ -4,6 +4,7 @@ families. See docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md
 
 import json
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,8 @@ CATEGORY_MAPPING_FILE = str(BASE_DIR / "dataset/model_ready/category_mapping.jso
 SCALER_FILE = str(BASE_DIR / "dataset/model_ready/scaler_params.json")
 
 PAIR_COLS = ["Kode Barang", "Nama Cabang"]
+SEGMENT_COL = "segment_id"
+SEGMENT_COLS = PAIR_COLS + [SEGMENT_COL]
 DATE_COL = "Tanggal"
 TARGET_COL = "target_lead_time_cumulative"
 LOOKBACK = 28
@@ -262,6 +265,19 @@ def impute_features(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _resolve_pair_cols(df: pd.DataFrame, pair_cols: Optional[list]) -> list:
+    """Group by segment when the frame carries one, otherwise by pair.
+
+    An explicit pair_cols argument always wins. Falling back on the column's
+    presence keeps fixtures and callers that predate segmentation working,
+    while guaranteeing that any frame built from the segmented panel never
+    lets a warm-up cut or an LSTM window bridge a closure.
+    """
+    if pair_cols is not None:
+        return pair_cols
+    return SEGMENT_COLS if SEGMENT_COL in df.columns else PAIR_COLS
+
+
 def drop_warmup_rows(
     df: pd.DataFrame,
     lookback: int = LOOKBACK,
@@ -274,7 +290,7 @@ def drop_warmup_rows(
     the rows where lag_28 is non-null. Both adapters cut here so their row sets
     match.
     """
-    pair_cols = pair_cols or PAIR_COLS
+    pair_cols = _resolve_pair_cols(df, pair_cols)
     result = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
     position = result.groupby(pair_cols, observed=True).cumcount()
     return result[position >= lookback].reset_index(drop=True)
@@ -294,7 +310,7 @@ def to_tabular(
     Pass the same log_target value here and to to_sequences(), or the contract
     check will fail.
     """
-    pair_cols = pair_cols or PAIR_COLS
+    pair_cols = _resolve_pair_cols(df, pair_cols)
     frame = drop_warmup_rows(df, lookback=lookback, pair_cols=pair_cols, date_col=date_col)
     if log_target:
         frame = frame.copy()
@@ -362,7 +378,7 @@ def to_sequences(
     to_sequences() agree — see validate_contract(). Pass the same log_target
     value to both adapters or the contract check will fail.
     """
-    pair_cols = pair_cols or PAIR_COLS
+    pair_cols = _resolve_pair_cols(df, pair_cols)
     frame = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
     if log_target:
         frame = frame.copy()
