@@ -79,6 +79,13 @@ sudah punya cara sendiri menanganinya.
   relatif terhadap median pair, yang bisa juga disebabkan tren naik atau perubahan
   level — bukan hanya pesanan. Tidak ada cara memvalidasinya tanpa data pesanan
   (lihat B-2).
+- **Pengecualian sempit (dikonfirmasi 2026-08-16):** untuk tiga SKU aqiqah —
+  `FGS-00018`, `FGS-00034`, `PCG-00002` — pemilik data memastikan permintaannya
+  memang berjalan lewat pesanan. Di ketiga SKU itu `is_event_driven` bukan lagi
+  proksi melainkan label yang benar, dan seluruh permintaannya berada di luar
+  lingkup yang menjadi tanggung jawab model. Ini satu-satunya irisan data yang
+  punya penanda pesanan terkonfirmasi; untuk 67 SKU lainnya batasan di atas tetap
+  berlaku utuh.
 - Diuji pada 2026-08-15: lonjakan **tidak acak**. Peluang dasar suatu hari menjadi
   lonjakan adalah 0,90%; bila hari sebelumnya lonjakan, peluangnya naik menjadi
   12,24%; bila 7 hari sebelumnya lonjakan, 11,77%. Artinya kecenderungan sebuah
@@ -144,12 +151,40 @@ fakta terverifikasi.
 
 ## B-9. Beberapa keputusan pembersihan belum di-sign-off
 
-- 8 nilai `Kota Override` di `dataset/outlet_name_overrides.csv` masih koreksi
-  dugaan terbaik.
 - `dataset/event_driven_items.csv` adalah draf yang diturunkan dari bentuk
-  permintaan; 14 dari 70 SKU belum diklasifikasi pemilik data.
-- Tingkat layanan target (kuantil berapa model dilatih; default 0,9) belum
-  dikonfirmasi.
+  permintaan. **3 dari 14 SKU prioritas-1 dikonfirmasi pemilik data
+  (2026-08-16)**: `FGS-00018`/`FGS-00034` (Kambing Kebuli Aqiqah Betina/Jantan)
+  dan `PCG-00002` (Lunch Box Aqiqah) memang berjalan lewat pesanan — draf sudah
+  `true` untuk ketiganya, jadi tidak ada perubahan data. **11 SKU masih terbuka**:
+  9 barang kelompok Loyang (`PCG-00003`–`00008`, `PCG-00011`–`00013`, draf
+  `false` melawan intuisi nama karena datanya rutin harian) dan 2 barang berpola
+  borongan yang namanya tidak menyebut acara (`PCG-00027` Mika Bento,
+  `PCG-00028` Cup 60 ml, draf `true`). **11 SKU sisanya diputuskan dari bukti
+  data (2026-08-16), bukan dari putaran pertanyaan kedua** — memakai
+  ko-okurensi dengan SKU aqiqah yang sudah dikonfirmasi sebagai acuan (baseline:
+  0,84% branch-day aktif). Cup 60 ml ko-okur di **100%** hari geraknya, Mika
+  Bento membawa **93% volumenya** di hari aqiqah, sedangkan 9 SKU Loyang hanya
+  0,9%–1,4% — tidak ada kaitan. Tidak ada flag yang berubah; draf sudah benar
+  untuk ke-70 SKU. Batas bukti ini perlu dinyatakan di laporan: yang bisa
+  dibuktikan adalah "bukan barang acara/aqiqah", **bukan** "tidak pernah
+  dipesan lebih dulu" — tanggal pesan tidak tercatat di mana pun (B-1/B-2),
+  jadi untuk kelompok Loyang kemungkinan sebagian dipesan sehari sebelumnya
+  tetap tidak terobservasi.
+- Tingkat layanan target **dikonfirmasi pemilik data (2026-08-16): kuantil 0,9,
+  seragam untuk semua item**. Tidak ada pembedaan per kategori — pengiriman dari
+  pusat mencakup semua item dalam satu kali kirim, sehingga satu tingkat layanan
+  berlaku untuk seluruh pengiriman.
+
+Sudah tertutup: 8 nilai `Kota Override` di `dataset/outlet_name_overrides.csv`
+dikonfirmasi pemilik data (2026-08-16), termasuk `KY001` Kutabumi sebagai
+`Kabupaten Tangerang` meski kolom `Kecamatan` di `outlets.csv` menyebut
+Jatiuwung. `kawasan = 2` / `hari_pengiriman = Selasa dan Jumat` untuk Bintara,
+Citayam, dan Grand Wisata Bekasi juga dikonfirmasi pada tanggal yang sama —
+nilai yang sebelumnya diinferensi dari cabang Kota Bekasi/Kota Depok lain
+ternyata benar, sehingga 82.068 baris (5,5% dataset) tidak lagi bergantung pada
+asumsi. Perhatikan bahwa ini **tidak** menutup B-8: yang dikonfirmasi adalah
+kawasan lokasi **sekarang**, sedangkan jadwal kirim lokasi **lama** untuk cabang
+yang direlokasi tetap tidak tersedia.
 
 ---
 
