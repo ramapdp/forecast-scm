@@ -89,7 +89,7 @@ Settled during brainstorming with the data owner on 2026-08-12.
 | Primary target | `target_lead_time_cumulative` | The number SCM actually ships against |
 | Auxiliary targets | `target_h1`…`target_h4` | Day-by-day decomposition of the primary number for explainability. `lead_time_days` never exceeds 4, so `target_h5`–`target_h7` are dropped by this pipeline. Preprocessing only *retains and validates* these columns; training models against them belongs to the modeling spec |
 | Loss | **Quantile (pinball)**, not squared/absolute error | Stockout costs more than overstock, especially for FG. Mean regression stocks out ~50% of the time by construction |
-| Service level | Default quantile 0.9, may differ per category | **Needs confirmation** (Part 6, item 2) |
+| Service level | **Quantile 0.9, uniform across every SKU** | **Confirmed by the data owner 2026-08-16.** No per-category split: head office ships every item in one consignment, so one service level governs the whole delivery. The FG-vs-Packaging distinction considered earlier was rejected for that reason |
 | Sparse pairs | Train all; add per-SKU `is_event_driven` flag **and** per-pair statistical segment | They answer different questions — see Part 3 |
 | Booking data | Does not exist / not accessible | Event-driven SKUs have an information ceiling, not a model failure. Must be stated explicitly in reporting |
 | Validation | Walk-forward, 5 expanding folds (Jul–Nov 2025); December 2025 opened exactly once for the final number | Tuning and winner selection on the same month would make the final figure optimistic. December is also atypical (Christmas / New Year) |
@@ -391,12 +391,48 @@ by the modeling spec, not this one.
 
 ## Part 6 — Open confirmations
 
-### Blocking — preprocessing cannot complete without these
+### Blocking — both closed 2026-08-16
 
-| # | Item | Why it blocks |
+| # | Item | Resolution |
 |---|---|---|
-| 1 | **`dataset/event_driven_items.csv`** — 70 SKUs marked event-driven or not. A pre-filled draft will be provided for correction | `is_event_driven` cannot be built. Cannot be inferred from names (`Lunch Box` vs `Lunch Box Aqiqah`) |
-| 2 | **Target service level** — 0.9? Higher for FG than Packaging? | Determines which quantile all three models are trained against. Wrong choice means all three aim at the wrong target |
+| 1 | **`dataset/event_driven_items.csv`** — 70 SKUs marked event-driven or not | **Closed.** The 3 aqiqah SKUs (`FGS-00018`, `FGS-00034`, `PCG-00002`) were confirmed pre-order items by the data owner, matching the draft. The remaining 11 were settled from co-occurrence evidence rather than a second round of questions — see "How the last 11 SKUs were settled" below. No flag changed; the draft was right on all 70 |
+| 2 | **Target service level** | **Closed — quantile 0.9, uniform across every SKU** (data owner, 2026-08-16). The per-category split is explicitly rejected: head office ships all items in one consignment, so one service level governs the delivery |
+
+### How the last 11 SKUs were settled
+
+Name-based reasoning had already failed in both directions, so the deciding
+test was *what else moves on the same branch-day*. Aqiqah is the only
+confirmed pre-order behaviour in the data, which makes it a usable reference
+pattern: 0.84% of active branch-days carry an aqiqah SKU, so co-occurrence far
+above that baseline is evidence of shared ordering behaviour.
+
+| SKU | Days co-occurring with a confirmed aqiqah SKU | Lift vs. 0.84% baseline | Verdict |
+|---|---|---|---|
+| `PCG-00028` Cup 60 ml | **100%** (197/197 days, 100% of volume) | 118× | Event-driven — component of the aqiqah kit |
+| `PCG-00027` Mika Bento | 51.6% of days, **93% of volume** (median 60 units on those days vs. 1 unit otherwise) | 61× | Event-driven — the 7% residual is single-unit dribble |
+| 9 Loyang SKUs | 0.9%–1.4% of days; even their p99 days only reach 2.2%–3.7% | 1.1×–1.6× | **Not** event-driven — no association with pre-order behaviour |
+
+Two structural findings came out of the same pass:
+
+- **The 9 Loyang SKUs are 3 series, not 9.** Each size moves as a fixed
+  bundle: `Loyang == Box Loyang` on 100% of active branch-days, and
+  `Cup Sambal == 2 × Loyang` on 99.9%. One tray ships with one box and two
+  sambal cups, deterministically. Total quantities confirm it exactly —
+  `PCG-00003` and `PCG-00006` both total 85,898 units, `PCG-00011` totals
+  171,896. Any modelling that treats them as nine independent series is
+  fitting the same signal nine times.
+- **The questionnaire's "Mini & Sedang daily, Besar for events" option is not
+  supported.** Loyang Besar moves on 80.7% of the same branch-days as Loyang
+  Sedang and shows no event partner; it is a less-popular size of the same
+  daily product, not a different kind of item. Its lower activity (20% of days
+  vs. 72%) is volume, not behaviour.
+
+What this evidence *cannot* establish: whether an individual tray is ordered a
+day ahead by the customer. The order date is not recorded anywhere
+(`batasan-penelitian.md` B-1/B-2), so "not an event/aqiqah item" is the
+strongest claim the data supports for the Loyang group. The residual risk is
+small — `is_event_driven` enters the models as one feature among ~40, not as a
+filter — so a wrong flag degrades a feature rather than dropping data.
 
 ### Important — defaults exist, but a wrong assumption is costly
 
@@ -406,7 +442,7 @@ by the modeling spec, not this one.
 | 4 | **1,059 pairs dead before December** — does SCM still need forecasts for them? | Trained, not evaluated (no December rows) |
 | 5 | **842 pairs dropped by `MIN_HISTORY_DAYS = 60`** (carried over from the existing todolist) — where do new SKUs/branches get a forecast? | No forecast at all |
 | 6 | **How often do new branches or SKUs appear?** | Assumed rare |
-| 7 | **`kawasan = 2` for Bintara, Citayam, Grand Wisata Bekasi** is still inferred, not confirmed (`pipeline-overview.md` §3) | Region 2, Tuesday & Friday |
+| 7 | ~~**`kawasan = 2` for Bintara, Citayam, Grand Wisata Bekasi** is still inferred~~ — **confirmed correct by the data owner 2026-08-16**; the inference from neighbouring Kota Bekasi/Kota Depok branches held | Region 2, Tuesday & Friday |
 | 8 | **Who runs retraining, and how often?** | Weekly, manually via the notebook |
 
 ### Deferred — does not hold up the work
@@ -417,8 +453,8 @@ by the modeling spec, not this one.
 | 10 | **`calendar_features.py` covers only 2024–2025** — must be extended before 2026 data arrives, or `check_year_coverage` raises and the pipeline fails hard |
 | 11 | **`FGS.00048` (Kambing Oven) totals 4 units across 18 months at 1 branch** — noticed while building the event-driven draft. It shares number 00048 with `FGS-00048` (Kentang Mustofa Mie Goreng), separated only by dot vs. dash; `normalize_items.py` correctly keeps them apart because the names differ, so this is not a bug. But at that volume it is a candidate for `EXCLUDED_ITEMS` alongside the other discontinued SKUs — worth asking whether the item is still sold |
 
-Only items 1 and 2 need to be chased now. The rest have workable defaults and
-can proceed in parallel.
+Nothing blocks the modelling phase any more. Items 3–6 and 8 keep their working
+defaults; items 9–11 stay deferred.
 
 ## References
 

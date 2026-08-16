@@ -759,12 +759,42 @@ di atas:
 
 Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
 
-**Menghambat penyelesaian (perlu konfirmasi pemilik data)**
+**Sudah tertutup 2026-08-16 — tidak ada lagi yang menghambat tahap modeling**
 
-1. `dataset/event_driven_items.csv` masih **draf** yang diturunkan dari bentuk
-   permintaan; 14 dari 70 SKU butuh keputusan sungguhan.
-2. **Target service level** (kuantil mana yang dilatih — default 0,9, mungkin
-   lebih tinggi untuk FG daripada Packaging) belum dikonfirmasi.
+1. `dataset/event_driven_items.csv` **final, tanpa satu pun flag berubah**. 3
+   SKU aqiqah (`FGS-00018`, `FGS-00034`, `PCG-00002`) dikonfirmasi pemilik data;
+   11 sisanya diputuskan dari bukti data. Uji penentunya adalah **apa yang
+   bergerak di branch-day yang sama**: aqiqah satu-satunya perilaku pesanan yang
+   sudah terkonfirmasi, dan hanya muncul di 0,84% branch-day aktif, jadi
+   ko-okurensi jauh di atas angka itu menandakan perilaku pemesanan yang sama.
+   `PCG-00028` Cup 60 ml ko-okur di **100%** hari geraknya (197/197, 100%
+   volume) — praktis komponen paket aqiqah. `PCG-00027` Mika Bento: 51,6% hari
+   tetapi **93% volume** (median 60 unit di hari aqiqah vs 1 unit di hari lain).
+   Sembilan SKU Loyang: 0,9%–1,4%, bahkan di hari p99 mereka hanya 2,2%–3,7% —
+   tidak ada kaitan dengan pesanan acara.
+2. **Target service level: kuantil 0,9, seragam untuk semua item** (pemilik
+   data, 2026-08-16). Pembedaan FG vs Packaging ditolak secara eksplisit —
+   pengiriman dari pusat mencakup semua item sekaligus, jadi satu tingkat
+   layanan berlaku untuk seluruh pengiriman.
+
+> **Dua temuan struktural dari analisis yang sama, penting untuk tahap
+> modeling.** Pertama, 9 SKU Loyang sebenarnya **3 seri, bukan 9**: setiap
+> ukuran bergerak sebagai paket tetap — `Loyang == Box Loyang` di 100%
+> branch-day aktif dan `Cup Sambal == 2 × Loyang` di 99,9% (total kuantitas
+> mengonfirmasi persis: `PCG-00003` dan `PCG-00006` sama-sama 85.898 unit,
+> `PCG-00011` tepat 171.896). Memodelkan sembilan seri terpisah berarti
+> memasang sinyal yang sama sembilan kali. Kedua, dugaan "Mini & Sedang harian,
+> Besar untuk acara" **tidak didukung data**: Loyang Besar bergerak di 80,7%
+> branch-day yang sama dengan Loyang Sedang dan tidak punya pasangan acara —
+> ia ukuran yang kurang laku dari produk harian yang sama, bukan jenis barang
+> yang berbeda.
+>
+> Batas bukti ini: data bisa membuktikan "bukan barang acara/aqiqah", tetapi
+> **tidak** bisa membuktikan bahwa satu loyang tidak dipesan sehari sebelumnya
+> oleh pelanggan — tanggal pesan tidak tercatat (B-1/B-2). Risiko sisanya kecil
+> karena `is_event_driven` masuk ke model sebagai satu fitur di antara ~40,
+> bukan sebagai filter: flag yang salah menurunkan kualitas fitur, tidak
+> membuang data.
 
 **Ada default kerja, tetapi asumsi yang salah berbiaya mahal**
 
@@ -775,9 +805,14 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
    cold start** sama sekali (0 pasangan baru di Desember).
 5. 842 pasangan terbuang oleh `MIN_HISTORY_DAYS = 60` — **tidak mendapat ramalan
    sama sekali**; strategi fallback belum diputuskan.
-6. `kawasan = 2` untuk Bintara, Citayam, dan Grand Wisata Bekasi masih
-   **disimpulkan** dari pola cabang Kota Depok/Bekasi lain, belum dikonfirmasi.
-7. 8 nilai `Kota Override` masih tebakan terbaik dari `Kecamatan`.
+6. ~~`kawasan = 2` untuk Bintara, Citayam, dan Grand Wisata Bekasi masih
+   disimpulkan~~ — **dikonfirmasi benar (2026-08-16)**; inferensi dari cabang
+   Kota Depok/Bekasi lain ternyata tepat, sehingga 82.068 baris (5,5% dataset)
+   tidak lagi bergantung pada asumsi. Ini **tidak** menutup B-8: yang
+   dikonfirmasi adalah kawasan lokasi *sekarang*, bukan jadwal lokasi *lama*.
+7. ~~8 nilai `Kota Override` masih tebakan terbaik dari `Kecamatan`~~ —
+   **dikonfirmasi benar (2026-08-16)**, termasuk `KY001` Kutabumi sebagai
+   `Kabupaten Tangerang` meski kolom `Kecamatan` menyebut Jatiuwung.
 
 **Ditunda, tidak menghambat**
 

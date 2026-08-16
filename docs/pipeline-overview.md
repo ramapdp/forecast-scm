@@ -243,29 +243,49 @@ stages above, including outlet/location features, region/lead-time features,
 the cumulative lead-time target, outlier/demand-spike handling, and the
 modeling-preprocessing stage with its two adapters.
 
-Still open before the data can be fully trusted for modelling:
+Nothing is blocking the modelling phase any more — the last two items closed on
+2026-08-16. What remains is routine hygiene:
 
-- Re-run `prepare_forecast_data.py` whenever any pipeline script changes, so
-  the exported parquet reflects the current code.
-- 8 outlet `Kota Override` values in `dataset/outlet_name_overrides.csv` are
-  still best-guess corrections, not yet confirmed by the data owner. (The two
+- Re-run `prepare_forecast_data.py` whenever any pipeline script changes, so the
+  exported parquet reflects the current code.
+- `calendar_features.py` covers only 2024–2025 and must be extended before 2026
+  data arrives, or `check_year_coverage` fails the pipeline hard.
+
+Closed by the data owner on 2026-08-16:
+
+- **Target service level: quantile 0.9, uniform across every SKU.** No
+  per-category split — head office ships all items in one consignment, so a
+  single service level governs the delivery. The FG-vs-Packaging distinction
+  considered earlier is rejected.
+- **`dataset/event_driven_items.csv` is final; no flag changed.** The owner
+  confirmed the 3 aqiqah SKUs (`FGS-00018`, `FGS-00034`, `PCG-00002`), and the
+  remaining 11 were settled from the data instead of a second round of
+  questions. Co-occurrence with confirmed aqiqah SKUs (baseline: 0.84% of
+  active branch-days) separates them cleanly: `PCG-00028` Cup 60 ml co-occurs
+  on **100%** of its days, `PCG-00027` Mika Bento carries **93% of its volume**
+  on aqiqah days, while the 9 Loyang SKUs sit at 0.9%–1.4% — no association at
+  all. The draft's `true`/`true`/`false` split was right. Two by-products worth
+  carrying into modelling: the 9 Loyang SKUs are really **3 series** (one tray
+  ships with exactly one box and two sambal cups, holding on 99.9%+ of
+  branch-days), and Loyang Besar is a less-popular size of the same daily
+  product, not an event item. Details in the spec's Part 6.
+- The 8 outlet `Kota Override` values in `dataset/outlet_name_overrides.csv` are
+  confirmed correct, `KY001` Kutabumi included — it is `Kabupaten Tangerang`,
+  even though the `Kecamatan` column in `outlets.csv` reads Jatiuwung. (The two
   duplicate-branch mappings in the same file — `KY069` → `KY011` "Bekasi
-  Galaxy" and `TOD M1 Bandara` → `KY051` — were confirmed by the data owner
-  on 2026-08-10 as old code/name for the same branch, not distinct branches.)
-- `dataset/event_driven_items.csv` is a draft derived from demand shape, not
-  yet confirmed by the data owner. 14 of the 70 SKUs need a real decision —
-  see the spec's Part 6 for the three questions that resolve them.
-- The target service level (which quantile the models are trained against,
-  default 0.9, possibly higher for FG than Packaging) is unconfirmed.
+  Galaxy" and `TOD M1 Bandara` → `KY051` — were confirmed on 2026-08-10 as old
+  code/name for the same branch, not distinct branches.)
 - `dataset/outlet_mapping.csv` was missing 3 branches (Kebuli Yaman Bintara,
   Citayam, Grand Wisata Bekasi — matched fine against `outlets.csv` for
   `kota`/online-channel features, but absent from this file), leaving
   `kawasan`, `hari_pengiriman`, `lead_time_days`, and
-  `target_lead_time_cumulative` null for their ~82k rows. Added as of
-  2026-08-11 with `kawasan=2`/`hari_pengiriman=Selasa dan Jumat`, inferred
-  from every other Kota Depok/Kota Bekasi branch in the file (all of which
-  share that same region/schedule) — not yet confirmed by the data owner.
-  `kawasan` is now non-null for all matched branches in `featured.parquet`.
+  `target_lead_time_cumulative` null for their ~82k rows. Filled on 2026-08-11
+  with `kawasan=2`/`hari_pengiriman=Selasa dan Jumat`, inferred from every other
+  Kota Depok/Kota Bekasi branch in the file, and **confirmed correct on
+  2026-08-16** — so the 82,068 affected rows (5.5% of the dataset) no longer
+  rest on an inference. This does not close `batasan-penelitian.md` B-8: what
+  was confirmed is the schedule at each branch's *current* location, while the
+  pre-relocation schedule remains unrecoverable.
 
 ## 4. Expected modelling phase (not yet built)
 

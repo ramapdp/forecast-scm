@@ -147,6 +147,12 @@ oleh yang paham datanya".
   baris resolve ke kota yang benar, 0 mismatch (untuk 8 baris relokasi/mapping, nilai override
   konsisten dengan `Kota` asli outlet tujuan di `outlets.csv`, jadi murni pelengkap eksplisit
   tanpa mengubah hasil akhir). 195 test suite tetap lolos (data-only change).
+  **Sign-off ulang 2026-08-16:** sempat ada kontradiksi — `docs/batasan-penelitian.md` B-9 dan
+  `docs/pipeline-overview.md` §3 masih mencatat 8 nilai ini sebagai "dugaan terbaik" setelah
+  entri di atas ditulis. Pemilik data mengonfirmasi kedelapannya benar (termasuk `KY001`
+  Kutabumi = `Kabupaten Tangerang`, meski kolom `Kecamatan` di `outlets.csv` menyebut
+  Jatiuwung), dan kedua dokumen itu sudah diperbaiki. Delapan baris tersebut adalah satu-satunya
+  yang benar-benar mengubah nilai `kota`; 11 baris sisanya identik dengan `outlets.csv`.
 - [x] **6 relokasi "verified" di-wire ke pipeline, dikonfirmasi data owner (2026-08-11)** —
   fisik outlet memang pindah lokasi untuk keenamnya (Tambun/KY020→Mayor Oking,
   Antapani/KY035→Tigaraksa/KY056, Aryana Karawaci/KY046→Cadas, Ciomas/KY047→Cikarang Pusat,
