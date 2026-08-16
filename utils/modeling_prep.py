@@ -9,6 +9,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from . import purging
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 MODEL_READY_DIR = str(BASE_DIR / "dataset/model_ready")
@@ -155,12 +157,22 @@ def fold_train_mask(
     fold_id: int,
     fold_starts: list = None,
     date_col: str = DATE_COL,
+    purge: bool = True,
 ) -> pd.Series:
-    """Rows usable for training fold `fold_id` — strictly before its month."""
+    """Rows usable for training fold `fold_id` — strictly before its month.
+
+    Purging drops the last few days before the fold boundary, whose lead-time
+    label is summed partly over the validation month itself. Same reasoning as
+    prepare_forecast_data.split_train_test.
+    """
     fold_starts = fold_starts or FOLD_STARTS
     if not 1 <= fold_id <= len(fold_starts):
         raise ValueError(f"fold_id harus 1..{len(fold_starts)}, dapat {fold_id}")
-    return df[date_col] < fold_starts[fold_id - 1]
+    boundary = fold_starts[fold_id - 1]
+    mask = df[date_col] < boundary
+    if purge and "lead_time_days" in df.columns:
+        mask &= purging.lookahead_safe_mask(df, boundary, date_col=date_col)
+    return mask
 
 
 CATEGORICAL_COLS = [
@@ -246,6 +258,17 @@ EVENT_PROXIMITY_COLS = [
 EVENT_PROXIMITY_SENTINEL = 99.0
 
 
+# Lag and rolling features, null for the first days of every segment because
+# their window does not fit yet. drop_warmup_rows() removes the rows that are
+# *predicted* from such a position, but an LSTM window still reaches back over
+# them as context, so the tensor carries their nulls unless they are filled.
+HISTORY_COLS = [
+    "lag_1", "lag_2", "lag_3", "lag_7", "lag_14", "lag_21", "lag_28",
+    "roll_mean_7", "roll_std_7", "roll_mean_14", "roll_std_14",
+    "roll_mean_28", "roll_std_28",
+]
+
+
 def impute_features(df: pd.DataFrame) -> pd.DataFrame:
     """Fill the nulls a neural net cannot consume, preserving each column's
     meaning. Tree models do not need this, but both adapters run it so the two
@@ -262,7 +285,55 @@ def impute_features(df: pd.DataFrame) -> pd.DataFrame:
     result["has_baseline"] = result["baseline_ratio"].notna()
     result["baseline_ratio"] = result["baseline_ratio"].fillna(1.0)
 
+    # 0 is a legitimate lag value here — 54% of Kuantitas is zero — so filling
+    # with it would be indistinguishable from "no demand that day" without an
+    # indicator. Both indicators are row-local: how many windows failed to fit
+    # is a monotone function of how far into its segment the row sits, so the
+    # count doubles as an ordinal measure of available history without needing
+    # to group or sort.
+    missing = result[HISTORY_COLS].isna()
+    result["missing_history_count"] = missing.sum(axis=1).astype(int)
+    result["has_full_history"] = result["missing_history_count"] == 0
+    for col in HISTORY_COLS:
+        result[col] = result[col].fillna(0.0)
+
     return result
+
+
+# The single feature list all three models train on. Written down here so a
+# comparison cannot rest on XGBoost and the LSTM having quietly picked
+# different columns.
+#
+# Two deliberate exclusions. `baseline_ratio` is Kuantitas on the row's own day
+# divided by a per-pair constant, and `is_spike` is derived from the same
+# value; every lag and rolling feature stops at H-1, so including these would
+# let the model recover day H's demand and make "known at prediction time" mean
+# two different things within one row. Measured cost of dropping them: the
+# roll_mean_7 baseline moves from MAE 12.99 to 13.19 when day H is allowed in,
+# so the information is worth almost nothing here anyway.
+FEATURE_COLS = [
+    # demand history
+    *HISTORY_COLS,
+    "has_full_history", "missing_history_count",
+    # calendar
+    "day_of_week", "day_of_month", "month", "is_weekend", "is_national_holiday",
+    "is_ramadan", "days_into_ramadan", "days_until_ramadan",
+    "is_eid_al_fitr", "days_since_eid_al_fitr", "days_until_eid_al_fitr",
+    "is_eid_al_adha", "days_since_eid_al_adha", "days_until_eid_al_adha",
+    "is_independence_day", "days_since_independence_day", "days_until_independence_day",
+    "is_new_year", "days_since_new_year", "days_until_new_year",
+    # replenishment cycle
+    "kawasan", "lead_time_days", "is_delivery_day", "target_window_weekend_days",
+    # outlet
+    "has_shopee", "has_gofood", "has_grabfood", "can_order_online",
+    "branch_avg_daily_qty", "branch_demand_cv", "branch_age_days",
+    "days_since_relocation", "was_relocated",
+    # item
+    "is_event_driven",
+    # encoded categoricals
+    "Kode Barang_idx", "Nama Cabang_idx", "Kategori Barang_idx", "kota_idx",
+    "hari_pengiriman_idx", "branch_volume_tier_idx", "demand_segment_idx",
+]
 
 
 def _resolve_pair_cols(df: pd.DataFrame, pair_cols: Optional[list]) -> list:
@@ -410,12 +481,28 @@ def to_sequences(
     }
 
 
-def validate_contract(tabular: dict, sequences: dict) -> None:
+def validate_contract(tabular: dict, sequences: dict, require_finite: bool = True) -> None:
     """Guarantee the two adapters expose the same rows, targets, and folds.
 
     Without this, "the LSTM is 8% better" could really mean "the LSTM was
     evaluated on a different 5% of the rows".
+
+    require_finite also rejects NaN in either feature block. Matching rows are
+    not enough on their own: a tree model consumes NaN natively while an LSTM
+    turns it into NaN loss, so a tensor that still carries nulls gets patched
+    at training time and the two models silently stop seeing the same inputs.
+    Pass False only for a run that is not comparing against the LSTM.
     """
+    if require_finite:
+        tabular_nan = int(np.isnan(np.asarray(tabular["X"], dtype="float64")).sum())
+        assert tabular_nan == 0, (
+            f"Fitur tabular mengandung {tabular_nan} NaN — jalankan impute_features()"
+        )
+        sequence_nan = int(np.isnan(np.asarray(sequences["X"], dtype="float64")).sum())
+        assert sequence_nan == 0, (
+            f"Tensor sequence mengandung {sequence_nan} NaN — jalankan impute_features()"
+        )
+
     tabular_keys = tabular["keys"].reset_index(drop=True)
     sequence_keys = sequences["keys"].reset_index(drop=True)
 

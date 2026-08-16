@@ -144,6 +144,99 @@ class TestAssignFolds(unittest.TestCase):
             self.assertFalse((train & valid).any(), f"kebocoran di fold {fold}")
 
 
+class TestFeatureCols(unittest.TestCase):
+    """The canonical feature list all three models train on.
+
+    Without one written down, each model script picks its own columns and the
+    comparison stops being a comparison.
+    """
+
+    def test_baseline_ratio_is_excluded(self):
+        """baseline_ratio is Kuantitas_H divided by a per-pair constant, so a
+        tree that can identify the pair can recover today's own demand from
+        it. Every lag and rolling feature deliberately stops at H-1; keeping
+        this one would make 'what the model knows at prediction time' mean two
+        different things in the same row."""
+        self.assertNotIn("baseline_ratio", modeling_prep.FEATURE_COLS)
+
+    def test_is_spike_is_excluded(self):
+        self.assertNotIn("is_spike", modeling_prep.FEATURE_COLS)
+
+    def test_no_target_column_leaks_into_the_features(self):
+        for col in modeling_prep.FEATURE_COLS:
+            self.assertFalse(
+                col.startswith("target_lead_time") or col.startswith("target_h"),
+                f"{col} adalah target, bukan fitur",
+            )
+
+    def test_target_window_composition_is_a_feature_not_a_target(self):
+        """It describes which weekdays the window covers, all knowable in
+        advance from the calendar."""
+        self.assertIn("target_window_weekend_days", modeling_prep.FEATURE_COLS)
+
+    def test_raw_quantity_columns_are_excluded(self):
+        for col in ["Kuantitas", "Kuantitas_capped"]:
+            self.assertNotIn(col, modeling_prep.FEATURE_COLS)
+
+    def test_identifier_columns_are_excluded(self):
+        for col in ["Tanggal", "segment_id", "Nama Barang", "fold_id"]:
+            self.assertNotIn(col, modeling_prep.FEATURE_COLS)
+
+    def test_categoricals_appear_only_as_encoded_indices(self):
+        for col in modeling_prep.CATEGORICAL_COLS:
+            self.assertNotIn(col, modeling_prep.FEATURE_COLS)
+            self.assertIn(f"{col}_idx", modeling_prep.FEATURE_COLS)
+
+    def test_lag_and_rolling_features_are_all_included(self):
+        for col in modeling_prep.HISTORY_COLS:
+            self.assertIn(col, modeling_prep.FEATURE_COLS)
+
+    def test_imputation_indicators_are_included(self):
+        for col in ["was_relocated", "has_full_history", "missing_history_count"]:
+            self.assertIn(col, modeling_prep.FEATURE_COLS)
+
+    def test_list_has_no_duplicates(self):
+        self.assertEqual(
+            len(modeling_prep.FEATURE_COLS), len(set(modeling_prep.FEATURE_COLS))
+        )
+
+
+class TestFoldTrainMaskPurging(unittest.TestCase):
+    """Each fold boundary needs the same purge as the train/test boundary."""
+
+    def _frame(self):
+        dates = pd.date_range("2025-06-25", periods=10, freq="D")  # 25 Jun - 4 Jul
+        return pd.DataFrame({
+            "Tanggal": dates,
+            "lead_time_days": [4] * len(dates),
+        })
+
+    def test_rows_whose_label_enters_the_validation_month_are_excluded(self):
+        mask = modeling_prep.fold_train_mask(self._frame(), 1)
+        kept = self._frame().loc[mask, "Tanggal"]
+        # Fold 1 validates July; 25 and 26 Jun end on 29 and 30 Jun and stay.
+        self.assertEqual(
+            list(kept), [pd.Timestamp("2025-06-25"), pd.Timestamp("2025-06-26")]
+        )
+
+    def test_purge_false_restores_the_plain_date_filter(self):
+        mask = modeling_prep.fold_train_mask(self._frame(), 1, purge=False)
+        self.assertEqual(mask.sum(), 6)  # 25-30 Jun
+
+    def test_validation_month_rows_are_still_excluded_from_training(self):
+        mask = modeling_prep.fold_train_mask(self._frame(), 1)
+        kept = self._frame().loc[mask, "Tanggal"]
+        self.assertTrue((kept < pd.Timestamp("2025-07-01")).all())
+
+    def test_frame_without_lead_time_column_falls_back_to_the_date_filter(self):
+        df = pd.DataFrame({"Tanggal": pd.date_range("2025-06-25", periods=10, freq="D")})
+        self.assertEqual(modeling_prep.fold_train_mask(df, 1).sum(), 6)
+
+    def test_invalid_fold_id_still_raises(self):
+        with self.assertRaises(ValueError):
+            modeling_prep.fold_train_mask(self._frame(), 9)
+
+
 class TestEncodeCategoricals(unittest.TestCase):
     def _frame(self, kota, dates=None):
         dates = dates or ["2024-01-01"] * len(kota)
@@ -216,6 +309,8 @@ class TestImputeFeatures(unittest.TestCase):
         base = {col: [np.nan] for col in modeling_prep.EVENT_PROXIMITY_COLS}
         base["days_since_relocation"] = [np.nan]
         base["baseline_ratio"] = [np.nan]
+        for col in modeling_prep.HISTORY_COLS:
+            base[col] = [np.nan]
         base.update({k: [v] for k, v in overrides.items()})
         return pd.DataFrame(base)
 
@@ -268,6 +363,69 @@ class TestImputeFeatures(unittest.TestCase):
             "days_since_relocation", "baseline_ratio",
         ]
         self.assertFalse(result[targets].isna().any().any())
+
+
+class TestImputeHistoryFeatures(unittest.TestCase):
+    """Lag and rolling nulls must be filled too, or the LSTM cannot train.
+
+    to_tabular() only ever exposes prediction rows, whose lags are complete.
+    An LSTM window reaches 28 days further back and pulls in warm-up rows that
+    still carry nulls, so the sequence tensor arrives with NaNs while the
+    tabular matrix is clean -- the two models then see different information.
+    """
+
+    def _frame(self, **overrides):
+        base = {col: [np.nan] for col in modeling_prep.EVENT_PROXIMITY_COLS}
+        base["days_since_relocation"] = [np.nan]
+        base["baseline_ratio"] = [np.nan]
+        for col in modeling_prep.HISTORY_COLS:
+            base[col] = [np.nan]
+        base.update({k: [v] for k, v in overrides.items()})
+        return pd.DataFrame(base)
+
+    def test_history_cols_cover_every_lag_and_rolling_feature(self):
+        self.assertEqual(
+            sorted(modeling_prep.HISTORY_COLS),
+            sorted([
+                "lag_1", "lag_2", "lag_3", "lag_7", "lag_14", "lag_21", "lag_28",
+                "roll_mean_7", "roll_std_7", "roll_mean_14", "roll_std_14",
+                "roll_mean_28", "roll_std_28",
+            ]),
+        )
+
+    def test_missing_lag_and_rolling_values_become_zero(self):
+        result = modeling_prep.impute_features(self._frame())
+        for col in modeling_prep.HISTORY_COLS:
+            self.assertEqual(result.iloc[0][col], 0.0, f"{col} tidak diimputasi")
+
+    def test_real_lag_values_are_left_alone(self):
+        result = modeling_prep.impute_features(self._frame(lag_7=13.0))
+        self.assertEqual(result.iloc[0]["lag_7"], 13.0)
+
+    def test_all_history_present_sets_the_full_history_indicator(self):
+        complete = {col: 1.0 for col in modeling_prep.HISTORY_COLS}
+        result = modeling_prep.impute_features(self._frame(**complete))
+        self.assertTrue(bool(result.iloc[0]["has_full_history"]))
+        self.assertEqual(result.iloc[0]["missing_history_count"], 0)
+
+    def test_partial_history_is_counted_not_just_flagged(self):
+        """A row 14 days into its segment has more usable history than one 3
+        days in; a bare boolean would collapse the two into the same value."""
+        result = modeling_prep.impute_features(self._frame(lag_1=1.0, lag_2=1.0))
+        self.assertFalse(bool(result.iloc[0]["has_full_history"]))
+        self.assertEqual(
+            result.iloc[0]["missing_history_count"], len(modeling_prep.HISTORY_COLS) - 2
+        )
+
+    def test_a_genuine_zero_lag_still_counts_as_present(self):
+        """Zero demand yesterday is a real observation, not a missing one."""
+        complete = {col: 0.0 for col in modeling_prep.HISTORY_COLS}
+        result = modeling_prep.impute_features(self._frame(**complete))
+        self.assertTrue(bool(result.iloc[0]["has_full_history"]))
+
+    def test_no_history_nulls_remain(self):
+        result = modeling_prep.impute_features(self._frame())
+        self.assertFalse(result[modeling_prep.HISTORY_COLS].isna().any().any())
 
 
 def _pair_frame(n_rows, item="I1", branch="B1", start="2024-01-01"):
@@ -463,6 +621,37 @@ class TestValidateContract(unittest.TestCase):
         tabular["fold_id"].iloc[0] = 3.0
         with self.assertRaisesRegex(AssertionError, "fold"):
             modeling_prep.validate_contract(tabular, sequences)
+
+    def test_rejects_nan_in_the_sequence_tensor(self):
+        """The failure this contract exists to catch: an LSTM given NaN
+        produces NaN loss, so it would be quietly patched at training time and
+        stop seeing what the tree models see."""
+        tabular, sequences = self._pair()
+        sequences["X"] = sequences["X"].copy()
+        sequences["X"][0, 0, 0] = np.nan
+        with self.assertRaisesRegex(AssertionError, "NaN"):
+            modeling_prep.validate_contract(tabular, sequences)
+
+    def test_rejects_nan_in_the_tabular_matrix(self):
+        tabular, sequences = self._pair()
+        tabular["X"] = tabular["X"].copy()
+        tabular["X"].iloc[0, 0] = np.nan
+        with self.assertRaisesRegex(AssertionError, "NaN"):
+            modeling_prep.validate_contract(tabular, sequences)
+
+    def test_require_finite_false_allows_nan_for_tree_only_runs(self):
+        """XGBoost handles NaN natively; a run that is not comparing against
+        the LSTM may legitimately want them left in."""
+        tabular, sequences = self._pair()
+        sequences["X"] = sequences["X"].copy()
+        sequences["X"][0, 0, 0] = np.nan
+        self.assertIsNone(
+            modeling_prep.validate_contract(tabular, sequences, require_finite=False)
+        )
+
+    def test_clean_adapters_pass_the_finiteness_check(self):
+        tabular, sequences = self._pair()
+        self.assertIsNone(modeling_prep.validate_contract(tabular, sequences))
 
 
 class TestSegmentAwareAdapters(unittest.TestCase):

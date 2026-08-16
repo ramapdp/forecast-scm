@@ -9,6 +9,7 @@ from . import normalize_items
 from . import calendar_features
 from . import outlet_features
 from . import outlier_handling
+from . import purging
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -43,7 +44,8 @@ FEATURED_COLUMNS = [
     "roll_mean_28", "roll_std_28",
     "kawasan", "hari_pengiriman", "lead_time_days", "kota",
     "has_shopee", "has_gofood", "has_grabfood", "can_order_online",
-    "target_lead_time_cumulative", "days_since_relocation",
+    "target_lead_time_cumulative", "target_lead_time_cumulative_capped",
+    "is_delivery_day", "target_window_weekend_days", "days_since_relocation",
     "branch_avg_daily_qty", "branch_demand_cv", "branch_volume_tier", "branch_age_days",
 ]
 
@@ -101,6 +103,7 @@ def add_lead_time_target(
     date_col: str = "Tanggal",
     qty_col: str = "Kuantitas",
     lead_time_col: str = "lead_time_days",
+    target_col: str = "target_lead_time_cumulative",
 ) -> pd.DataFrame:
     result = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
     rev = result.iloc[::-1]
@@ -123,9 +126,9 @@ def add_lead_time_target(
     if distinct_windows:
         conditions = [result[lead_time_col] == w for w in distinct_windows]
         choices = [result[c] for c in fwd_cols]
-        result["target_lead_time_cumulative"] = np.select(conditions, choices, default=np.nan)
+        result[target_col] = np.select(conditions, choices, default=np.nan)
     else:
-        result["target_lead_time_cumulative"] = np.nan
+        result[target_col] = np.nan
     return result.drop(columns=fwd_cols)
 
 
@@ -201,9 +204,22 @@ def add_branch_age_days(
 
 
 def split_train_test(
-    df: pd.DataFrame, cutoff: pd.Timestamp = TEST_START, date_col: str = "Tanggal"
+    df: pd.DataFrame,
+    cutoff: pd.Timestamp = TEST_START,
+    date_col: str = "Tanggal",
+    purge: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    train = df[df[date_col] < cutoff].reset_index(drop=True)
+    """Split on the cutoff, dropping train rows whose label crosses it.
+
+    The last few days before the cutoff carry a lead-time target summed partly
+    over test-period demand. Keeping them would train the model on labels built
+    from the very month it is meant to be evaluated on. The test side is never
+    purged — those rows are the evaluation, not the training data.
+    """
+    before_cutoff = df[date_col] < cutoff
+    if purge and "lead_time_days" in df.columns:
+        before_cutoff &= purging.lookahead_safe_mask(df, cutoff, date_col=date_col)
+    train = df[before_cutoff].reset_index(drop=True)
     test = df[df[date_col] >= cutoff].reset_index(drop=True)
     return train, test
 
@@ -246,7 +262,21 @@ def engineer_features(
     df = outlet_features.apply_region_features(df, region_df)
     df = apply_outlet_features(df, outlets_df, overrides_df)
     df = outlet_features.add_relocation_feature(df)
+    df = outlet_features.add_delivery_day_flag(df)
+    df = calendar_features.add_target_window_weekend_days(df)
     df = add_lead_time_target(df, pair_cols=SEGMENT_COLS)
+    # Second target over the capped quantities. The business needs the model
+    # for demand outside pre-orders, which the team handles separately, but
+    # Kuantitas mixes the two with no marker; capped spikes are the closest
+    # available proxy for the pre-order component. Spike rows are 2.41% of the
+    # December test window yet drive 11.5% of its absolute error, so which
+    # target a metric uses is not a rounding difference.
+    df = add_lead_time_target(
+        df,
+        pair_cols=SEGMENT_COLS,
+        qty_col="Kuantitas_capped",
+        target_col="target_lead_time_cumulative_capped",
+    )
     df = add_lag_features(df, pair_cols=SEGMENT_COLS, qty_col="Kuantitas_capped")
     df = add_rolling_features(df, pair_cols=SEGMENT_COLS, qty_col="Kuantitas_capped")
     branch_stats = compute_branch_stats(df, cutoff=cutoff, qty_col="Kuantitas_capped")
@@ -265,7 +295,10 @@ def build_featured_dataset(
     closures_path: str = outlet_features.CLOSURES_FILE,
     min_pair_history: int = outlier_handling.MIN_PAIR_HISTORY,
     spike_ratio_threshold: float = outlier_handling.SPIKE_RATIO_THRESHOLD,
+    relocation_dates: Optional[dict] = None,
 ) -> pd.DataFrame:
+    if relocation_dates is None:
+        relocation_dates = outlet_features.OBSERVED_RELOCATION_DATES
     outlets_df = outlet_features.load_outlets(outlets_path)
     overrides_df = outlet_features.load_overrides(overrides_path)
     region_df = outlet_features.load_region_mapping(region_path)
@@ -282,7 +315,11 @@ def build_featured_dataset(
             f"belum tercatat di {closures_path} — hari-hari itu akan diisi nol."
         )
 
-    df = build_panel.build_dense_panel(df, closures=closures)
+    # One breakpoint date per branch, so a relocation ends the old segment the
+    # same way a closure does — without dropping the rows, since the outlet
+    # kept trading throughout.
+    breakpoints = {branch: [date] for branch, date in relocation_dates.items()}
+    df = build_panel.build_dense_panel(df, closures=closures, breakpoints=breakpoints)
     df = build_panel.filter_min_history(df, cutoff=cutoff, min_days=min_history_days)
     return engineer_features(
         df,
@@ -309,6 +346,15 @@ def run_qa_checks(df: pd.DataFrame, closures: Optional[dict] = None) -> None:
     assert (df["Kuantitas_capped"] <= df["Kuantitas"]).all(), (
         "Kuantitas_capped melebihi Kuantitas mentah"
     )
+
+    if "target_lead_time_cumulative_capped" in df.columns:
+        both = df.dropna(
+            subset=["target_lead_time_cumulative", "target_lead_time_cumulative_capped"]
+        )
+        assert (
+            both["target_lead_time_cumulative_capped"]
+            <= both["target_lead_time_cumulative"]
+        ).all(), "target capped melebihi target mentah"
 
     assert (df["kota"] != "Unknown").all(), "Ditemukan cabang dengan kota 'Unknown'"
 

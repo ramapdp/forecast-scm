@@ -7,6 +7,7 @@ import pandas as pd
 from utils import prepare_forecast_data
 from utils import normalize_items
 from utils import build_panel
+from utils import outlet_features
 
 
 def _pair_series(qtys, start="2025-01-01", pair=("A", "X")):
@@ -393,6 +394,250 @@ class TestBuildFeaturedDataset(unittest.TestCase):
             self.assertIn(col, df.columns)
 
 
+class TestCappedLeadTimeTarget(unittest.TestCase):
+    """A second target built from Kuantitas_capped.
+
+    The business needs the model for demand *outside* pre-orders, which the
+    team handles separately, but Kuantitas mixes both. Capped spikes are the
+    only available proxy for the pre-order component, so a capped target
+    approximates the scope the model is actually responsible for. The raw
+    target stays for full-accountability reporting.
+    """
+
+    def _frame(self, quantities, capped):
+        n = len(quantities)
+        return pd.DataFrame({
+            "Kode Barang": ["A"] * n, "Nama Cabang": ["X"] * n,
+            "Tanggal": pd.date_range("2025-01-01", periods=n, freq="D"),
+            "Kuantitas": quantities, "Kuantitas_capped": capped,
+            "lead_time_days": [2] * n,
+        })
+
+    def test_named_target_column_is_produced(self):
+        df = self._frame([1, 2, 3, 4], [1, 2, 3, 4])
+        result = prepare_forecast_data.add_lead_time_target(
+            df, qty_col="Kuantitas_capped", target_col="target_capped"
+        )
+        self.assertIn("target_capped", result.columns)
+
+    def test_capped_target_sums_the_capped_quantities(self):
+        df = self._frame([1, 2, 3, 4], [1, 2, 3, 4])
+        result = prepare_forecast_data.add_lead_time_target(
+            df, qty_col="Kuantitas_capped", target_col="target_capped"
+        ).sort_values("Tanggal")
+        self.assertEqual(result["target_capped"].iloc[0], 5)  # 2 + 3
+
+    def test_capped_target_never_exceeds_the_raw_target(self):
+        df = self._frame([1, 100, 3, 4], [1, 5, 3, 4])
+        result = prepare_forecast_data.add_lead_time_target(df)
+        result = prepare_forecast_data.add_lead_time_target(
+            result, qty_col="Kuantitas_capped", target_col="target_capped"
+        )
+        both = result.dropna(subset=["target_lead_time_cumulative", "target_capped"])
+        self.assertTrue(
+            (both["target_capped"] <= both["target_lead_time_cumulative"]).all()
+        )
+
+    def test_capping_a_spike_lowers_the_target_that_covers_it(self):
+        df = self._frame([1, 100, 3, 4], [1, 5, 3, 4])
+        result = prepare_forecast_data.add_lead_time_target(
+            df, qty_col="Kuantitas_capped", target_col="target_capped"
+        ).sort_values("Tanggal")
+        self.assertEqual(result["target_capped"].iloc[0], 8)  # 5 + 3, not 100 + 3
+
+    def test_default_target_name_is_unchanged(self):
+        df = self._frame([1, 2, 3, 4], [1, 2, 3, 4])
+        result = prepare_forecast_data.add_lead_time_target(df)
+        self.assertIn("target_lead_time_cumulative", result.columns)
+
+
+class TestSplitTrainTestPurging(unittest.TestCase):
+    """Train rows whose label reaches into the test month must be dropped."""
+
+    def _frame(self):
+        dates = pd.date_range("2025-11-25", periods=12, freq="D")  # 25 Nov - 6 Dec
+        return pd.DataFrame({
+            "Tanggal": dates,
+            "lead_time_days": [4] * len(dates),
+            "target_lead_time_cumulative": range(len(dates)),
+        })
+
+    def test_train_rows_reaching_into_test_are_removed(self):
+        train, _ = prepare_forecast_data.split_train_test(
+            self._frame(), cutoff=pd.Timestamp("2025-12-01")
+        )
+        # 25 and 26 Nov end on 29 and 30 Nov; 27-30 Nov all reach 1 Dec or past.
+        self.assertEqual(
+            list(train["Tanggal"]),
+            [pd.Timestamp("2025-11-25"), pd.Timestamp("2025-11-26")],
+        )
+
+    def test_test_side_is_never_purged(self):
+        _, test = prepare_forecast_data.split_train_test(
+            self._frame(), cutoff=pd.Timestamp("2025-12-01")
+        )
+        self.assertEqual(len(test), 6)  # 1-6 Dec, all kept
+        self.assertEqual(test["Tanggal"].min(), pd.Timestamp("2025-12-01"))
+
+    def test_purge_false_restores_the_previous_behaviour(self):
+        train, _ = prepare_forecast_data.split_train_test(
+            self._frame(), cutoff=pd.Timestamp("2025-12-01"), purge=False
+        )
+        self.assertEqual(len(train), 6)  # 25-30 Nov
+
+    def test_frame_without_lead_time_column_is_left_intact(self):
+        """featured.parquet always carries lead_time_days, but fixtures and
+        older callers may not — they must not silently lose rows."""
+        df = pd.DataFrame({
+            "Tanggal": pd.date_range("2025-11-25", periods=10, freq="D"),
+            "Kuantitas": range(10),
+        })
+        train, test = prepare_forecast_data.split_train_test(
+            df, cutoff=pd.Timestamp("2025-12-01")
+        )
+        self.assertEqual(len(train) + len(test), 10)
+
+
+class TestBuildFeaturedDatasetRelocationSegments(unittest.TestCase):
+    """A relocation date must split the pair's history into two segments."""
+
+    def _run(self, relocation_dates):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        rows += _branch_rows("KY001 - Branch", "2025-06-01", 120)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + "".join(rows).encode("utf-8"))
+            return prepare_forecast_data.build_featured_dataset(
+                input_path=input_path,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=_write_outlets_fixture(tmpdir, ["KY001 - Branch"]),
+                overrides_path=_write_empty_overrides_fixture(tmpdir),
+                region_path=_write_region_mapping_fixture(
+                    tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+                ),
+                relocation_dates=relocation_dates,
+            )
+
+    def test_relocation_date_splits_the_pair_into_two_segments(self):
+        df = self._run({"KY001 - Branch": pd.Timestamp("2025-08-01")})
+        self.assertEqual(sorted(df["segment_id"].unique()), [1, 2])
+        moved = df[df["Tanggal"] == pd.Timestamp("2025-08-01")]
+        self.assertEqual(moved["segment_id"].iloc[0], 2)
+
+    def test_no_relocation_leaves_a_single_segment(self):
+        df = self._run({})
+        self.assertEqual(list(df["segment_id"].unique()), [1])
+
+    def test_lag_does_not_reach_across_the_relocation(self):
+        df = self._run({"KY001 - Branch": pd.Timestamp("2025-08-01")})
+        first_after = df[df["Tanggal"] == pd.Timestamp("2025-08-01")]
+        self.assertTrue(pd.isna(first_after["lag_1"].iloc[0]))
+
+    def test_target_does_not_reach_across_the_relocation(self):
+        df = self._run({"KY001 - Branch": pd.Timestamp("2025-08-01")})
+        last_before = df[df["Tanggal"] == pd.Timestamp("2025-07-31")]
+        self.assertTrue(pd.isna(last_before["target_h1"].iloc[0]))
+
+
+class TestFeaturedDatasetNewColumns(unittest.TestCase):
+    """The three columns added for scope-correct evaluation must reach the
+    exported parquet, not just exist as functions."""
+
+    def _featured(self):
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        rows += _branch_rows("KY001 - Branch", "2025-06-01", 120)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + "".join(rows).encode("utf-8"))
+            return prepare_forecast_data.build_featured_dataset(
+                input_path=input_path,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=_write_outlets_fixture(tmpdir, ["KY001 - Branch"]),
+                overrides_path=_write_empty_overrides_fixture(tmpdir),
+                region_path=_write_region_mapping_fixture(
+                    tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+                ),
+            )
+
+    def test_all_three_new_columns_are_present(self):
+        df = self._featured()
+        for col in [
+            "target_lead_time_cumulative_capped",
+            "is_delivery_day",
+            "target_window_weekend_days",
+        ]:
+            self.assertIn(col, df.columns)
+
+    def test_featured_columns_constant_lists_them(self):
+        for col in [
+            "target_lead_time_cumulative_capped",
+            "is_delivery_day",
+            "target_window_weekend_days",
+        ]:
+            self.assertIn(col, prepare_forecast_data.FEATURED_COLUMNS)
+
+    def test_capped_target_never_exceeds_the_raw_target(self):
+        df = self._featured().dropna(
+            subset=["target_lead_time_cumulative", "target_lead_time_cumulative_capped"]
+        )
+        self.assertTrue(
+            (
+                df["target_lead_time_cumulative_capped"]
+                <= df["target_lead_time_cumulative"]
+            ).all()
+        )
+
+    def test_delivery_days_are_the_branch_shipping_weekdays(self):
+        df = self._featured()
+        flagged = df.loc[df["is_delivery_day"], "Tanggal"].dt.weekday.unique()
+        self.assertEqual(sorted(flagged), [0, 3])  # Senin dan Kamis
+
+    def test_lead_time_on_delivery_days_is_only_three_or_four(self):
+        """The Monday shipment covers Tue-Thu, the Thursday one Fri-Mon. Rows
+        with lead time 1-2 are never a shipment decision."""
+        df = self._featured()
+        self.assertEqual(
+            sorted(df.loc[df["is_delivery_day"], "lead_time_days"].unique()), [3, 4]
+        )
+
+    def test_qa_rejects_a_capped_target_above_the_raw_one(self):
+        df = self._featured().copy()
+        df.loc[df.index[0], "target_lead_time_cumulative_capped"] = 1e9
+        with self.assertRaisesRegex(AssertionError, "capped"):
+            prepare_forecast_data.run_qa_checks(df)
+
+
+class TestObservedRelocationDates(unittest.TestCase):
+    """Only relocations visible inside the data may break a segment.
+
+    The five lower-bound dates describe moves that happened after coverage
+    ends, so there is no break in the data to mark -- forcing one would carve
+    a one-day segment out of the test window and strip its lag features.
+    """
+
+    def test_observed_dates_are_a_subset_of_all_relocation_dates(self):
+        self.assertTrue(
+            set(outlet_features.OBSERVED_RELOCATION_DATES)
+            <= set(outlet_features.RELOCATION_DATES)
+        )
+
+    def test_lower_bound_relocations_are_excluded(self):
+        for branch in outlet_features.LOWER_BOUND_RELOCATIONS:
+            self.assertNotIn(branch, outlet_features.OBSERVED_RELOCATION_DATES)
+
+    def test_observed_dates_keep_the_same_timestamps(self):
+        for branch, date in outlet_features.OBSERVED_RELOCATION_DATES.items():
+            self.assertEqual(date, outlet_features.RELOCATION_DATES[branch])
+
+    def test_every_lower_bound_branch_is_a_known_relocation(self):
+        self.assertTrue(
+            set(outlet_features.LOWER_BOUND_RELOCATIONS)
+            <= set(outlet_features.RELOCATION_DATES)
+        )
+
+
 class TestExportFeatured(unittest.TestCase):
     def test_writes_and_round_trips_parquet_file(self):
         df = pd.DataFrame({
@@ -602,8 +847,10 @@ class TestMain(unittest.TestCase):
 
 
 class TestEngineerFeaturesContract(unittest.TestCase):
-    def test_featured_columns_constant_has_64_entries(self):
-        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 64)
+    def test_featured_columns_constant_has_67_entries(self):
+        # 64 before 2026-08-15, plus target_lead_time_cumulative_capped,
+        # is_delivery_day, and target_window_weekend_days.
+        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 67)
 
     def test_featured_columns_includes_days_since_relocation(self):
         self.assertIn("days_since_relocation", prepare_forecast_data.FEATURED_COLUMNS)

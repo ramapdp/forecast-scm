@@ -203,3 +203,35 @@ def add_calendar_features(df: pd.DataFrame, date_col: str = "Tanggal") -> pd.Dat
     result["days_since_new_year"] = days_since_new_year(dates)
     result["days_until_new_year"] = days_until_new_year(dates)
     return result
+
+
+def add_target_window_weekend_days(
+    df: pd.DataFrame,
+    date_col: str = "Tanggal",
+    lead_time_col: str = "lead_time_days",
+) -> pd.DataFrame:
+    """Count Saturdays and Sundays inside the target window H+1 .. H+L.
+
+    The lead-time target is a sum over a variable window, and which weekdays
+    fall inside it matters more than how many. Pickup volume indexes at 143 on
+    Sunday against 77 on Monday, so for a Region 1 branch the Thursday
+    shipment (covering Fri-Mon) has to carry about 1.9x the Monday shipment
+    (covering Tue-Thu). Without this the same information is only reachable as
+    an interaction between day_of_week and lead_time_days.
+
+    Runs after apply_region_features, which is what supplies lead_time_days.
+    """
+    result = df.copy()
+    weekday = result[date_col].dt.weekday
+    lead_time = result[lead_time_col]
+
+    # Only a handful of (weekday, lead time) combinations exist, so count the
+    # window day by day over the whole column rather than per row.
+    counts = pd.Series(0.0, index=result.index)
+    for offset in range(1, int(lead_time.max()) + 1 if lead_time.notna().any() else 1):
+        in_window = lead_time >= offset
+        is_weekend_day = (weekday + offset) % 7 >= 5
+        counts += (in_window & is_weekend_day).astype(float)
+
+    result["target_window_weekend_days"] = counts.where(lead_time.notna())
+    return result

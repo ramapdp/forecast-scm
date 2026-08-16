@@ -225,5 +225,71 @@ class TestAddCalendarFeatures(unittest.TestCase):
         self.assertTrue(result.iloc[1]["is_eid_al_adha"])
 
 
+class TestTargetWindowWeekendDays(unittest.TestCase):
+    """How much demand a shipment must cover depends on which days it covers.
+
+    Pickup volume runs 143 on Sunday against 77 on Monday (mean 100), so the
+    Thursday shipment covering Fri-Mon carries roughly twice the Monday
+    shipment covering Tue-Thu. Trees can infer this from day_of_week plus
+    lead_time_days; stating it outright is what makes it reachable for the
+    LSTM as well.
+    """
+
+    def _frame(self, dates, lead_times):
+        return pd.DataFrame({
+            "Tanggal": pd.to_datetime(dates),
+            "lead_time_days": lead_times,
+        })
+
+    def test_midweek_window_contains_no_weekend(self):
+        # Monday 2025-06-02, lead 3 -> Tue, Wed, Thu
+        result = calendar_features.add_target_window_weekend_days(
+            self._frame(["2025-06-02"], [3])
+        )
+        self.assertEqual(result["target_window_weekend_days"].iloc[0], 0)
+
+    def test_thursday_window_picks_up_both_weekend_days(self):
+        # Thursday 2025-06-05, lead 4 -> Fri, Sat, Sun, Mon
+        result = calendar_features.add_target_window_weekend_days(
+            self._frame(["2025-06-05"], [4])
+        )
+        self.assertEqual(result["target_window_weekend_days"].iloc[0], 2)
+
+    def test_single_day_window_onto_a_saturday(self):
+        # Friday 2025-06-06, lead 1 -> Sat
+        result = calendar_features.add_target_window_weekend_days(
+            self._frame(["2025-06-06"], [1])
+        )
+        self.assertEqual(result["target_window_weekend_days"].iloc[0], 1)
+
+    def test_window_excludes_the_row_own_day(self):
+        """The window is H+1..H+L, so a Sunday row with lead 1 counts Monday
+        only — its own Sunday belongs to the features, not the target."""
+        result = calendar_features.add_target_window_weekend_days(
+            self._frame(["2025-06-08"], [1])  # Sunday
+        )
+        self.assertEqual(result["target_window_weekend_days"].iloc[0], 0)
+
+    def test_null_lead_time_yields_a_null_count(self):
+        result = calendar_features.add_target_window_weekend_days(
+            self._frame(["2025-06-02"], [float("nan")])
+        )
+        self.assertTrue(pd.isna(result["target_window_weekend_days"].iloc[0]))
+
+    def test_count_never_exceeds_the_window_length(self):
+        dates = pd.date_range("2025-06-02", periods=7, freq="D")
+        for lead in [1, 2, 3, 4]:
+            result = calendar_features.add_target_window_weekend_days(
+                self._frame(list(dates), [lead] * 7)
+            )
+            self.assertTrue((result["target_window_weekend_days"] <= lead).all())
+
+    def test_every_row_is_resolved_independently(self):
+        result = calendar_features.add_target_window_weekend_days(
+            self._frame(["2025-06-02", "2025-06-05"], [3, 4])
+        )
+        self.assertEqual(list(result["target_window_weekend_days"]), [0, 2])
+
+
 if __name__ == "__main__":
     unittest.main()

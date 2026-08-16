@@ -493,5 +493,55 @@ class TestDetectUnrecordedGaps(unittest.TestCase):
         self.assertEqual(len(findings), 1)
 
 
+class TestAddDeliveryDayFlag(unittest.TestCase):
+    """Head office only ships twice a week, so only those rows are the moment
+    a shipment quantity is actually decided. Everything else is training data
+    for a decision that never happens on that day."""
+
+    def _frame(self, hari="Senin dan Kamis"):
+        return pd.DataFrame({
+            "Tanggal": pd.date_range("2025-06-02", periods=7, freq="D"),  # Mon-Sun
+            "hari_pengiriman": [hari] * 7,
+        })
+
+    def test_flags_exactly_the_two_shipping_weekdays(self):
+        result = outlet_features.add_delivery_day_flag(self._frame())
+        self.assertEqual(
+            list(result["is_delivery_day"]),
+            [True, False, False, True, False, False, False],
+        )
+
+    def test_region_two_shifts_the_flagged_days(self):
+        result = outlet_features.add_delivery_day_flag(self._frame("Selasa dan Jumat"))
+        self.assertEqual(
+            list(result["is_delivery_day"]),
+            [False, True, False, False, True, False, False],
+        )
+
+    def test_branch_without_a_schedule_is_never_a_delivery_day(self):
+        df = self._frame()
+        df["hari_pengiriman"] = None
+        result = outlet_features.add_delivery_day_flag(df)
+        self.assertFalse(result["is_delivery_day"].any())
+
+    def test_flag_is_boolean_not_object(self):
+        result = outlet_features.add_delivery_day_flag(self._frame())
+        self.assertEqual(result["is_delivery_day"].dtype, bool)
+
+    def test_mixed_schedules_are_resolved_per_row(self):
+        df = pd.DataFrame({
+            "Tanggal": pd.to_datetime(["2025-06-02", "2025-06-02"]),  # both Monday
+            "hari_pengiriman": ["Senin dan Kamis", "Selasa dan Jumat"],
+        })
+        result = outlet_features.add_delivery_day_flag(df)
+        self.assertEqual(list(result["is_delivery_day"]), [True, False])
+
+    def test_original_columns_are_preserved(self):
+        df = self._frame()
+        result = outlet_features.add_delivery_day_flag(df)
+        self.assertIn("hari_pengiriman", result.columns)
+        self.assertEqual(len(result), len(df))
+
+
 if __name__ == "__main__":
     unittest.main()

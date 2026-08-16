@@ -35,10 +35,17 @@ def _drop_closed_dates(dates: pd.DatetimeIndex, intervals: list) -> pd.DatetimeI
     return pd.DatetimeIndex(values[keep])
 
 
-def _segment_ids(dates: pd.Series) -> pd.Series:
+def _segment_ids(dates: pd.Series, breakpoints: Optional[list] = None) -> pd.Series:
     # A new segment begins wherever two kept dates are more than one day
-    # apart — which is exactly where a closure interval was removed.
+    # apart — which is exactly where a closure interval was removed — or on a
+    # breakpoint date, where the outlet kept trading but the demand series
+    # itself broke (a relocation to a different market).
     starts_new_segment = dates.diff().dt.days.fillna(1) > 1
+    if breakpoints:
+        starts_new_segment |= dates.isin(breakpoints)
+    # cumsum() counts the run boundaries before each row; a break on the very
+    # first date would otherwise number that pair's only segment 2.
+    starts_new_segment.iloc[0] = False
     return starts_new_segment.cumsum().astype(int) + 1
 
 
@@ -49,6 +56,7 @@ def build_dense_panel(
     qty_col: str = "Kuantitas",
     carry_cols: list[str] = CARRY_COLS,
     closures: Optional[dict] = None,
+    breakpoints: Optional[dict] = None,
     branch_col: str = "Nama Cabang",
 ) -> pd.DataFrame:
     """Reindex each pair to a dense daily panel over its own active range.
@@ -59,10 +67,19 @@ def build_dense_panel(
     into SEGMENT_COL, and callers group by pair + segment so no lag, rolling
     window, target shift, or LSTM sequence ever bridges a closure.
 
-    closures=None reproduces the pre-segmentation behaviour exactly, with
-    segment_id == 1 everywhere.
+    `breakpoints` maps a branch to dates that start a new segment while
+    keeping every row. A relocation is the motivating case: the outlet never
+    stopped trading, so nothing should be dropped, but it moved to a different
+    market and its demand level shifts — measured at 2.2x-2.6x across the
+    three relocations with enough post-move data to check. Letting lags and
+    rolling windows reach back across that move feeds the model a month of
+    inputs from the old location at roughly half the new level.
+
+    closures=None and breakpoints=None reproduce the pre-segmentation
+    behaviour exactly, with segment_id == 1 everywhere.
     """
     closures = closures or {}
+    breakpoints = breakpoints or {}
     pieces = []
     for keys, group in df.groupby(pair_cols):
         if not isinstance(keys, tuple):
@@ -82,7 +99,7 @@ def build_dense_panel(
         for pair_col, key in zip(pair_cols, keys):
             dense[pair_col] = key
         dense = dense.reset_index().rename(columns={"index": date_col})
-        dense[SEGMENT_COL] = _segment_ids(dense[date_col])
+        dense[SEGMENT_COL] = _segment_ids(dense[date_col], breakpoints.get(branch, []))
         pieces.append(dense[pair_cols + [date_col, qty_col] + carry_cols + [SEGMENT_COL]])
 
     result = pd.concat(pieces, ignore_index=True)

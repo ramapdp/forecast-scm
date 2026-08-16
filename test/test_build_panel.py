@@ -160,5 +160,92 @@ class TestDensePanelSegments(unittest.TestCase):
             self.assertTrue((spans == 1).all())
 
 
+class TestDensePanelBreakpoints(unittest.TestCase):
+    """A relocation splits a continuous run of dates into two segments.
+
+    Unlike a closure it removes no rows -- the outlet kept trading, just at a
+    different address serving a different market -- so the panel stays dense
+    while every shift-based feature stops reaching across the move.
+    """
+
+    def _continuous_frame(self, branch="X", n_days=10):
+        return pd.DataFrame({
+            "Kode Barang": ["A"] * n_days, "Nama Cabang": [branch] * n_days,
+            "Tanggal": pd.date_range("2024-01-01", periods=n_days, freq="D"),
+            "Kuantitas": [1] * n_days,
+            "Kategori Barang": ["Barang Jadi (FG)"] * n_days,
+            "Nama Barang": ["Widget"] * n_days,
+        })
+
+    def test_breakpoint_starts_a_new_segment_without_dropping_rows(self):
+        df = self._continuous_frame()
+        breakpoints = {"X": [pd.Timestamp("2024-01-05")]}
+        result = build_panel.build_dense_panel(
+            df, breakpoints=breakpoints
+        ).sort_values("Tanggal")
+        self.assertEqual(len(result), 10)
+        self.assertEqual(
+            list(result[build_panel.SEGMENT_COL]), [1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
+        )
+
+    def test_breakpoint_date_itself_begins_the_new_segment(self):
+        df = self._continuous_frame()
+        breakpoints = {"X": [pd.Timestamp("2024-01-05")]}
+        result = build_panel.build_dense_panel(df, breakpoints=breakpoints)
+        moved_day = result[result["Tanggal"] == pd.Timestamp("2024-01-05")]
+        self.assertEqual(moved_day[build_panel.SEGMENT_COL].iloc[0], 2)
+
+    def test_breakpoint_for_another_branch_has_no_effect(self):
+        df = self._continuous_frame()
+        breakpoints = {"Y": [pd.Timestamp("2024-01-05")]}
+        result = build_panel.build_dense_panel(df, breakpoints=breakpoints)
+        self.assertEqual(set(result[build_panel.SEGMENT_COL]), {1})
+
+    def test_breakpoint_outside_the_pair_date_range_is_ignored(self):
+        df = self._continuous_frame()
+        breakpoints = {"X": [pd.Timestamp("2025-06-01")]}
+        result = build_panel.build_dense_panel(df, breakpoints=breakpoints)
+        self.assertEqual(set(result[build_panel.SEGMENT_COL]), {1})
+
+    def test_breakpoint_on_the_first_date_leaves_one_segment(self):
+        df = self._continuous_frame()
+        breakpoints = {"X": [pd.Timestamp("2024-01-01")]}
+        result = build_panel.build_dense_panel(df, breakpoints=breakpoints)
+        self.assertEqual(set(result[build_panel.SEGMENT_COL]), {1})
+
+    def test_closure_and_breakpoint_combine_into_three_segments(self):
+        dates = list(pd.date_range("2024-01-01", periods=5, freq="D")) + \
+                list(pd.date_range("2024-03-01", periods=5, freq="D"))
+        df = pd.DataFrame({
+            "Kode Barang": ["A"] * 10, "Nama Cabang": ["X"] * 10,
+            "Tanggal": pd.to_datetime(dates), "Kuantitas": [1] * 10,
+            "Kategori Barang": ["Barang Jadi (FG)"] * 10, "Nama Barang": ["Widget"] * 10,
+        })
+        closures = {"X": [(pd.Timestamp("2024-01-06"), pd.Timestamp("2024-03-01"))]}
+        breakpoints = {"X": [pd.Timestamp("2024-03-03")]}
+        result = build_panel.build_dense_panel(
+            df, closures=closures, breakpoints=breakpoints
+        ).sort_values("Tanggal")
+        self.assertEqual(
+            list(result[build_panel.SEGMENT_COL]), [1, 1, 1, 1, 1, 2, 2, 3, 3, 3]
+        )
+
+    def test_segments_stay_internally_dense_after_a_breakpoint(self):
+        df = self._continuous_frame()
+        breakpoints = {"X": [pd.Timestamp("2024-01-05")]}
+        result = build_panel.build_dense_panel(df, breakpoints=breakpoints)
+        for _, group in result.groupby(["Kode Barang", "Nama Cabang", build_panel.SEGMENT_COL]):
+            spans = group["Tanggal"].sort_values().diff().dropna().dt.days
+            self.assertTrue((spans == 1).all())
+
+    def test_breakpoints_none_reproduces_legacy_behaviour(self):
+        df = self._continuous_frame()
+        self.assertTrue(
+            build_panel.build_dense_panel(df, breakpoints=None).equals(
+                build_panel.build_dense_panel(df)
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
