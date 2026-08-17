@@ -1,6 +1,6 @@
 # Pertanyaan untuk Pemilik Data — Kebuli Yaman
 
-**Tanggal:** 17 Agustus 2026 *(revisi ketiga — tersisa 1 pertanyaan)*
+**Tanggal:** 17 Agustus 2026 *(revisi keempat — semua pertanyaan terjawab)*
 **Untuk:** Tim SCM / pemilik data Kebuli Yaman
 **Dari:** Tim penelitian peramalan permintaan
 
@@ -15,8 +15,9 @@
 | **A. Arsip jadwal kirim lokasi lama** | **`outlet_mapping.csv` sudah menjadi arsipnya; jadwal dicocokkan lewat nama outlet baru dan itu yang berlaku (2026-08-17)** |
 | **C. KY068 Kramatwatu, 28 Juni – 10 Juli 2025** | **Tutup sementara — bukan celah pencatatan (2026-08-17)** |
 | **D. Cikarang Pusat** | **Belum ada tanggal buka; menunggu data baru (2026-08-17)** |
+| **B. Kambing Oven (`FGS.00048`)** | **Masih dijual — memang barang slow mover; buku menu memuatnya sebagai paket tersendiri (2026-08-17)** |
 
-**Tersisa 1 hal kecil** (pertanyaan B di bawah). Tidak ada yang menahan pekerjaan.
+**Semua pertanyaan sudah terjawab.** Tidak ada yang menahan pekerjaan.
 
 ---
 
@@ -46,14 +47,21 @@ buka. Akan kami isi begitu data periode baru masuk.
 
 ---
 
-## B. Kambing Oven (`FGS.00048`) — satu-satunya yang masih terbuka
+## B. Kambing Oven (`FGS.00048`) — terjawab 17 Agustus 2026 ✅
 
-Apakah menu ini masih dijual? Kalau sudah tidak, akan kami keluarkan dari data
-seperti menu-menu lain yang sudah discontinued.
-→ [ ] Masih dijual  [ ] Sudah tidak ada
+**Jawaban: masih dijual, dan memang barang slow mover.** Bukti pendukungnya
+buku menu: item ini muncul sebagai **paket tersendiri — "Kambing Muda Rempah
+Oven (Satu Ekor)", termasuk 50 porsi Nasi Kebuli Rempah polos, acar & sambal —
+di kotak terpisah dari Paket Aqiqah**.
 
-Angka lengkapnya (koreksi dari revisi sebelumnya, yang menulis "4 unit di 1
-cabang" — itu angka setelah penyaringan, bukan angka mentahnya):
+Konsekuensinya untuk data: `FGS.00048` **tidak** kami keluarkan (batal jadi
+kandidat `EXCLUDED_ITEMS`), dan `is_event_driven` tetap `false` di
+`dataset/event_driven_items.csv`. Ini juga cocok dengan pemeriksaan kami
+sebelumnya: barang ini tidak pernah bergerak di hari yang sama dengan SKU
+aqiqah (0 dari 8 hari), jadi memang bukan bagian dari paket aqiqah.
+
+Angka lengkapnya, untuk arsip (koreksi dari revisi sebelumnya, yang menulis
+"4 unit di 1 cabang" — itu angka setelah penyaringan, bukan angka mentahnya):
 
 | | |
 |---|---|
@@ -62,9 +70,16 @@ cabang" — itu angka setelah penyaringan, bukan angka mentahnya):
 | Cabang | KY002 Cilegon (3 transaksi/4 ekor), KY008 Depok Kelapa Dua (2 ekor), KY048 Banjar Wijaya, KY045 Graha Raya, KY003 Serang, KY052 Bantarjati Bogor (masing-masing 1 ekor) |
 | Yang masuk model | **hanya KY002 Cilegon (4 ekor)** — cabang lain cuma bergerak 1 hari, jadi terbuang oleh syarat minimal 60 hari riwayat |
 
-Ringkasnya: sekitar **1 ekor per 2 bulan untuk seluruh jaringan**, tapi gerakan
-terakhirnya September 2025 — jadi belum tentu berhenti dijual. Itulah yang
-ingin kami pastikan.
+Ringkasnya: sekitar **1 ekor per 2 bulan untuk seluruh jaringan** — laju yang
+sekarang sudah kami pahami sebagai memang segitu, bukan tanda barang berhenti.
+
+*Satu pengamatan tambahan, tidak perlu ditanggapi:* di ke-8 hari paket ini
+keluar, **Nasi Kebuli (`FGS-00004`) di cabang tersebut selalu masuk 8% hari
+tertinggi cabangnya sendiri** (persentil 92–99%). Kelebihannya (105–255 porsi
+di atas median) jauh di atas 50 porsi yang menempel di paket, jadi tampaknya
+hari-hari itu memang hari acara besar di cabang, bukan sekadar bawaan paket.
+Dengan 8 kejadian dalam 2 tahun, ini terlalu jarang untuk dijadikan fitur —
+kami catat saja supaya lonjakan itu tidak salah dibaca sebagai outlier.
 
 *(Catatan teknis, tidak perlu ditanggapi: kode `FGS.00048` memakai titik,
 sedangkan `FGS-00048` dengan strip adalah Kentang Mustofa Mie Goreng. Dua barang

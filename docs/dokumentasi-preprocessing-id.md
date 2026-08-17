@@ -845,10 +845,25 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
 10. `FGS.00048` (Kambing Oven) sangat lambat: **10 ekor, 8 transaksi, 6 cabang**
     sepanjang 8 Mar 2024 – 20 Sep 2025 di data mentah; yang lolos ke panel hanya
     KY002 Cilegon (4 ekor), karena lima cabang lain cuma bergerak satu hari dan
-    terbuang `MIN_HISTORY_DAYS = 60`. Kandidat `EXCLUDED_ITEMS`, tetapi gerakan
-    terakhirnya September 2025, jadi belum tentu discontinued — masih ditanyakan
-    ke pemilik data. Jangan tertukar dengan `FGS-00048` (strip) = Kentang
-    Mustofa Mie Goreng; `normalize_items.py` sudah memisahkannya dengan benar.
+    terbuang `MIN_HISTORY_DAYS = 60`. Sempat jadi kandidat `EXCLUDED_ITEMS`,
+    tetapi **pemilik data mengonfirmasi (2026-08-17) barang masih dijual dan
+    memang slow mover** — buku menu menampilkannya sebagai paket tersendiri
+    ("Kambing Muda Rempah Oven", satu ekor + 50 porsi nasi kebuli) di kotak
+    terpisah dari Paket Aqiqah, sejalan dengan ko-okurensi 0 dari 8 hari gerak
+    terhadap SKU aqiqah. Jadi **tidak** diikutkan ke `EXCLUDED_ITEMS` dan
+    `is_event_driven` tetap `false`. Jangan tertukar dengan `FGS-00048` (strip)
+    = Kentang Mustofa Mie Goreng; `normalize_items.py` sudah memisahkannya
+    dengan benar.
+11. Efek samping paket Kambing Oven pada `FGS-00004` (Nasi Kebuli), tercatat
+    sebagai pengamatan, **bukan** dasar fitur: di ke-8 hari-cabang itu Nasi
+    Kebuli selalu berada di **persentil 92–99%** distribusi cabangnya sendiri
+    (7 dari 8 hari ≥1,8× median cabang, sementara baseline seluruh hari-cabang
+    hanya 15,5% — lift ~6×), dan harinya tersebar Jumat–Selasa sehingga bukan
+    sekadar efek akhir pekan. Kelebihan di atas median (105–255 porsi) jauh
+    melampaui 50 porsi yang dijanjikan paket dan tidak sebanding dengan jumlah
+    ekor, jadi ini tampak sebagai **hari acara besar di cabang**, bukan rasio
+    bundling yang bersih. Dengan hanya 8 kejadian dalam 2 tahun, tidak cukup
+    untuk dijadikan fitur — cukup diketahui saat menelaah outlier Nasi Kebuli.
 
 **Keterbatasan metodologis yang tidak bisa dihilangkan oleh preprocessing**
 

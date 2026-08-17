@@ -195,6 +195,16 @@ ternyata benar, sehingga 82.068 baris (5,5% dataset) tidak lagi bergantung pada
 asumsi. Jadwal kirim lokasi **lama** menyusul ditutup sehari kemudian — lihat B-8,
 yang sudah tidak lagi berlaku sejak 2026-08-17.
 
+Ditutup juga: `FGS.00048` (Kambing Oven) **dikonfirmasi masih dijual dan memang
+slow mover (2026-08-17)** — buku menu memuatnya sebagai paket tersendiri
+("Kambing Muda Rempah Oven", satu ekor + 50 porsi nasi kebuli) di luar Paket
+Aqiqah. Batal menjadi kandidat `EXCLUDED_ITEMS`, `is_event_driven` tetap
+`false`, jadi tidak ada flag yang berubah. Perlu dicatat cakupan konfirmasinya:
+yang dipastikan adalah **status jual dan sifat lambat lakunya**, bukan bahwa
+paket seharga jutaan rupiah ini dibeli tanpa pesan lebih dulu — seperti seluruh
+dataset, tanggal pesan tidak terekam (B-1/B-2), sehingga sebagian dari 10 ekor
+itu mungkin tetap merupakan pesanan yang secara lingkup masuk B-3.
+
 Ditutup juga: jeda 13 hari `KY068 - Kebuli Yaman Kramatwatu` (28 Juni – 10 Juli
 2025) **dikonfirmasi tutup sementara (2026-08-17)**, bukan celah pencatatan —
 data mentah `jan-des-25.csv` juga kosong pada rentang itu (transaksi terakhir

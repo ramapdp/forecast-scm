@@ -17,7 +17,7 @@
 2;WIP-00009;Rabeg;Barang Dalam Process (WIP-1);false;Jarang bergerak tapi satuan (rata2 ~1-2 pcs) = barang lambat laku, bukan pesanan acara;90.5;14.6;1.5;58;4629
 2;FGS-00049;Iga Dino - FG;Barang Jadi (FG);false;Jarang bergerak tapi satuan (rata2 ~1-2 pcs) = barang lambat laku, bukan pesanan acara;95.9;26.4;1.3;11;49
 2;FGS-00054;India Salaam Basmati Rice @1kg;Barang Jadi (FG);false;Jarang bergerak tapi satuan (rata2 ~1-2 pcs) = barang lambat laku, bukan pesanan acara;94.5;19.9;1.3;22;164
-2;FGS.00048;Kambing Oven - FG;Barang Jadi (FG);false;Jarang bergerak tapi satuan (rata2 ~1-2 pcs) = barang lambat laku, bukan pesanan acara;99.5;187.3;1.3;1;4
+2;FGS.00048;Kambing Oven - FG;Barang Jadi (FG);false;DIKONFIRMASI pemilik data 2026-08-17: masih dijual dan memang slow mover. Buku menu menampilkannya sebagai paket tersendiri (Kambing Muda Rempah Oven satu ekor + 50 porsi nasi kebuli) di kotak terpisah dari Paket Aqiqah - konsisten dgn ko-okurensi 0 dari 8 hari gerak thd SKU aqiqah. Tetap false, tidak jadi masuk EXCLUDED_ITEMS;99.5;187.3;1.3;1;4
 2;Kalender;Kalender;Barang Umum;false;Jarang bergerak tapi satuan (rata2 ~1-2 pcs) = barang lambat laku, bukan pesanan acara;95.2;22.6;1.7;47;1542
 2;FGS-00042;Meet Jelly Kopi Susu;Minuman - FG;false;Jarang bergerak tapi satuan (rata2 ~1-2 pcs) = barang lambat laku, bukan pesanan acara;93.0;22.0;1.3;43;1102
 2;FGS-00043;Meet Jelly Teh Tarik;Minuman - FG;false;Jarang bergerak tapi satuan (rata2 ~1-2 pcs) = barang lambat laku, bukan pesanan acara;90.7;13.9;1.3;57;3555
