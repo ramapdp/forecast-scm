@@ -64,6 +64,43 @@ def pinball_loss(y_true: pd.Series, y_pred: pd.Series, alpha: float = DEFAULT_AL
     return float(np.where(delta >= 0, alpha * delta, (alpha - 1.0) * delta).mean())
 
 
+def shortfall_units(y_true: pd.Series, y_pred: pd.Series) -> float:
+    """Units demanded but not forecast — the stockout, in the unit shipped."""
+    actual, predicted = _aligned(y_true, y_pred)
+    if actual.size == 0:
+        return float("nan")
+    return float(np.maximum(0.0, actual - predicted).sum())
+
+
+def overstock_units(y_true: pd.Series, y_pred: pd.Series) -> float:
+    """Units forecast beyond demand — the cost side of a high service level."""
+    actual, predicted = _aligned(y_true, y_pred)
+    if actual.size == 0:
+        return float("nan")
+    return float(np.maximum(0.0, predicted - actual).sum())
+
+
+def fill_rate(y_true: pd.Series, y_pred: pd.Series) -> float:
+    """Share of demanded units the forecast would have covered.
+
+    This is the data owner's stated success criterion — "the outlet does not
+    run out" — stated in units rather than in error magnitude, and it is the
+    one number an outlet manager can check against their own experience.
+
+    Shortfalls are summed before the ratio, so a surplus on one outlet-day
+    cannot cancel a stockout on another: the goods are already at the wrong
+    branch on the wrong day. A window with no demand at all scores 1.0, since
+    nothing went unserved.
+    """
+    actual, predicted = _aligned(y_true, y_pred)
+    if actual.size == 0:
+        return float("nan")
+    demanded = actual.sum()
+    if demanded == 0:
+        return 1.0
+    return float(1.0 - np.maximum(0.0, actual - predicted).sum() / demanded)
+
+
 def quantile_coverage(y_true: pd.Series, y_pred: pd.Series) -> float:
     """Share of actuals at or below the forecast.
 
@@ -100,6 +137,9 @@ def score(
         "mae": mae(y_true, y_pred),
         "pinball": pinball_loss(y_true, y_pred, alpha=alpha),
         "coverage": quantile_coverage(y_true, y_pred),
+        "fill_rate": fill_rate(y_true, y_pred),
+        "shortfall_units": shortfall_units(y_true, y_pred),
+        "overstock_units": overstock_units(y_true, y_pred),
     }
 
 

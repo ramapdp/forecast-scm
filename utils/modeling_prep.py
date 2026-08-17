@@ -9,6 +9,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from . import build_panel
 from . import purging
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -64,7 +65,10 @@ def add_event_flag(
 ADI_THRESHOLD = 1.32
 CV2_THRESHOLD = 0.49
 
-TEST_START = pd.Timestamp("2025-12-01")
+# Single source, shared with the panel builder. A second literal here would
+# let a refresh move one cutoff and not the other, splitting the panel and the
+# model input onto different dates without any error.
+TEST_START = build_panel.TEST_START
 
 
 def compute_pair_demand_stats(
@@ -194,21 +198,38 @@ def build_category_mapping(
     cutoff: pd.Timestamp = TEST_START,
     cols: list = None,
     date_col: str = DATE_COL,
+    existing: Optional[dict] = None,
 ) -> dict:
     """Fit value -> index maps from the training period only.
 
-    Fitting on train only is a correctness requirement, not tidiness: SCM reruns
-    this weekly on fresh data, and a 60th branch opening next month must not
-    renumber the existing 59 and silently invalidate a trained model.
+    Fitting on train only is a correctness requirement, not tidiness: a branch
+    that only appears after the cutoff must not enter the mapping at all.
+
+    That alone does not survive a refresh, though. When the cutoff moves
+    forward, values that used to sit in the test period cross into the
+    training period and join the mapping for real -- and re-sorting the whole
+    set renumbers every value sorting after them. Measured on this dataset:
+    six new SKUs entering training shift the index of 32 of the 70 existing
+    ones, which silently invalidates any model already trained on the old
+    numbering. Pass `existing` (normally the previously saved mapping) to keep
+    every index already handed out and append new values after the highest one.
     """
     cols = cols or CATEGORICAL_COLS
+    existing = existing or {}
     train = df[df[date_col] < cutoff] if date_col in df.columns else df
     mapping = {}
     for col in cols:
         values = sorted(str(v) for v in train[col].dropna().unique())
-        mapping[col] = {UNKNOWN_TOKEN: UNKNOWN_INDEX}
-        for index, value in enumerate(values, start=1):
-            mapping[col][value] = index
+        # Retired values keep their index: freeing it up for a new value would
+        # point an already-trained model at the wrong category.
+        previous = dict(existing.get(col) or {})
+        previous.setdefault(UNKNOWN_TOKEN, UNKNOWN_INDEX)
+        next_index = max(previous.values()) + 1
+        for value in values:
+            if value not in previous:
+                previous[value] = next_index
+                next_index += 1
+        mapping[col] = previous
     return mapping
 
 
@@ -235,6 +256,18 @@ def save_category_mapping(mapping: dict, path: str = CATEGORY_MAPPING_FILE) -> N
 def load_category_mapping(path: str = CATEGORY_MAPPING_FILE) -> dict:
     with open(path, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_existing_mapping(path: str = CATEGORY_MAPPING_FILE) -> dict:
+    """The saved mapping if there is one, otherwise an empty dict.
+
+    Lets build_model_input() extend the numbering across refreshes on a
+    machine that already has a mapping, while a first run on a clean checkout
+    still builds one from scratch.
+    """
+    if not Path(path).exists():
+        return {}
+    return load_category_mapping(path)
 
 
 # Only defined inside their proximity window (+/-15 days, +/-30 for Ramadan),
@@ -536,6 +569,7 @@ def build_model_input(
     featured_path: str = FEATURED_FILE,
     event_items_path: str = EVENT_ITEMS_FILE,
     cutoff: pd.Timestamp = TEST_START,
+    mapping_path: str = CATEGORY_MAPPING_FILE,
 ) -> pd.DataFrame:
     df = pd.read_parquet(featured_path)
     df = add_event_flag(df, load_event_items(event_items_path))
@@ -543,8 +577,10 @@ def build_model_input(
     df = assign_folds(df)
     df = impute_features(df)
 
-    mapping = build_category_mapping(df, cutoff=cutoff)
-    save_category_mapping(mapping)
+    mapping = build_category_mapping(
+        df, cutoff=cutoff, existing=load_existing_mapping(mapping_path)
+    )
+    save_category_mapping(mapping, mapping_path)
     df = encode_categoricals(df, mapping)
     return df
 

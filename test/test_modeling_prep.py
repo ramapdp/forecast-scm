@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import modeling_prep
+from utils import build_panel, modeling_prep
 
 
 def _event_items(rows):
@@ -237,6 +237,13 @@ class TestFoldTrainMaskPurging(unittest.TestCase):
             modeling_prep.fold_train_mask(self._frame(), 9)
 
 
+class TestCutoffSingleSource(unittest.TestCase):
+    def test_test_start_is_the_same_object_as_build_panel_s(self):
+        """Two independent literals drift: moving the cutoff for a refresh
+        would silently split the panel and the model input onto two dates."""
+        self.assertIs(modeling_prep.TEST_START, build_panel.TEST_START)
+
+
 class TestEncodeCategoricals(unittest.TestCase):
     def _frame(self, kota, dates=None):
         dates = dates or ["2024-01-01"] * len(kota)
@@ -292,6 +299,66 @@ class TestEncodeCategoricals(unittest.TestCase):
             self._frame(["Kota Bekasi"]), mapping, cols=["kota"]
         )
         self.assertTrue(pd.api.types.is_integer_dtype(result["kota_idx"]))
+
+    def test_extending_a_mapping_appends_new_values_after_the_existing_ones(self):
+        """A monthly refresh moves the cutoff, so a SKU that was only in the
+        test period enters the training period and joins the mapping. Sorting
+        the whole set again would renumber every value that sorts after it."""
+        existing = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi", "Kota Depok"]), cols=["kota"]
+        )
+        extended = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi", "Kota Depok", "Kota Ambon"]),
+            cols=["kota"],
+            existing=existing,
+        )
+        self.assertEqual(extended["kota"]["Kota Bekasi"], 1)
+        self.assertEqual(extended["kota"]["Kota Depok"], 2)
+        self.assertEqual(extended["kota"]["Kota Ambon"], 3)
+
+    def test_extending_keeps_a_value_that_disappeared_from_the_data(self):
+        # A discontinued SKU must not free up its index for a new one, or
+        # every model trained on the old mapping reads the wrong embedding.
+        existing = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi", "Kota Depok"]), cols=["kota"]
+        )
+        extended = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi", "Kota Ambon"]), cols=["kota"], existing=existing
+        )
+        self.assertEqual(extended["kota"]["Kota Depok"], 2)
+        self.assertEqual(extended["kota"]["Kota Ambon"], 3)
+
+    def test_extending_leaves_the_unknown_token_at_zero(self):
+        existing = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi"]), cols=["kota"]
+        )
+        extended = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi", "Kota Ambon"]), cols=["kota"], existing=existing
+        )
+        self.assertEqual(extended["kota"][modeling_prep.UNKNOWN_TOKEN], 0)
+
+    def test_extending_an_absent_column_falls_back_to_a_fresh_mapping(self):
+        extended = modeling_prep.build_category_mapping(
+            self._frame(["Kota Depok", "Kota Bekasi"]), cols=["kota"], existing={}
+        )
+        self.assertEqual(extended["kota"]["Kota Bekasi"], 1)
+        self.assertEqual(extended["kota"]["Kota Depok"], 2)
+
+    def test_existing_mapping_is_empty_when_no_file_has_been_saved_yet(self):
+        import os, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "belum-ada.json")
+            self.assertEqual(modeling_prep.load_existing_mapping(path), {})
+
+    def test_existing_mapping_is_read_back_when_the_file_is_there(self):
+        import os, tempfile
+        mapping = modeling_prep.build_category_mapping(
+            self._frame(["Kota Bekasi"]), cols=["kota"]
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "mapping.json")
+            modeling_prep.save_category_mapping(mapping, path)
+            self.assertEqual(modeling_prep.load_existing_mapping(path), mapping)
 
     def test_mapping_survives_a_save_load_round_trip(self):
         import tempfile, os

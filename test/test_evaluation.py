@@ -106,6 +106,54 @@ class TestNaiveBaselines(unittest.TestCase):
         )
 
 
+class TestFillRate(unittest.TestCase):
+    """The data owner's success criterion is 'the outlet does not run out',
+    which is a fill rate, not an error magnitude."""
+
+    def test_fill_rate_is_one_when_every_forecast_covers_demand(self):
+        y = pd.Series([10.0, 20.0])
+        self.assertEqual(evaluation.fill_rate(y, pd.Series([10.0, 25.0])), 1.0)
+
+    def test_fill_rate_is_the_share_of_demand_actually_met(self):
+        y = pd.Series([10.0, 10.0])
+        self.assertAlmostEqual(evaluation.fill_rate(y, pd.Series([10.0, 5.0])), 0.75)
+
+    def test_overstock_does_not_compensate_for_a_shortfall(self):
+        # Surplus at one outlet-day cannot be shipped back in time to cover a
+        # stockout at another, so fill rate must not net the two off.
+        y = pd.Series([10.0, 10.0])
+        self.assertAlmostEqual(evaluation.fill_rate(y, pd.Series([100.0, 5.0])), 0.75)
+
+    def test_fill_rate_excludes_null_targets(self):
+        y = pd.Series([10.0, np.nan])
+        self.assertEqual(evaluation.fill_rate(y, pd.Series([10.0, 0.0])), 1.0)
+
+    def test_fill_rate_of_a_window_with_no_demand_is_one(self):
+        # Nothing was demanded, so nothing went unserved -- a division by zero
+        # here would poison every per-segment table with NaN.
+        y = pd.Series([0.0, 0.0])
+        self.assertEqual(evaluation.fill_rate(y, pd.Series([0.0, 0.0])), 1.0)
+
+
+class TestShortfallAndOverstockUnits(unittest.TestCase):
+    def test_shortfall_counts_only_under_forecast_units(self):
+        y = pd.Series([10.0, 10.0])
+        self.assertEqual(evaluation.shortfall_units(y, pd.Series([4.0, 50.0])), 6.0)
+
+    def test_overstock_counts_only_over_forecast_units(self):
+        y = pd.Series([10.0, 10.0])
+        self.assertEqual(evaluation.overstock_units(y, pd.Series([4.0, 50.0])), 40.0)
+
+    def test_a_perfect_forecast_has_neither(self):
+        y = pd.Series([10.0, 10.0])
+        self.assertEqual(evaluation.shortfall_units(y, y), 0.0)
+        self.assertEqual(evaluation.overstock_units(y, y), 0.0)
+
+    def test_null_targets_are_excluded(self):
+        y = pd.Series([10.0, np.nan])
+        self.assertEqual(evaluation.shortfall_units(y, pd.Series([0.0, 0.0])), 10.0)
+
+
 class TestEvaluateBaselines(unittest.TestCase):
     def test_returns_one_row_per_baseline(self):
         result = evaluation.evaluate_baselines(_frame())
@@ -119,6 +167,17 @@ class TestEvaluateBaselines(unittest.TestCase):
         result = evaluation.evaluate_baselines(_frame())
         for col in ["mae", "pinball", "coverage", "n"]:
             self.assertIn(col, result.columns)
+
+    def test_reports_the_service_level_metrics(self):
+        result = evaluation.evaluate_baselines(_frame())
+        for col in ["fill_rate", "shortfall_units", "overstock_units"]:
+            self.assertIn(col, result.columns)
+
+    def test_zero_baseline_leaves_every_unit_unserved(self):
+        result = evaluation.evaluate_baselines(_frame()).set_index("baseline")
+        self.assertEqual(result.loc["naive_zero", "fill_rate"], 0.0)
+        self.assertEqual(result.loc["naive_zero", "shortfall_units"], 10 + 20 + 8)
+        self.assertEqual(result.loc["naive_zero", "overstock_units"], 0.0)
 
     def test_row_count_excludes_null_targets(self):
         result = evaluation.evaluate_baselines(_frame())

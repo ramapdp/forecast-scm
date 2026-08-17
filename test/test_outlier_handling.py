@@ -50,6 +50,16 @@ class TestComputePairBaseline(unittest.TestCase):
         row = result[(result["Kode Barang"] == "A") & (result["Nama Cabang"] == "X")].iloc[0]
         self.assertEqual(row["pair_median"], 10.0)
 
+    def test_pair_that_only_ever_moves_in_whole_units_is_flagged(self):
+        df = _pair_rows(("A", "X"), [10] * 30)
+        result = outlier_handling.compute_pair_baseline(df, cutoff=pd.Timestamp("2025-12-01"))
+        self.assertTrue(result.iloc[0]["pair_integer_only"])
+
+    def test_pair_with_a_fractional_quantity_is_not_flagged(self):
+        df = _pair_rows(("A", "X"), [10] * 29 + [10.5])
+        result = outlier_handling.compute_pair_baseline(df, cutoff=pd.Timestamp("2025-12-01"))
+        self.assertFalse(result.iloc[0]["pair_integer_only"])
+
 
 def _with_event_flags(df, **flags):
     result = df.copy()
@@ -59,11 +69,16 @@ def _with_event_flags(df, **flags):
 
 
 class TestApplyOutlierCapping(unittest.TestCase):
-    def _baseline(self, pair=("A", "X"), median=10.0, eligible=True):
-        return pd.DataFrame({
+    def _baseline(self, pair=("A", "X"), median=10.0, eligible=True, integer_only=None):
+        frame = pd.DataFrame({
             "Kode Barang": [pair[0]], "Nama Cabang": [pair[1]],
             "pair_median": [median], "pair_eligible": [eligible],
         })
+        # integer_only=None reproduces a baseline frame built before the
+        # whole-unit rounding existed, which must still be accepted.
+        if integer_only is not None:
+            frame["pair_integer_only"] = [integer_only]
+        return frame
 
     def test_caps_spike_above_threshold_outside_event_window(self):
         df = _with_event_flags(_pair_rows(("A", "X"), [1000]))
@@ -97,6 +112,38 @@ class TestApplyOutlierCapping(unittest.TestCase):
         result = outlier_handling.apply_outlier_capping(df, self._baseline())
         self.assertEqual(result["Kuantitas_capped"].iloc[0], 0.0)
         self.assertFalse(result["is_spike"].iloc[0])
+
+    def test_whole_unit_pair_gets_a_whole_number_cap(self):
+        # median 12.5 puts the raw cap at 62.5, which is meaningless for an
+        # item counted in PCS. Round up, never down: the business criterion is
+        # that the outlet does not run out.
+        df = _with_event_flags(_pair_rows(("A", "X"), [1000]))
+        result = outlier_handling.apply_outlier_capping(
+            df, self._baseline(median=12.5, integer_only=True)
+        )
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 63.0)
+
+    def test_rounded_up_cap_never_exceeds_the_raw_quantity(self):
+        # 62.6 / 12.5 = 5.008, so the row is capped -- but ceil(62.5) = 63
+        # would push the capped value above the quantity actually issued and
+        # break the capped <= raw invariant asserted in run_qa_checks.
+        df = _with_event_flags(_pair_rows(("A", "X"), [62.6]))
+        result = outlier_handling.apply_outlier_capping(
+            df, self._baseline(median=12.5, integer_only=True)
+        )
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 62.6)
+
+    def test_pair_that_trades_in_fractions_keeps_the_exact_cap(self):
+        df = _with_event_flags(_pair_rows(("A", "X"), [1000]))
+        result = outlier_handling.apply_outlier_capping(
+            df, self._baseline(median=12.5, integer_only=False)
+        )
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 62.5)
+
+    def test_baseline_without_the_integer_flag_keeps_the_exact_cap(self):
+        df = _with_event_flags(_pair_rows(("A", "X"), [1000]))
+        result = outlier_handling.apply_outlier_capping(df, self._baseline(median=12.5))
+        self.assertEqual(result["Kuantitas_capped"].iloc[0], 62.5)
 
 
 if __name__ == "__main__":
