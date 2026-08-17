@@ -761,5 +761,95 @@ class TestSegmentAwareAdapters(unittest.TestCase):
         self.assertIn("segment_id", tabular["keys"].columns)
 
 
+class TestNullTargetRows(unittest.TestCase):
+    """On the last few days of a segment the lead-time window runs past the end
+    of the data the pair has, so the target cannot be computed. Those rows are
+    genuine history but they are not trainable or scorable examples: a NaN label
+    crashes Random Forest, poisons an LSTM's loss, and would otherwise be
+    patched differently in each model — the exact divergence validate_contract
+    exists to prevent.
+    """
+
+    def _tail_nulls(self, n_rows=40, n_null=3):
+        df = _pair_frame(n_rows)
+        df.loc[df.index[-n_null:], "target_lead_time_cumulative"] = np.nan
+        return df
+
+    def test_tabular_drops_rows_whose_target_is_null(self):
+        out = modeling_prep.to_tabular(self._tail_nulls(), feature_cols=["feat_a"])
+        self.assertEqual(len(out["y"]), 9)
+        self.assertFalse(out["y"].isna().any())
+
+    def test_every_part_of_the_tabular_output_shrinks_together(self):
+        out = modeling_prep.to_tabular(self._tail_nulls(), feature_cols=["feat_a"])
+        self.assertEqual(
+            {len(out["X"]), len(out["y"]), len(out["keys"]), len(out["fold_id"])}, {9}
+        )
+
+    def test_sequences_drop_the_same_rows(self):
+        out = modeling_prep.to_sequences(self._tail_nulls(), feature_cols=["feat_a"])
+        self.assertEqual(len(out["y"]), 9)
+        self.assertFalse(np.isnan(out["y"]).any())
+
+    def test_adapters_still_agree_when_targets_are_null(self):
+        df = self._tail_nulls()
+        tabular = modeling_prep.to_tabular(df, feature_cols=["feat_a"])
+        sequences = modeling_prep.to_sequences(df, feature_cols=["feat_a"])
+        modeling_prep.validate_contract(tabular, sequences)
+
+    def test_keys_stop_before_the_null_target_dates(self):
+        out = modeling_prep.to_tabular(self._tail_nulls(), feature_cols=["feat_a"])
+        self.assertEqual(out["keys"]["Tanggal"].max(), pd.Timestamp("2024-02-06"))
+
+    def test_a_null_target_row_still_serves_as_history_for_later_windows(self):
+        """Filtering the rows out of the frame *before* windowing would splice
+        the series and silently change what the LSTM sees, so the cut has to
+        happen on prediction rows only."""
+        df = _pair_frame(40)
+        df.loc[df.index[30], "target_lead_time_cumulative"] = np.nan
+        out = modeling_prep.to_sequences(df, feature_cols=["feat_a"], lookback=28)
+        self.assertEqual(len(out["y"]), 11)
+        last_window = [float(v) for v in out["X"][-1][:, 0]]
+        self.assertIn(30.0, last_window)
+
+    def test_log_target_does_not_smuggle_a_null_back_in(self):
+        df = self._tail_nulls()
+        tabular = modeling_prep.to_tabular(df, feature_cols=["feat_a"], log_target=True)
+        sequences = modeling_prep.to_sequences(df, feature_cols=["feat_a"], log_target=True)
+        self.assertFalse(tabular["y"].isna().any())
+        self.assertFalse(np.isnan(sequences["y"]).any())
+        modeling_prep.validate_contract(tabular, sequences)
+
+    def test_a_pair_whose_targets_are_all_null_disappears_entirely(self):
+        df = self._tail_nulls(n_rows=40, n_null=12)
+        out = modeling_prep.to_tabular(df, feature_cols=["feat_a"])
+        self.assertEqual(len(out["y"]), 0)
+
+    def test_contract_rejects_a_null_target_even_when_both_adapters_carry_it(self):
+        """equal_nan makes two NaN targets compare equal, so the differing-target
+        assertion cannot catch this on its own."""
+        df = _pair_frame(40)
+        tabular = modeling_prep.to_tabular(df, feature_cols=["feat_a"])
+        sequences = modeling_prep.to_sequences(df, feature_cols=["feat_a"])
+        tabular["y"] = tabular["y"].copy()
+        tabular["y"].iloc[0] = np.nan
+        sequences["y"] = sequences["y"].copy()
+        sequences["y"][0] = np.nan
+        with self.assertRaisesRegex(AssertionError, "target"):
+            modeling_prep.validate_contract(tabular, sequences)
+
+    def test_contract_rejects_a_null_target_on_tree_only_runs_too(self):
+        """require_finite=False forgives NaN features, never a NaN label."""
+        df = _pair_frame(40)
+        tabular = modeling_prep.to_tabular(df, feature_cols=["feat_a"])
+        sequences = modeling_prep.to_sequences(df, feature_cols=["feat_a"])
+        tabular["y"] = tabular["y"].copy()
+        tabular["y"].iloc[0] = np.nan
+        sequences["y"] = sequences["y"].copy()
+        sequences["y"][0] = np.nan
+        with self.assertRaisesRegex(AssertionError, "target"):
+            modeling_prep.validate_contract(tabular, sequences, require_finite=False)
+
+
 if __name__ == "__main__":
     unittest.main()

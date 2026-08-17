@@ -391,8 +391,14 @@ def drop_warmup_rows(
     """Keep rows whose zero-based position within their own pair is >= lookback.
 
     These are exactly the rows an LSTM can build a full window for, and exactly
-    the rows where lag_28 is non-null. Both adapters cut here so their row sets
-    match.
+    the rows where lag_28 is non-null.
+
+    This is the first of two cuts both adapters make. The second is the target:
+    on the last days of a segment the lead-time window runs past the end of the
+    pair's data, so no target exists. Those rows are dropped as *prediction*
+    rows but deliberately not removed from the frame — they remain valid
+    history inside later windows, and deleting them here would splice the
+    series and change what the LSTM sees.
     """
     pair_cols = _resolve_pair_cols(df, pair_cols)
     result = df.sort_values(pair_cols + [date_col]).reset_index(drop=True)
@@ -411,11 +417,15 @@ def to_tabular(
 ) -> dict:
     """Adapter for XGBoost and Random Forest: a flat table, NaNs left in place.
 
+    NaNs are left in the *features* only. Rows with no target are dropped —
+    see the note on drop_warmup_rows().
+
     Pass the same log_target value here and to to_sequences(), or the contract
     check will fail.
     """
     pair_cols = _resolve_pair_cols(df, pair_cols)
     frame = drop_warmup_rows(df, lookback=lookback, pair_cols=pair_cols, date_col=date_col)
+    frame = frame[frame[target_col].notna()]
     if log_target:
         frame = frame.copy()
         frame[target_col] = np.log1p(frame[target_col])
@@ -496,6 +506,8 @@ def to_sequences(
         keys = group[pair_cols + [date_col]].to_numpy()
 
         for position in range(lookback, len(group)):
+            if np.isnan(target_values[position]):
+                continue
             windows.append(values[position - lookback + 1 : position + 1])
             targets.append(target_values[position])
             key_rows.append(keys[position])
@@ -554,6 +566,18 @@ def validate_contract(tabular: dict, sequences: dict, require_finite: bool = Tru
 
     tabular_y = np.asarray(tabular["y"], dtype="float64")
     sequence_y = np.asarray(sequences["y"], dtype="float64")
+
+    # Checked regardless of require_finite: a NaN feature is a modelling choice
+    # (XGBoost consumes it natively), a NaN label is not. Random Forest raises
+    # on it, an LSTM turns it into NaN loss, and equal_nan below would let two
+    # NaNs compare equal — so without this the adapters can agree on a target
+    # that no model can actually train against.
+    label_nan = int(np.isnan(tabular_y).sum() + np.isnan(sequence_y).sum())
+    assert label_nan == 0, (
+        f"Ditemukan {label_nan} target NaN — baris tanpa target tidak bisa "
+        "dilatih maupun dinilai dan harus dibuang oleh adapter"
+    )
+
     assert np.allclose(tabular_y, sequence_y, equal_nan=True), (
         "Nilai target berbeda antar adapter"
     )

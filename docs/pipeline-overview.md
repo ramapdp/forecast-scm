@@ -203,10 +203,25 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
     `to_sequences()` for the LSTM (28-day windows ending at the prediction row
     inclusive). Both drop each pair's first 28 warm-up rows, which costs 5.93%
     of rows and 996 test rows (1.81%, nearly all at Bintara, which relocated on
-    28 November). `validate_contract()` asserts both expose identical
-    `(pair, date)` sets, targets, and fold assignments — and, unless
-    `require_finite=False`, that neither feature block contains NaN, since a
-    tree model consumes NaN natively while an LSTM turns it into NaN loss.
+    28 November). Both also drop rows with **no target**: on the last 1–3 days
+    of a segment the lead-time window runs past the end of that pair's data, so
+    `target_lead_time_cumulative` is null. That is 7,434 rows (0.53%), of which
+    4,333 fall in December — 8.02% of the test period. Two thirds of those
+    (2,790) are simply the edge of the dataset and will resolve once 2026 data
+    arrives; the rest belong to 1,854 pairs that stopped for good, and never
+    will. The rows stay in the frame as history for later windows and are cut
+    only as prediction rows. December accordingly scores on 49,717 rows, which
+    is exactly what `evaluation.py` has always measured, since `_aligned()`
+    drops nulls too. The excluded rows are not a biased slice: mean `Kuantitas`
+    19.99 vs. 19.41 and near-identical `demand_segment` mix against the rows
+    kept, so the reported metric stands for December as a whole — but the
+    denominator belongs in any write-up. `validate_contract()` asserts both
+    expose identical `(pair, date)` sets, targets, and fold assignments; that
+    no target is NaN (checked always — `require_finite` forgives a NaN feature,
+    never a NaN label, and `equal_nan` would otherwise let two NaNs match); and,
+    unless `require_finite=False`, that neither feature block contains NaN,
+    since a tree model consumes NaN natively while an LSTM turns it into NaN
+    loss.
 15. **Evaluation floor** — `utils/evaluation.py` provides pinball loss,
     quantile coverage, `fill_rate` / `shortfall_units` / `overstock_units`,
     and three naive baselines, groupable by `demand_segment` or
