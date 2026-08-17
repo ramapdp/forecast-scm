@@ -31,7 +31,7 @@ MODEL_READY_DIR = str(BASE_DIR / "dataset/model_ready")
 # silently producing a short parquet.
 FEATURED_COLUMNS = [
     "Kode Barang", "Nama Cabang", "Tanggal", "Kuantitas", "Kategori Barang",
-    "Nama Barang", "segment_id", "day_of_week", "day_of_month", "month", "is_weekend",
+    "Nama Barang", "Satuan", "segment_id", "day_of_week", "day_of_month", "month", "is_weekend",
     "is_national_holiday", "is_ramadan", "days_into_ramadan", "days_until_ramadan",
     "is_eid_al_fitr", "days_since_eid_al_fitr", "days_until_eid_al_fitr",
     "is_eid_al_adha", "days_since_eid_al_adha", "days_until_eid_al_adha",

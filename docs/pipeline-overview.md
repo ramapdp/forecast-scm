@@ -142,7 +142,7 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
      into features.
 9. **Export featured dataset** — `export_featured` writes
    `dataset/model_ready/featured.parquet`, the full unsplit cleaned +
-   feature-engineered table (currently 1,503,120 rows × 67 columns). This is the file
+   feature-engineered table (currently 1,502,522 rows × 68 columns). This is the file
    `notebook/train_test_split.ipynb` reads for the next stage.
 10. **Train/test split** — `split_train_test`: train = everything before
    2025-12-01; test = December 2025. A `target_h{n}`/

@@ -5,7 +5,7 @@ import pandas as pd
 TEST_START = pd.Timestamp("2025-12-01")
 MIN_HISTORY_DAYS = 60
 PAIR_COLS = ["Kode Barang", "Nama Cabang"]
-CARRY_COLS = ["Kategori Barang", "Nama Barang"]
+CARRY_COLS = ["Kategori Barang", "Nama Barang", "Satuan"]
 SEGMENT_COL = "segment_id"
 
 

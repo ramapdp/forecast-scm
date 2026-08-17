@@ -390,8 +390,35 @@ class TestBuildFeaturedDataset(unittest.TestCase):
         for col in [
             "target_h1", "lag_1", "is_ramadan", "branch_avg_daily_qty", "kota",
             "can_order_online", "kawasan", "lead_time_days", "target_lead_time_cumulative",
+            "Satuan",
         ]:
             self.assertIn(col, df.columns)
+
+    def test_carries_satuan_through_to_featured_dataset(self):
+        # The unit of measure is part of what a Kuantitas means, and
+        # normalize_items guarantees one unit per SKU, so it must survive the
+        # panel build intact rather than being dropped on the way out.
+        rows = ["Tanggal;Kategori Barang;Kode Barang;Nama Barang;Nama Cabang;Satuan;Kuantitas\n"]
+        rows += _branch_rows("KY001 - Branch", "2025-08-01", 90)
+        content = "".join(rows)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dataset.csv"
+            input_path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+            outlets_path = _write_outlets_fixture(tmpdir, ["KY001 - Branch"])
+            overrides_path = _write_empty_overrides_fixture(tmpdir)
+            region_path = _write_region_mapping_fixture(
+                tmpdir, [("KY001 - Branch", "KY001 - Branch", 1, "Senin dan Kamis")]
+            )
+            df = prepare_forecast_data.build_featured_dataset(
+                input_path=input_path,
+                min_history_days=60,
+                cutoff=pd.Timestamp("2025-10-01"),
+                outlets_path=outlets_path,
+                overrides_path=overrides_path,
+                region_path=region_path,
+            )
+        self.assertTrue((df["Satuan"] == "Porsi").all())
+        self.assertIn("Satuan", prepare_forecast_data.FEATURED_COLUMNS)
 
 
 class TestCappedLeadTimeTarget(unittest.TestCase):
@@ -847,10 +874,11 @@ class TestMain(unittest.TestCase):
 
 
 class TestEngineerFeaturesContract(unittest.TestCase):
-    def test_featured_columns_constant_has_67_entries(self):
+    def test_featured_columns_constant_has_68_entries(self):
         # 64 before 2026-08-15, plus target_lead_time_cumulative_capped,
-        # is_delivery_day, and target_window_weekend_days.
-        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 67)
+        # is_delivery_day, and target_window_weekend_days; then Satuan on
+        # 2026-08-17, carried through for modelling.
+        self.assertEqual(len(prepare_forecast_data.FEATURED_COLUMNS), 68)
 
     def test_featured_columns_includes_days_since_relocation(self):
         self.assertIn("days_since_relocation", prepare_forecast_data.FEATURED_COLUMNS)

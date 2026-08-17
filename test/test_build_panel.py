@@ -20,6 +20,7 @@ class TestBuildDensePanel(unittest.TestCase):
             "Tanggal": pd.to_datetime(["2024-01-01"]),
             "Kuantitas": [5],
             "Kategori Barang": ["Barang Jadi (FG)"], "Nama Barang": ["Widget"],
+            "Satuan": ["Porsi"],
         })
         result = build_panel.build_dense_panel(df)
         self.assertEqual(len(result), 1)
@@ -31,6 +32,7 @@ class TestBuildDensePanel(unittest.TestCase):
             "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-05"]),
             "Kuantitas": [5, 9],
             "Kategori Barang": ["Barang Jadi (FG)"] * 2, "Nama Barang": ["Widget"] * 2,
+            "Satuan": ["Porsi"] * 2,
         })
         result = build_panel.build_dense_panel(df).sort_values("Tanggal")
         self.assertEqual(len(result), 5)
@@ -42,6 +44,7 @@ class TestBuildDensePanel(unittest.TestCase):
             "Tanggal": pd.to_datetime(["2024-02-27", "2024-03-02"]),
             "Kuantitas": [1, 2],
             "Kategori Barang": ["Barang Jadi (FG)"] * 2, "Nama Barang": ["Widget"] * 2,
+            "Satuan": ["Porsi"] * 2,
         })
         result = build_panel.build_dense_panel(df)
         self.assertEqual(len(result), 5)  # Feb 27, 28, 29, Mar 1, Mar 2
@@ -53,9 +56,24 @@ class TestBuildDensePanel(unittest.TestCase):
             "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-03"]),
             "Kuantitas": [5, 9],
             "Kategori Barang": ["Barang Jadi (FG)"] * 2, "Nama Barang": ["Widget"] * 2,
+            "Satuan": ["Porsi"] * 2,
         })
         result = build_panel.build_dense_panel(df).sort_values("Tanggal")
         self.assertEqual(list(result["Nama Barang"]), ["Widget", "Widget", "Widget"])
+
+    def test_forward_fills_satuan_across_gap(self):
+        # Satuan is a per-SKU constant the model needs downstream (a Porsi 3 and
+        # a Kg 3 are not the same demand), so zero-filled days must carry it
+        # like the other descriptive columns rather than leaving NaN.
+        df = pd.DataFrame({
+            "Kode Barang": ["A", "A"], "Nama Cabang": ["X", "X"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-03"]),
+            "Kuantitas": [5, 9],
+            "Kategori Barang": ["Barang Jadi (FG)"] * 2, "Nama Barang": ["Widget"] * 2,
+            "Satuan": ["Porsi"] * 2,
+        })
+        result = build_panel.build_dense_panel(df).sort_values("Tanggal")
+        self.assertEqual(list(result["Satuan"]), ["Porsi", "Porsi", "Porsi"])
 
     def test_keeps_separate_pairs_independent(self):
         df = pd.DataFrame({
@@ -63,6 +81,7 @@ class TestBuildDensePanel(unittest.TestCase):
             "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-10"]),
             "Kuantitas": [5, 9],
             "Kategori Barang": ["Barang Jadi (FG)"] * 2, "Nama Barang": ["Widget", "Gadget"],
+            "Satuan": ["Porsi"] * 2,
         })
         result = build_panel.build_dense_panel(df)
         self.assertEqual(len(result), 2)  # each pair has only 1 day of its own history
@@ -109,6 +128,7 @@ class TestDensePanelSegments(unittest.TestCase):
             "Kode Barang": ["A"] * 6, "Nama Cabang": ["X"] * 6,
             "Tanggal": pd.to_datetime(dates), "Kuantitas": [1] * 6,
             "Kategori Barang": ["Barang Jadi (FG)"] * 6, "Nama Barang": ["Widget"] * 6,
+            "Satuan": ["Porsi"] * 6,
         })
 
     def test_without_closures_output_matches_legacy_behaviour(self):
@@ -175,6 +195,7 @@ class TestDensePanelBreakpoints(unittest.TestCase):
             "Kuantitas": [1] * n_days,
             "Kategori Barang": ["Barang Jadi (FG)"] * n_days,
             "Nama Barang": ["Widget"] * n_days,
+        "Satuan": ["Porsi"] * n_days,
         })
 
     def test_breakpoint_starts_a_new_segment_without_dropping_rows(self):
@@ -220,6 +241,7 @@ class TestDensePanelBreakpoints(unittest.TestCase):
             "Kode Barang": ["A"] * 10, "Nama Cabang": ["X"] * 10,
             "Tanggal": pd.to_datetime(dates), "Kuantitas": [1] * 10,
             "Kategori Barang": ["Barang Jadi (FG)"] * 10, "Nama Barang": ["Widget"] * 10,
+            "Satuan": ["Porsi"] * 10,
         })
         closures = {"X": [(pd.Timestamp("2024-01-06"), pd.Timestamp("2024-03-01"))]}
         breakpoints = {"X": [pd.Timestamp("2024-03-03")]}

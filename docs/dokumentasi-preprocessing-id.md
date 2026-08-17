@@ -192,6 +192,11 @@ Selain itu tahap ini:
 
 Setiap pasangan (item, cabang) di-*reindex* menjadi satu baris per hari
 kalender, gap diisi `Kuantitas = 0`, kolom deskriptif di-*forward fill*.
+Kolom yang ikut dibawa (`CARRY_COLS`) adalah `Kategori Barang`, `Nama Barang`,
+dan `Satuan`. `Satuan` ditambahkan 2026-08-17 atas permintaan pemilik data
+karena dibutuhkan untuk pemodelan: `Kuantitas` tidak punya arti tanpanya
+(3 Porsi ≠ 3 Kg), dan setelah tahap normalisasi setiap `Kode Barang` dijamin
+hanya punya satu satuan — lihat konversi gram→porsi di Tahap 3.
 
 **Keputusan kunci: rentang tanggal yang dipakai adalah rentang aktif masing-masing
 pasangan** (tanggal transaksi pertama → terakhir miliknya sendiri), bukan rentang
