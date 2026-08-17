@@ -95,7 +95,19 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
    `median * 5`, *unless* the row falls in a known high-season window
    (Ramadan/Eid al-Fitr/Eid al-Adha/Independence Day/New Year), in which
    case the value is left uncapped since it's treated as a real recurring
-   pattern, not noise. `baseline_ratio` and `is_spike` are kept as columns but
+   pattern, not noise. A pair whose training history is entirely whole
+   numbers is flagged `pair_integer_only`, and its cap is rounded **up** to
+   the next whole unit (then clipped back to the raw quantity, so
+   `Kuantitas_capped <= Kuantitas` still holds): a median ending in .5 would
+   otherwise put the cap on half a PCS, and rounding up rather than to
+   nearest is the direction that serves "the outlet does not run out". The
+   flag is derived from the pair's own history rather than from `Satuan`,
+   because the units do not split cleanly — `Potong` carries 6,510
+   fractional rows while `PCS` and `Botol` carry none. Effect on the real
+   data: 7,552 rows capped (was 7,562 before rounding — 10 land back on the
+   raw value), and fractional cap values drop from 238 to 31, all of them on
+   pairs that genuinely trade in fractions of a `Potong`.
+   `baseline_ratio` and `is_spike` are kept as columns but
    **excluded from `FEATURE_COLS`** — both are derived from the row's own day's
    `Kuantitas`, while every lag and rolling feature stops at H-1, so admitting
    them would make "known at prediction time" mean two things in one row. Raw
@@ -176,8 +188,14 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
     put 5.43% of sequence windows out of reach while the tabular matrix stayed
     clean),
     and integer categorical indices with the mapping persisted to
-    `dataset/model_ready/category_mapping.json`. Exports
-    `dataset/model_ready/model_input.parquet` (1,503,120 rows × 81 columns).
+    `dataset/model_ready/category_mapping.json`. The mapping is **extended,
+    never rebuilt**: `build_model_input` loads the saved file and
+    `build_category_mapping` appends unseen values after the highest index
+    already handed out, keeping retired values in place. Re-sorting the whole
+    set on a refresh would renumber existing values — measured on this data,
+    six new SKUs entering the training period shift the index of 32 of the 70
+    existing ones, silently invalidating any model already trained. Exports
+    `dataset/model_ready/model_input.parquet` (1,502,522 rows × 82 columns).
     `FEATURE_COLS` pins the 56 columns all three models train on, deliberately
     excluding `baseline_ratio` and `is_spike`: both derive from the row's own
     day while every lag stops at H-1.
@@ -190,11 +208,17 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
     `require_finite=False`, that neither feature block contains NaN, since a
     tree model consumes NaN natively while an LSTM turns it into NaN loss.
 15. **Evaluation floor** — `utils/evaluation.py` provides pinball loss,
-    quantile coverage, and three naive baselines, groupable by
-    `demand_segment` or `is_delivery_day`. `roll_mean_7 × lead_time_days`
-    reaches MAE 13.05 and pinball@0.9 6.61 on December with no model at all;
-    its coverage of 0.61 against a 0.9 service level is the plainest argument
-    for training on pinball rather than the mean.
+    quantile coverage, `fill_rate` / `shortfall_units` / `overstock_units`,
+    and three naive baselines, groupable by `demand_segment` or
+    `is_delivery_day`. `roll_mean_7 × lead_time_days` reaches MAE 13.05 and
+    pinball@0.9 6.61 on December with no model at all; its coverage of 0.61
+    against a 0.9 service level is the plainest argument for training on
+    pinball rather than the mean. `fill_rate` states the same result in the
+    data owner's own terms — "the outlet does not run out" — and sums
+    shortfalls before dividing, so a surplus at one outlet-day cannot cancel
+    a stockout at another: the goods are already at the wrong branch on the
+    wrong day. On the same December rows that baseline scores a fill rate of
+    0.846 — 336,341 of 2.19M demanded units left unserved.
 
 ```
 raw .xlsx/.csv

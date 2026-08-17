@@ -279,13 +279,14 @@ oleh yang paham datanya".
   pernah melebihi raw, dan baris yang tidak di-cap identik dengan raw. Notebook sudah dieksekusi
   ulang penuh (`jupyter nbconvert --execute`), semua assert lolos: 1.340.034 baris konsisten di
   semua tahap, 8.507/11.718 baris spike benar-benar di-cap (sisanya dikecualikan event window).
-- [ ] **7 QA assertion cuma ada di notebook, tidak di script** — `pipeline-overview.md` §3 & §9
-  menyebutkan cek row-count, no-duplicate, no-negative-Kuantitas, spot-check Ramadan/Eid,
-  leakage lag/rolling, dan outlet-join sanity itu semua cuma jalan lewat
-  `notebook/data-processing.ipynb`. `python3 -m utils.prepare_forecast_data` langsung tidak
-  memverifikasi apa pun setelah export. Pertimbangkan pindahkan minimal subset-nya (no-negative,
-  no-duplicate, leakage spot-check) jadi assertion di dalam `main()` atau fungsi terpisah yang
-  dipanggil dari situ, supaya CI/automation yang tidak lewat notebook tetap ke-cover.
+- [x] **7 QA assertion cuma ada di notebook, tidak di script** — **selesai**:
+  `prepare_forecast_data.run_qa_checks()` (`prepare_forecast_data.py:335`) sekarang memuat
+  cek no-negative-Kuantitas, no-duplicate (item, cabang, tanggal), `Kuantitas_capped` ≤ raw,
+  target capped ≤ target mentah, tidak ada `kota == "Unknown"`, tidak ada cabang tanpa
+  `kawasan`, satu cabang → satu kota, tidak ada baris di dalam interval tutup, `segment_id`
+  mulai dari 1 & kontinu, dan tidak ada lubang tanggal di dalam satu segmen. Dipanggil dari
+  `main()` **dan** dari notebook, jadi kedua jalur terverifikasi. Yang masih notebook-only:
+  spot-check leakage lag/rolling, rentang tanggal per outlet, dan section visual QA.
 - [ ] **Re-run `python3 -m utils.prepare_forecast_data` setiap kali ada perubahan di script
   pipeline manapun** — parquet `dataset/model_ready/*.parquet` gampang jadi stale relatif ke
   kode kalau lupa di-generate ulang; tidak ada mekanisme guard otomatis untuk ini saat ini.
@@ -295,6 +296,32 @@ oleh yang paham datanya".
   ... belum diputuskan"). Kalau prioritas bisnis butuh forecast untuk pair yang di-drop ini
   (SKU/cabang baru dengan histori pendek), perlu desain fallback terpisah (mis. rata-rata level
   kategori) — belum ada rencana konkret untuk ini di spec manapun.
+  **Diukur 2026-08-17 — `MIN_HISTORY_DAYS` tetap 60.** Menurunkannya ke 28 (pipeline dijalankan
+  penuh dua kali lewat parameter `min_history_days`, keduanya lolos `run_qa_checks`) menambah 167
+  pair (2.979 → 3.146) tetapi hanya **0,023% volume permintaan** (4.773 dari 20,9 juta unit).
+  Setelah `drop_warmup_rows(28)` kohort itu cuma menyumbang **2.428 baris latih (0,18%)** — karena
+  `LOOKBACK` + `lag_28`/`roll_28` memakan 28 hari pertama tiap segmen, jadi yang membatasi bukan
+  ambangnya. Efek pada metrik justru menyesatkan: MAE baseline `roll_mean_7` turun 12,90 → 12,54
+  murni karena dilusi (kohort baru 73,7% target-nya nol, rata-rata target 0,77 vs 30,8), sehingga
+  angka tidak lagi sebanding dengan run sebelumnya. Config 28 juga menabrak guard
+  `add_event_flag` (6 SKU tanpa entri di `event_driven_items.csv`). Cakupan untuk 621 pair sisanya
+  diselesaikan lewat fallback cold-start, bukan lewat ambang latih — dan fallback itu harus
+  mengalahkan pinball 0,384 (`roll_mean_7` pada kohort 28–59 hari di Des 2025) supaya layak pakai.
+- [ ] **Kriteria keberhasilan & target: dikonfirmasi data owner 2026-08-17.** Ukuran keberhasilan
+  adalah **"outlet tidak kehabisan barang"**, dan kehabisan stok untuk *pesanan* sudah ditangani
+  manual oleh head office. Konsekuensinya **target latih & metrik utama = `..._capped`**, karena
+  porsi yang di-cap adalah proxy pre-order yang sudah ditangani jalur manual. Sisa risiko
+  terukur: model sempurna pada target capped, dinilai terhadap permintaan raw, memberi cycle
+  service 0,977 / fill rate 0,981 — **40.281 unit kurang sepanjang Des 2025 (1,9% massa
+  permintaan)**, dan itulah yang harus ditutup proses manual. Skor terhadap target raw tetap
+  dilaporkan sebagai kolom kedua (selisihnya besar: MAE −6,0%, pinball −11,0% pada prediksi yang
+  sama persis), supaya perbandingan antar model tidak dimenangkan oleh pilihan target.
+- [ ] **Tanya data owner: apakah spike yang berdiri sendiri itu pre-order juga?** Dari 7.552 baris
+  yang di-cap, **49,8%** berada di kombinasi cabang-hari dengan ≥3 item melonjak serentak (tanda
+  khas satu pesanan besar), tetapi **38,6% melonjak sendirian** — lebih mirip permintaan organik
+  atau restock. Condong ke akhir pekan (Minggu 1.808, Sabtu 1.547 vs Senin 532) dan didominasi
+  Packaging (60%). Kalau yang sendirian itu bukan pre-order, capping memotong permintaan yang
+  **tidak** ditutup jalur manual, dan bagian dari 40.281 unit di atas jadi stockout nyata.
 
 ## 🟢 Sanity check rutin (jalankan tiap kali dataset di-refresh atau sebelum training)
 
