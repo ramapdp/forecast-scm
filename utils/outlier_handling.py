@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from . import build_panel
@@ -28,7 +29,17 @@ def compute_pair_baseline(
     train = df[(df[date_col] < cutoff) & (df[qty_col] > 0)]
     stats = (
         train.groupby(pair_cols)[qty_col]
-        .agg(pair_count="count", pair_median="median")
+        .agg(
+            pair_count="count",
+            pair_median="median",
+            # Whether this item has only ever been issued in whole units.
+            # Derived from the pair's own history rather than from Satuan:
+            # the units are not cleanly split into discrete and continuous
+            # (Potong carries 6,510 fractional rows in the real data while
+            # PCS and Botol carry none), so the data answers this better
+            # than any hand-written list of unit names could.
+            pair_integer_only=lambda s: bool((s % 1 == 0).all()),
+        )
         .reset_index()
     )
     stats["pair_eligible"] = (stats["pair_count"] >= min_history) & (stats["pair_median"] > 0)
@@ -52,6 +63,19 @@ def apply_outlier_capping(
     in_event_window = result[event_cols].any(axis=1)
     should_cap = result["is_spike"] & ~in_event_window
     cap_value = result["pair_median"] * ratio_threshold
+
+    # A median ending in .5 puts the cap on a half unit, which is meaningless
+    # for an item only ever issued whole. Round up rather than to nearest: the
+    # success criterion is that the outlet does not run out, so the tie goes
+    # to more stock. Clipping back to the raw quantity keeps the
+    # Kuantitas_capped <= Kuantitas invariant that run_qa_checks asserts --
+    # ceil() can otherwise overshoot a fractional raw value just above the cap.
+    if "pair_integer_only" in result.columns:
+        whole_unit = result["pair_integer_only"].fillna(False).astype(bool)
+        rounded = np.minimum(np.ceil(cap_value), result[qty_col])
+        cap_value = cap_value.where(~whole_unit, rounded)
+        result = result.drop(columns=["pair_integer_only"])
+
     result["Kuantitas_capped"] = result[qty_col].where(~should_cap, cap_value)
 
     return result.drop(columns=["pair_median", "pair_eligible"])
