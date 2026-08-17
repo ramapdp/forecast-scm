@@ -138,16 +138,26 @@ Hanya empat relokasi yang tanggalnya persis dan teramati di dalam data — Tigar
 Cadas, Citayam, Bintara — dan hanya tiga di antaranya punya data pasca-relokasi
 yang cukup untuk dinilai.
 
-## B-8. Kawasan lokasi lama tidak tercatat
+## B-8. ~~Kawasan lokasi lama tidak tercatat~~ — ditutup (2026-08-17)
 
-`dataset/outlet_mapping.csv` hanya menyimpan `kawasan` dan `hari_pengiriman` lokasi
-**saat ini**. Untuk cabang yang direlokasi, kolom `old_name` justru diisi sama dengan
-`new_name`, sehingga jadwal kirim lokasi lama tidak dapat direkonstruksi.
+**Sebelumnya:** `dataset/outlet_mapping.csv` hanya menyimpan `kawasan` dan
+`hari_pengiriman` lokasi **saat ini**, sedangkan untuk cabang yang direlokasi kolom
+`old_name` diisi sama dengan `new_name` — sehingga jadwal kirim lokasi lama dianggap
+tidak dapat direkonstruksi. 205.513 baris pra-relokasi (13,7% dataset) memakai jadwal
+lokasi baru untuk menghitung `lead_time_days`, dan itu dicatat sebagai asumsi.
 
-Akibatnya 205.513 baris pra-relokasi (13,7% dataset) memakai jadwal kirim lokasi
-baru untuk menghitung `lead_time_days` — yang menentukan panjang jendela target.
-Selama data lokasi lama belum tersedia, ini adalah asumsi yang dinyatakan, bukan
-fakta terverifikasi.
+**Sekarang:** pemilik data mengonfirmasi (2026-08-17) bahwa `outlet_mapping.csv`
+memang **sudah menjadi arsip jadwal kirimnya**, dan pencocokan lewat nama outlet
+**baru** adalah cara yang berlaku — bukan penambalan. Verifikasi: ke-9 cabang yang
+pernah relokasi punya `kawasan` dan `hari_pengiriman` terisi di bawah nama barunya,
+tanpa satu pun nilai kosong di seluruh file. Jadi 205.513 baris itu berhenti menjadi
+asumsi yang dinyatakan.
+
+Satu pemeriksaan silang yang tersedia mendukungnya: `KY029 - Kebuli Yaman Cinere`
+(lokasi lama Bintara) masih punya baris sendiri di `outlet_mapping.csv`, dengan
+`kawasan = 2` / `Selasa dan Jumat` — sama persis dengan Bintara. Ini satu-satunya
+lokasi lama yang bisa dibandingkan langsung; delapan sisanya bersandar pada
+konfirmasi pemilik data, bukan pada pembandingan baris.
 
 ## B-9. Beberapa keputusan pembersihan belum di-sign-off
 
@@ -182,9 +192,14 @@ Jatiuwung. `kawasan = 2` / `hari_pengiriman = Selasa dan Jumat` untuk Bintara,
 Citayam, dan Grand Wisata Bekasi juga dikonfirmasi pada tanggal yang sama —
 nilai yang sebelumnya diinferensi dari cabang Kota Bekasi/Kota Depok lain
 ternyata benar, sehingga 82.068 baris (5,5% dataset) tidak lagi bergantung pada
-asumsi. Perhatikan bahwa ini **tidak** menutup B-8: yang dikonfirmasi adalah
-kawasan lokasi **sekarang**, sedangkan jadwal kirim lokasi **lama** untuk cabang
-yang direlokasi tetap tidak tersedia.
+asumsi. Jadwal kirim lokasi **lama** menyusul ditutup sehari kemudian — lihat B-8,
+yang sudah tidak lagi berlaku sejak 2026-08-17.
+
+Ditutup juga: jeda 13 hari `KY068 - Kebuli Yaman Kramatwatu` (28 Juni – 10 Juli
+2025) **dikonfirmasi tutup sementara (2026-08-17)**, bukan celah pencatatan —
+data mentah `jan-des-25.csv` juga kosong pada rentang itu (transaksi terakhir
+2025-06-27, kembali 2025-07-11). Sudah dicatat di `dataset/outlet_closures.csv`,
+sehingga ke-13 hari itu tidak lagi ikut sebagai permintaan nol.
 
 ---
 

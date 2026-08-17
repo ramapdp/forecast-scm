@@ -14,9 +14,11 @@ CLOSURES_FILE = str(BASE_DIR / "dataset/outlet_closures.csv")
 # Warn about transaction gaps of at least this many MISSING days that are not
 # recorded in outlet_closures.csv. Calibrated against the real data: the
 # longest clearly benign gap is 7 missing days (Citayam's relocation handover),
-# and at 14 exactly the two confirmed closures fire. KY068 Kramatwatu sits just
-# under at 13 missing days — worth asking the data owner about, not worth
-# lowering the threshold for.
+# and at 14 exactly the two confirmed closures fire. KY068 Kramatwatu sat just
+# under at 13 missing days and was still a real closure (confirmed by the data
+# owner 2026-08-17, now recorded) — so the threshold catches closures, it does
+# not define them: a gap under 14 days can still be one, and only
+# outlet_closures.csv decides.
 MIN_GAP_WARN_DAYS = 14
 
 PREFIX_RE = re.compile(r"^KY\d+\s*-\s*", re.IGNORECASE)

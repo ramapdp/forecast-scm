@@ -283,9 +283,12 @@ Closed by the data owner on 2026-08-16:
   with `kawasan=2`/`hari_pengiriman=Selasa dan Jumat`, inferred from every other
   Kota Depok/Kota Bekasi branch in the file, and **confirmed correct on
   2026-08-16** — so the 82,068 affected rows (5.5% of the dataset) no longer
-  rest on an inference. This does not close `batasan-penelitian.md` B-8: what
-  was confirmed is the schedule at each branch's *current* location, while the
-  pre-relocation schedule remains unrecoverable.
+  rest on an inference. `batasan-penelitian.md` B-8 — the pre-relocation
+  schedule — closed a day later: the owner confirmed on **2026-08-17** that
+  `outlet_mapping.csv` *is* the schedule archive and that matching on the *new*
+  outlet name is the valid rule, so the 205,513 pre-relocation rows (13.7%) are
+  no longer a stated assumption. All nine relocated branches carry a non-empty
+  `kawasan`/`hari_pengiriman` under their new names.
 
 ## 4. Expected modelling phase (not yet built)
 

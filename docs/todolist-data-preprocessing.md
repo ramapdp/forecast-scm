@@ -37,9 +37,13 @@ cabang terkecil dari 59 padahal peringkat sebenarnya #46.
 
 **Masih terbuka:**
 
-- [ ] **`KY068 - Kebuli Yaman Kramatwatu` gap 13 hari** (2025-06-28 s/d 2025-07-10) — persis di
-  bawah ambang peringatan. Tutup sementara atau celah pelaporan?
-- [ ] **`Kebuli Yaman Cikarang Pusat` masih tutup** — begitu buka, isi `tanggal_buka` di
+- [x] **`KY068 - Kebuli Yaman Kramatwatu` gap 13 hari** (2025-06-28 s/d 2025-07-10) —
+  **tutup sementara, dikonfirmasi pemilik data 2026-08-17**; data mentah `jan-des-25.csv` juga
+  kosong (terakhir 2025-06-27, kembali 2025-07-11). Sudah masuk `outlet_closures.csv`; panel
+  kehilangan 598 baris dan KY068 terbelah jadi `segment_id` 1 (s/d 2025-06-27) dan 2 (mulai
+  2025-07-11). Catatan: ambang 14 hari menangkap kandidat, tidak mendefinisikannya.
+- [ ] **`Kebuli Yaman Cikarang Pusat` masih tutup** — pemilik data (2026-08-17): belum ada
+  tanggal buka, menunggu data periode baru. Begitu buka, isi `tanggal_buka` di
   `outlet_closures.csv` **dan** perbarui `RELOCATION_DATES` secara manual. Jangan diturunkan
   otomatis: `KY056 Tigaraksa` ada di kedua tabel dengan tanggal yang tidak berhubungan
   (relokasi 2024-03-01 vs tutup sementara Oktober 2024).

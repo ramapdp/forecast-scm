@@ -808,8 +808,10 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
 6. ~~`kawasan = 2` untuk Bintara, Citayam, dan Grand Wisata Bekasi masih
    disimpulkan~~ — **dikonfirmasi benar (2026-08-16)**; inferensi dari cabang
    Kota Depok/Bekasi lain ternyata tepat, sehingga 82.068 baris (5,5% dataset)
-   tidak lagi bergantung pada asumsi. Ini **tidak** menutup B-8: yang
-   dikonfirmasi adalah kawasan lokasi *sekarang*, bukan jadwal lokasi *lama*.
+   tidak lagi bergantung pada asumsi. Jadwal lokasi *lama* menyusul
+   **dikonfirmasi (2026-08-17)**: `outlet_mapping.csv` memang arsipnya dan
+   pencocokan lewat nama outlet *baru* yang berlaku, sehingga B-8 ditutup dan
+   205.513 baris pra-relokasi (13,7%) tidak lagi berdiri di atas asumsi.
 7. ~~8 nilai `Kota Override` masih tebakan terbaik dari `Kecamatan`~~ —
    **dikonfirmasi benar (2026-08-16)**, termasuk `KY001` Kutabumi sebagai
    `Kabupaten Tangerang` meski kolom `Kecamatan` menyebut Jatiuwung.
@@ -821,17 +823,27 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
     `filter_min_history`. Menurunkan `MIN_HISTORY_DAYS` tidak menolong — ambang
     berapa pun tetap mengecualikannya. Ia masuk sendirinya begitu punya ≥60 hari
     sebelum cutoff berikutnya, tanpa perubahan kode.
-7c. `KY068 - Kebuli Yaman Kramatwatu` punya gap 13 hari (2025-06-28 s/d
-    2025-07-10) — persis di bawah ambang peringatan 14 hari. Perlu dikonfirmasi
-    apakah tutup sementara atau celah pelaporan.
-7d. `Kebuli Yaman Cikarang Pusat` masih tutup; begitu `tanggal_buka` diketahui,
-    isi ke `outlet_closures.csv` **dan** perbarui `RELOCATION_DATES` secara
-    manual (tidak diturunkan otomatis — lihat spec).
+7c. ~~`KY068 - Kebuli Yaman Kramatwatu` punya gap 13 hari (2025-06-28 s/d
+    2025-07-10)~~ — **dikonfirmasi tutup sementara (2026-08-17)** dan sudah
+    tercatat di `outlet_closures.csv`. Data mentah `jan-des-25.csv` juga kosong
+    pada rentang itu (terakhir 2025-06-27, kembali 2025-07-11), jadi bukan celah
+    pelaporan. Pelajarannya untuk refresh berikutnya: ambang peringatan 14 hari
+    menangkap kandidat, tidak mendefinisikannya — jeda di bawah 14 hari pun bisa
+    tutup sungguhan.
+7d. `Kebuli Yaman Cikarang Pusat` masih tutup — pemilik data mengonfirmasi
+    (2026-08-17) belum ada tanggal buka, **menunggu data periode baru**. Begitu
+    `tanggal_buka` diketahui, isi ke `outlet_closures.csv` **dan** perbarui
+    `RELOCATION_DATES` secara manual (tidak diturunkan otomatis — lihat spec).
 8. 5 tanggal relokasi masih berupa perkiraan batas-bawah.
 9. `calendar_features.py` hanya mencakup 2024–2025; **harus diperluas sebelum
    data 2026 masuk**, atau pipeline gagal keras (disengaja).
-10. `FGS.00048` (Kambing Oven) hanya 4 unit dalam 18 bulan di 1 cabang —
-    kandidat untuk dimasukkan `EXCLUDED_ITEMS`.
+10. `FGS.00048` (Kambing Oven) sangat lambat: **10 ekor, 8 transaksi, 6 cabang**
+    sepanjang 8 Mar 2024 – 20 Sep 2025 di data mentah; yang lolos ke panel hanya
+    KY002 Cilegon (4 ekor), karena lima cabang lain cuma bergerak satu hari dan
+    terbuang `MIN_HISTORY_DAYS = 60`. Kandidat `EXCLUDED_ITEMS`, tetapi gerakan
+    terakhirnya September 2025, jadi belum tentu discontinued — masih ditanyakan
+    ke pemilik data. Jangan tertukar dengan `FGS-00048` (strip) = Kentang
+    Mustofa Mie Goreng; `normalize_items.py` sudah memisahkannya dengan benar.
 
 **Keterbatasan metodologis yang tidak bisa dihilangkan oleh preprocessing**
 
