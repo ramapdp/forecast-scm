@@ -238,5 +238,77 @@ class TestSelectBest(unittest.TestCase):
             rf.select_best(results, candidates)
 
 
+import tempfile
+from pathlib import Path
+
+
+def _dated_frame(n=400, seed=3):
+    frame = _frame(n, seed=seed)
+    frame["Tanggal"] = pd.date_range("2025-01-01", periods=n, freq="D")
+    frame["lead_time_days"] = 3.0
+    return frame
+
+
+class TestFitFinal(unittest.TestCase):
+    def _params(self):
+        return {"n_estimators": 20, "max_depth": 6, "min_samples_leaf": 5,
+                "max_samples_leaf": 20, "random_state": 0}
+
+    def test_bundle_records_what_prediction_needs(self):
+        bundle = rf.fit_final(_dated_frame(), self._params(),
+                              feature_cols=FEATURES, n_estimators=20)
+        for key in ("model", "params", "feature_cols", "columns", "quantile", "n_train"):
+            self.assertIn(key, bundle)
+        self.assertEqual(bundle["feature_cols"], FEATURES)
+
+    def test_training_stops_before_december(self):
+        frame = _dated_frame(n=400)
+        bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES, n_estimators=20)
+        eligible = frame[frame["Tanggal"] < pd.Timestamp("2025-12-01")]
+        self.assertLessEqual(bundle["n_train"], len(eligible))
+        self.assertGreater(bundle["n_train"], 0)
+
+    def test_the_boundary_is_purged(self):
+        """lead_time_days is 3, so 2025-11-29 onward is contaminated."""
+        frame = _dated_frame(n=400)
+        bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES, n_estimators=20)
+        safe = frame[frame["Tanggal"] <= pd.Timestamp("2025-11-27")]
+        self.assertLessEqual(bundle["n_train"], len(safe))
+
+    def test_final_tree_count_overrides_the_searched_one(self):
+        bundle = rf.fit_final(_dated_frame(), self._params(),
+                              feature_cols=FEATURES, n_estimators=33)
+        self.assertEqual(bundle["params"]["n_estimators"], 33)
+
+    def test_predict_bundle_returns_one_value_per_row(self):
+        frame = _dated_frame()
+        bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES, n_estimators=20)
+        self.assertEqual(rf.predict_bundle(bundle, frame.head(25)).shape, (25,))
+
+    def test_predict_bundle_is_non_negative(self):
+        frame = _dated_frame()
+        bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES, n_estimators=20)
+        self.assertTrue((rf.predict_bundle(bundle, frame.head(25)) >= 0).all())
+
+    def test_one_hot_bundle_predicts_when_a_column_order_differs(self):
+        frame = _dated_frame()
+        params = {**self._params(), "one_hot": True}
+        bundle = rf.fit_final(frame, params, feature_cols=FEATURES, n_estimators=20)
+        shuffled = frame.head(25)[list(reversed(FEATURES)) + ["Tanggal", "lead_time_days"]]
+        self.assertEqual(rf.predict_bundle(bundle, shuffled).shape, (25,))
+
+    def test_a_saved_bundle_predicts_identically_after_loading(self):
+        frame = _dated_frame()
+        bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES, n_estimators=20)
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "bundle.joblib")
+            rf.save_bundle(bundle, path)
+            reloaded = rf.load_bundle(path)
+        np.testing.assert_array_equal(
+            rf.predict_bundle(bundle, frame.head(25)),
+            rf.predict_bundle(reloaded, frame.head(25)),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

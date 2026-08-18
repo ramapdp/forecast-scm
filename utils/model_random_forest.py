@@ -15,14 +15,17 @@ here, which happens to agree with the statistics: a leaf holding one sample
 cannot estimate a 0.9 quantile at all.
 """
 
+import json
 import random
+from pathlib import Path
 from typing import Callable, Optional
 
+import joblib
 import numpy as np
 import pandas as pd
 from quantile_forest import RandomForestQuantileRegressor
 
-from . import modeling_prep, walk_forward
+from . import modeling_prep, purging, walk_forward
 
 QUANTILE = 0.9
 
@@ -274,3 +277,85 @@ def select_best(search_results: pd.DataFrame, candidates: list) -> dict:
         raise ValueError("tidak ada kandidat yang berhasil dinilai")
     best_id = int(scored.loc[scored["pinball"].idxmin(), "candidate_id"])
     return candidates[best_id]
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_FILE = str(BASE_DIR / "models/random_forest_q90.joblib")
+BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/rf_best_params.json")
+SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/rf_search_results.csv")
+RESULTS_FILE = str(BASE_DIR / "dataset/model_ready/rf_walk_forward_results.csv")
+
+# Raised from the searched 200. Forest quality is monotone in tree count, so
+# the final model buys the variance reduction the search could not afford.
+FINAL_N_ESTIMATORS = 400
+
+
+def fit_final(
+    df: pd.DataFrame,
+    params: dict,
+    feature_cols: Optional[list] = None,
+    n_estimators: int = FINAL_N_ESTIMATORS,
+    date_col: str = modeling_prep.DATE_COL,
+    test_start: pd.Timestamp = modeling_prep.TEST_START,
+) -> dict:
+    """Fit on every eligible row before December, purged at that boundary.
+
+    The bundle records the exact training column order alongside the model. A
+    forest reloaded next week against columns in a different order does not
+    fail — it predicts confidently from the wrong features, which is worse.
+    """
+    params = {**DEFAULT_PARAMS, **params, "n_estimators": n_estimators}
+    feature_cols = feature_cols or modeling_prep.FEATURE_COLS
+
+    frame = df[df[date_col] < test_start]
+    frame = frame[purging.lookahead_safe_mask(frame, test_start, date_col=date_col)]
+    assert_no_nan(frame, feature_cols)
+
+    train_X = frame[feature_cols]
+    if params["one_hot"]:
+        train_X, _ = expand_one_hot(train_X, train_X)
+
+    y_train = frame[modeling_prep.TARGET_COL].to_numpy(dtype=float)
+    if params["log_target"]:
+        y_train = np.log1p(y_train)
+
+    model = build_estimator(params)
+    model.fit(train_X.to_numpy(dtype=np.float32), y_train)
+    return {
+        "model": model,
+        "params": params,
+        "feature_cols": feature_cols,
+        "columns": list(train_X.columns),
+        "quantile": QUANTILE,
+        "n_train": int(len(frame)),
+    }
+
+
+def predict_bundle(bundle: dict, frame: pd.DataFrame) -> np.ndarray:
+    """Predict with a fitted bundle, forcing the recorded column order."""
+    params = bundle["params"]
+    features = frame[bundle["feature_cols"]]
+    if params["one_hot"]:
+        features, _ = expand_one_hot(features, features)
+    features = features.reindex(columns=bundle["columns"], fill_value=0)
+    prediction = bundle["model"].predict(
+        features.to_numpy(dtype=np.float32), quantiles=bundle["quantile"]
+    )
+    if params["log_target"]:
+        prediction = modeling_prep.inverse_log_target(prediction)
+    return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
+
+
+def save_bundle(bundle: dict, path: str = MODEL_FILE) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(bundle, path)
+
+
+def load_bundle(path: str = MODEL_FILE) -> dict:
+    return joblib.load(path)
+
+
+def save_best_params(params: dict, path: str = BEST_PARAMS_FILE) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(params, handle, indent=2, sort_keys=True)
