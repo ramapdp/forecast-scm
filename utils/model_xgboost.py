@@ -1,0 +1,97 @@
+"""XGBoost at the 0.9 service level.
+
+`reg:quantileerror` optimizes the same pinball loss the models are selected
+on, so training objective and selection criterion agree — which is not true of
+a squared-error model asked for a high quantile afterwards.
+
+What makes this wrapper more than a thin call is the round count. Boosting
+overfits if it runs too long, so the number of rounds is itself a
+regularization decision, and the obvious place to make it — the validation
+fold — is exactly the place that would leak. Early stopping therefore runs on
+a held-out tail of the training window, and the model is then refit on the
+full training rows at the round count that tail chose. Two fits per fold, so
+that XGBoost is finally trained on the same population the Random Forest saw
+and the comparison stays like-for-like.
+"""
+
+from pathlib import Path
+from typing import Callable, Optional
+
+import numpy as np
+import pandas as pd
+from xgboost import XGBRegressor
+from xgboost.core import XGBoostError
+
+from . import model_common, modeling_prep, purging, walk_forward
+
+QUANTILE = 0.9
+
+# The last 30 days of each fold's training window, held out to choose the
+# round count. Long enough to cover a full delivery cycle and every weekday.
+ES_TAIL_DAYS = 30
+EARLY_STOPPING_ROUNDS = 50
+
+# A ceiling, not a target: at learning_rate 0.03 the search needs room, and
+# early stopping is what actually decides where a candidate lands.
+MAX_ROUNDS = 2000
+
+DEFAULT_PARAMS = {
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "min_child_weight": 10,
+    "subsample": 1.0,
+    "colsample_bytree": 1.0,
+    "reg_lambda": 1.0,
+    "encoding": "ordinal",
+    "log_target": False,
+    "random_state": 42,
+}
+
+# n_estimators is absent on purpose: early stopping decides it per candidate
+# per fold, so searching it would spend budget on a question that already has
+# a mechanism.
+SEARCH_SPACE = {
+    "max_depth": [4, 6, 8, 10],
+    "learning_rate": [0.03, 0.05, 0.1],
+    "min_child_weight": [1, 10, 50],
+    "subsample": [0.7, 1.0],
+    "colsample_bytree": [0.5, 0.7, 1.0],
+    "reg_lambda": [1.0, 10.0],
+    "encoding": ["ordinal", "native", "one_hot"],
+    "log_target": [False, True],
+}
+
+ESTIMATOR_KEYS = ("max_depth", "learning_rate", "min_child_weight",
+                  "subsample", "colsample_bytree", "reg_lambda", "random_state")
+
+
+def split_early_stopping(
+    train: pd.DataFrame,
+    tail_days: int = ES_TAIL_DAYS,
+    date_col: str = modeling_prep.DATE_COL,
+) -> tuple:
+    """Split a fold's training rows into fit rows and an early-stopping tail.
+
+    The tail is the last `tail_days` calendar days. The purge on the fit side
+    is not extra caution: `target_lead_time_cumulative` sums over
+    H+1..H+lead_time_days, so a fit row dated within `lead_time_days` of the
+    tail carries a label built partly out of the early-stopping window. Without
+    the purge, early stopping would be reading a signal it had partly trained
+    on and would stop too late — the identical leak `fold_train_mask()`
+    prevents at the fold boundary, one scale down.
+    """
+    if train.empty:
+        raise ValueError("frame training kosong")
+
+    es_start = train[date_col].max() - pd.Timedelta(days=tail_days - 1)
+    es_rows = train[train[date_col] >= es_start]
+    fit_rows = train[train[date_col] < es_start]
+    fit_rows = fit_rows[purging.lookahead_safe_mask(fit_rows, es_start,
+                                                    date_col=date_col)]
+
+    if fit_rows.empty:
+        raise ValueError(
+            f"jendela training terlalu pendek untuk tail {tail_days} hari: "
+            f"tidak ada baris tersisa untuk fit"
+        )
+    return fit_rows, es_rows
