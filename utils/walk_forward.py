@@ -57,3 +57,25 @@ def eligible_rows(
     frame = modeling_prep.drop_warmup_rows(frame, lookback=lookback, date_col=date_col)
     frame = frame[frame[target_col].notna()]
     return frame.reset_index(drop=True)
+
+
+def prepare_fold(
+    df: pd.DataFrame,
+    fold_id: int,
+    prepared: bool = False,
+    fold_col: str = "fold_id",
+) -> dict:
+    """Training and validation frames for one fold.
+
+    Training is every eligible row strictly before the fold's month, purged:
+    `target_lead_time_cumulative` sums over H+1..H+lead_time_days, so the last
+    few days before a boundary carry a label built partly out of the month
+    being validated. `modeling_prep.fold_train_mask` applies that purge.
+
+    Both frames keep the index of the eligible-rows frame, so a caller can line
+    predictions up against either without a join.
+    """
+    frame = df if prepared else eligible_rows(df)
+    train_mask = modeling_prep.fold_train_mask(frame, fold_id)
+    valid_mask = frame[fold_col] == fold_id
+    return {"train": frame[train_mask], "valid": frame[valid_mask]}
