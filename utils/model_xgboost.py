@@ -189,3 +189,89 @@ def apply_encoding(
     if encoding == "native":
         out = _as_categorical(out, categories)
     return out, encoding == "native"
+
+
+def build_estimator(
+    params: dict,
+    n_estimators: int,
+    enable_categorical: bool = False,
+    early_stopping_rounds: Optional[int] = None,
+    quantile: float = QUANTILE,
+) -> XGBRegressor:
+    """A regressor whose training objective is the metric it is judged on."""
+    kwargs = {key: params[key] for key in ESTIMATOR_KEYS if key in params}
+    return XGBRegressor(
+        objective="reg:quantileerror",
+        quantile_alpha=quantile,
+        tree_method="hist",
+        n_estimators=n_estimators,
+        enable_categorical=enable_categorical,
+        early_stopping_rounds=early_stopping_rounds,
+        n_jobs=-1,
+        **kwargs,
+    )
+
+
+def _target(frame: pd.DataFrame, params: dict) -> np.ndarray:
+    values = frame[modeling_prep.TARGET_COL].to_numpy(dtype=float)
+    return np.log1p(values) if params["log_target"] else values
+
+
+def make_fit_predict(
+    params: Optional[dict] = None,
+    feature_cols: Optional[list] = None,
+    quantile: float = QUANTILE,
+    tail_days: int = ES_TAIL_DAYS,
+    early_stopping_rounds: int = EARLY_STOPPING_ROUNDS,
+    max_rounds: int = MAX_ROUNDS,
+    idx_cols: Optional[list] = None,
+) -> Callable[[pd.DataFrame, pd.DataFrame], np.ndarray]:
+    """The callable walk_forward.run_fold() injects.
+
+    Two fits. The first runs on the purged fit rows with the tail as its eval
+    set and reports where early stopping landed. The second discards that
+    booster and refits on every training row at exactly that round count, so
+    the model that produces the reported predictions has seen the same
+    population the Random Forest was trained on.
+
+    Under `log_target`, the early-stopping metric is computed on the log
+    scale. That is sound: early stopping only chooses a round count *within*
+    one candidate. Candidates are compared to each other by pinball on the
+    original scale, after inversion.
+
+    Round counts are recorded on the returned callable rather than returned,
+    because `walk_forward` accepts predictions and nothing else — and the
+    spread of round counts across folds is worth reporting.
+    """
+    params = {**DEFAULT_PARAMS, **(params or {})}
+    feature_cols = feature_cols or modeling_prep.FEATURE_COLS
+
+    def fit_predict(train: pd.DataFrame, valid: pd.DataFrame) -> np.ndarray:
+        model_common.assert_no_nan(train, feature_cols)
+        model_common.assert_no_nan(valid, feature_cols)
+
+        fit_rows, es_rows = split_early_stopping(train, tail_days=tail_days)
+        fit_X, es_X, enable = encode(fit_rows[feature_cols], es_rows[feature_cols],
+                                     params["encoding"], idx_cols=idx_cols)
+        probe = build_estimator(params, max_rounds, enable_categorical=enable,
+                                early_stopping_rounds=early_stopping_rounds,
+                                quantile=quantile)
+        probe.fit(fit_X, _target(fit_rows, params),
+                  eval_set=[(es_X, _target(es_rows, params))], verbose=False)
+        best_iteration = int(probe.best_iteration) + 1
+        fit_predict.best_iterations.append(best_iteration)
+
+        train_X, valid_X, enable = encode(train[feature_cols], valid[feature_cols],
+                                          params["encoding"], idx_cols=idx_cols)
+        model = build_estimator(params, best_iteration, enable_categorical=enable,
+                                quantile=quantile)
+        model.fit(train_X, _target(train, params), verbose=False)
+
+        prediction = model.predict(valid_X)
+        if params["log_target"]:
+            prediction = modeling_prep.inverse_log_target(prediction)
+        # A negative shipment quantity is not a thing.
+        return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
+
+    fit_predict.best_iterations = []
+    return fit_predict

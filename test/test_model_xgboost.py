@@ -180,5 +180,185 @@ class TestApplyEncoding(unittest.TestCase):
         self.assertEqual(list(out["cat_idx"].cat.categories), categories["cat_idx"])
 
 
+class TestMakeFitPredict(unittest.TestCase):
+    def _params(self, **overrides):
+        return {**xgb.DEFAULT_PARAMS, "max_depth": 3, "learning_rate": 0.3,
+                "min_child_weight": 1, "random_state": 0, **overrides}
+
+    def _split(self, n=300):
+        frame = _dated_frame(n)
+        return frame.iloc[:250], frame.iloc[250:]
+
+    def test_returns_one_prediction_per_validation_row(self):
+        train, valid = self._split()
+        prediction = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                          max_rounds=40)(train, valid)
+        self.assertEqual(prediction.shape, (len(valid),))
+
+    def test_predictions_are_never_negative(self):
+        train, valid = self._split()
+        prediction = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                          max_rounds=40)(train, valid)
+        self.assertTrue((prediction >= 0).all())
+
+    def test_the_high_quantile_sits_above_the_low_one(self):
+        train, valid = self._split()
+        high = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                    quantile=0.9, max_rounds=60)(train, valid)
+        low = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                   quantile=0.1, max_rounds=60)(train, valid)
+        self.assertGreater(high.mean(), low.mean())
+
+    def test_every_encoding_runs_end_to_end(self):
+        train, valid = self._split()
+        for encoding in ("ordinal", "native", "one_hot"):
+            prediction = xgb.make_fit_predict(
+                self._params(encoding=encoding), feature_cols=FEATURES,
+                max_rounds=40, idx_cols=["cat_idx"],
+            )(train, valid)
+            self.assertEqual(prediction.shape, (len(valid),), encoding)
+
+    def test_one_hot_really_expands_on_this_frame(self):
+        """Guards the test suite itself: without idx_cols the synthetic frame
+        has no column matching the real IDX_COLS, so every encoding would
+        quietly become a no-op and these tests would prove nothing."""
+        train, _ = self._split()
+        expanded, _, _ = xgb.encode(train[FEATURES], train[FEATURES], "one_hot",
+                                    idx_cols=["cat_idx"])
+        self.assertGreater(len(expanded.columns), len(FEATURES))
+
+    def test_log_target_returns_predictions_on_the_original_scale(self):
+        train, valid = self._split()
+        logged = xgb.make_fit_predict(self._params(log_target=True),
+                                      feature_cols=FEATURES, max_rounds=60)(train, valid)
+        self.assertGreater(logged.mean(), 5.0)
+
+    def test_the_same_seed_gives_the_same_predictions(self):
+        train, valid = self._split()
+        first = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                     max_rounds=40)(train, valid)
+        second = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                      max_rounds=40)(train, valid)
+        np.testing.assert_allclose(first, second)
+
+    def test_a_nan_feature_is_rejected_rather_than_imputed(self):
+        train, valid = self._split()
+        train = train.copy()
+        train.loc[train.index[0], "feat_a"] = np.nan
+        with self.assertRaisesRegex(ValueError, "feat_a"):
+            xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                 max_rounds=40)(train, valid)
+
+    def test_the_round_count_is_recorded_per_call(self):
+        train, valid = self._split()
+        fit_predict = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                           max_rounds=40)
+        fit_predict(train, valid)
+        fit_predict(train, valid)
+        self.assertEqual(len(fit_predict.best_iterations), 2)
+        self.assertTrue(all(count >= 1 for count in fit_predict.best_iterations))
+
+    def test_the_second_fit_sees_every_training_row(self):
+        """The refit is the whole point: XGBoost must end up trained on the
+        same population the Random Forest saw, tail included."""
+        train, valid = self._split()
+        seen = []
+        original = xgb.build_estimator
+
+        def spy(params, n_estimators, enable_categorical=False,
+                early_stopping_rounds=None, quantile=xgb.QUANTILE):
+            model = original(params, n_estimators,
+                             enable_categorical=enable_categorical,
+                             early_stopping_rounds=early_stopping_rounds,
+                             quantile=quantile)
+            real_fit = model.fit
+
+            def fit(X, y, **kwargs):
+                seen.append(len(X))
+                return real_fit(X, y, **kwargs)
+
+            model.fit = fit
+            return model
+
+        xgb.build_estimator = spy
+        try:
+            xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                 max_rounds=40)(train, valid)
+        finally:
+            xgb.build_estimator = original
+
+        fit_rows, es_rows = xgb.split_early_stopping(train)
+        self.assertEqual(seen[0], len(fit_rows))
+        self.assertEqual(seen[1], len(train))
+
+    def test_the_second_fit_uses_the_round_count_the_first_chose(self):
+        train, valid = self._split()
+        rounds = []
+        original = xgb.build_estimator
+
+        def spy(params, n_estimators, enable_categorical=False,
+                early_stopping_rounds=None, quantile=xgb.QUANTILE):
+            rounds.append(n_estimators)
+            return original(params, n_estimators,
+                            enable_categorical=enable_categorical,
+                            early_stopping_rounds=early_stopping_rounds,
+                            quantile=quantile)
+
+        xgb.build_estimator = spy
+        try:
+            fit_predict = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                               max_rounds=40)
+            fit_predict(train, valid)
+        finally:
+            xgb.build_estimator = original
+
+        self.assertEqual(rounds[0], 40)
+        self.assertEqual(rounds[1], fit_predict.best_iterations[0])
+
+
+class TestWalkForwardIntegration(unittest.TestCase):
+    def _panel(self, periods=245):
+        rows = []
+        for i, date in enumerate(pd.date_range("2025-05-01", periods=periods, freq="D")):
+            rows.append({
+                "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
+                "Tanggal": date,
+                "target_lead_time_cumulative": float(i % 7),
+                "lead_time_days": 3.0, "lag_1": float(i % 5),
+                "roll_mean_7": float(i % 4), "demand_segment": "smooth",
+                "is_delivery_day": bool(i % 2),
+                "feat_a": float(i), "feat_b": float(i % 3), "cat_idx": i % 3,
+            })
+        return modeling_prep.assign_folds(pd.DataFrame(rows))
+
+    def test_it_plugs_into_run_fold_unchanged(self):
+        results = walk_forward.run_fold(
+            self._panel(), 1,
+            xgb.make_fit_predict({**xgb.DEFAULT_PARAMS, "max_depth": 3,
+                                  "min_child_weight": 1},
+                                 feature_cols=FEATURES, max_rounds=30,
+                                 tail_days=14),
+            model_name="xgboost",
+        )
+        self.assertIn("xgboost", set(results["model"]))
+        self.assertTrue(results["pinball"].notna().all())
+
+    def test_no_training_row_reaches_december(self):
+        frame = self._panel(periods=300)
+        seen_max = []
+        fit_predict = xgb.make_fit_predict(
+            {**xgb.DEFAULT_PARAMS, "max_depth": 3, "min_child_weight": 1},
+            feature_cols=FEATURES, max_rounds=20, tail_days=14,
+        )
+
+        def spy(train, valid):
+            seen_max.append(train["Tanggal"].max())
+            return fit_predict(train, valid)
+
+        walk_forward.run_walk_forward(frame, spy, model_name="xgboost")
+        for stamp in seen_max:
+            self.assertLess(stamp, pd.Timestamp("2025-12-01"))
+
+
 if __name__ == "__main__":
     unittest.main()
