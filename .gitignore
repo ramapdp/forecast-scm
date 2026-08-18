@@ -5,6 +5,7 @@ __pycache__/
 .claude/settings.local.json
 .superpowers/
 dataset/
+models/
 # Four hand-maintained config files under dataset/ are deliberately tracked
 # (force-added): event_driven_items.csv, outlet_mapping.csv,
 # outlet_name_overrides.csv, outlet_closures.csv. They hold data-owner
