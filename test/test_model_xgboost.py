@@ -80,5 +80,105 @@ class TestSearchSpace(unittest.TestCase):
             self.assertIn(key, xgb.DEFAULT_PARAMS)
 
 
+class TestEncode(unittest.TestCase):
+    def _pair(self):
+        train = pd.DataFrame({"feat_a": [1.0, 2.0, 3.0], "cat_idx": [0, 1, 2]})
+        valid = pd.DataFrame({"feat_a": [4.0, 5.0], "cat_idx": [1, 0]})
+        return train, valid
+
+    def test_ordinal_passes_the_index_through(self):
+        train, valid = self._pair()
+        train_out, valid_out, enable = xgb.encode(train, valid, "ordinal",
+                                                  idx_cols=["cat_idx"])
+        self.assertFalse(enable)
+        self.assertEqual(list(train_out.columns), ["feat_a", "cat_idx"])
+        self.assertEqual(list(train_out["cat_idx"]), [0, 1, 2])
+
+    def test_native_makes_the_index_categorical(self):
+        train, valid = self._pair()
+        train_out, valid_out, enable = xgb.encode(train, valid, "native",
+                                                  idx_cols=["cat_idx"])
+        self.assertTrue(enable)
+        self.assertEqual(str(train_out["cat_idx"].dtype), "category")
+        self.assertEqual(str(valid_out["cat_idx"].dtype), "category")
+
+    def test_native_gives_validation_the_training_categories(self):
+        train, valid = self._pair()
+        train_out, valid_out, _ = xgb.encode(train, valid, "native",
+                                             idx_cols=["cat_idx"])
+        self.assertEqual(list(train_out["cat_idx"].cat.categories),
+                         list(valid_out["cat_idx"].cat.categories))
+
+    def test_native_turns_an_unseen_category_into_a_null(self):
+        """XGBoost consumes NaN natively; an unseen level must not become a
+        different level's code."""
+        train, _ = self._pair()
+        valid = pd.DataFrame({"feat_a": [4.0], "cat_idx": [99]})
+        _, valid_out, _ = xgb.encode(train, valid, "native", idx_cols=["cat_idx"])
+        self.assertTrue(valid_out["cat_idx"].isna().all())
+
+    def test_one_hot_expands_and_drops_the_index(self):
+        train, valid = self._pair()
+        train_out, valid_out, enable = xgb.encode(train, valid, "one_hot",
+                                                  idx_cols=["cat_idx"])
+        self.assertFalse(enable)
+        self.assertNotIn("cat_idx", train_out.columns)
+        self.assertEqual(list(train_out.columns), list(valid_out.columns))
+
+    def test_every_mode_preserves_row_count_and_order(self):
+        train, valid = self._pair()
+        for encoding in ("ordinal", "native", "one_hot"):
+            train_out, valid_out, _ = xgb.encode(train, valid, encoding,
+                                                 idx_cols=["cat_idx"])
+            self.assertEqual(len(train_out), 3, encoding)
+            self.assertEqual(len(valid_out), 2, encoding)
+            self.assertEqual(list(valid_out["feat_a"]), [4.0, 5.0], encoding)
+
+    def test_a_validation_only_category_never_shifts_columns(self):
+        train, _ = self._pair()
+        valid = pd.DataFrame({"feat_a": [4.0, 5.0], "cat_idx": [1, 7]})
+        for encoding in ("ordinal", "native", "one_hot"):
+            train_out, valid_out, _ = xgb.encode(train, valid, encoding,
+                                                 idx_cols=["cat_idx"])
+            self.assertEqual(list(train_out.columns), list(valid_out.columns),
+                             encoding)
+
+    def test_an_unknown_encoding_is_refused(self):
+        train, valid = self._pair()
+        with self.assertRaisesRegex(ValueError, "encoding"):
+            xgb.encode(train, valid, "embedding", idx_cols=["cat_idx"])
+
+
+class TestApplyEncoding(unittest.TestCase):
+    def _fit_layout(self, encoding):
+        train = pd.DataFrame({"feat_a": [1.0, 2.0, 3.0], "cat_idx": [0, 1, 2]})
+        train_out, _, _ = xgb.encode(train, train, encoding, idx_cols=["cat_idx"])
+        return (list(train_out.columns),
+                xgb.training_categories(train, idx_cols=["cat_idx"]))
+
+    def test_it_reproduces_the_training_columns_in_every_mode(self):
+        for encoding in ("ordinal", "native", "one_hot"):
+            columns, categories = self._fit_layout(encoding)
+            frame = pd.DataFrame({"cat_idx": [2, 0], "feat_a": [9.0, 8.0]})
+            out, _ = xgb.apply_encoding(frame, encoding, columns, categories,
+                                        idx_cols=["cat_idx"])
+            self.assertEqual(list(out.columns), columns, encoding)
+
+    def test_a_shuffled_input_column_order_does_not_change_the_output(self):
+        columns, categories = self._fit_layout("one_hot")
+        frame = pd.DataFrame({"cat_idx": [2, 0], "feat_a": [9.0, 8.0]})
+        out, _ = xgb.apply_encoding(frame, "one_hot", columns, categories,
+                                    idx_cols=["cat_idx"])
+        self.assertEqual(list(out.columns), columns)
+
+    def test_native_restores_the_recorded_categories(self):
+        columns, categories = self._fit_layout("native")
+        frame = pd.DataFrame({"feat_a": [9.0], "cat_idx": [1]})
+        out, enable = xgb.apply_encoding(frame, "native", columns, categories,
+                                         idx_cols=["cat_idx"])
+        self.assertTrue(enable)
+        self.assertEqual(list(out["cat_idx"].cat.categories), categories["cat_idx"])
+
+
 if __name__ == "__main__":
     unittest.main()

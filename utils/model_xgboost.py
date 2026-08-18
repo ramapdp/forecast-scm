@@ -95,3 +95,97 @@ def split_early_stopping(
             f"tidak ada baris tersisa untuk fit"
         )
     return fit_rows, es_rows
+
+
+ENCODINGS = ("ordinal", "native", "one_hot")
+
+
+def _present(frame: pd.DataFrame, idx_cols: Optional[list]) -> list:
+    idx_cols = model_common.IDX_COLS if idx_cols is None else idx_cols
+    return [col for col in idx_cols if col in frame.columns]
+
+
+def training_categories(
+    train_X: pd.DataFrame,
+    idx_cols: Optional[list] = None,
+) -> dict:
+    """The category levels each encoded column had in training, sorted.
+
+    Recorded in the bundle so a reloaded model rebuilds the identical dtype.
+    Category codes are positional: rebuilding a column from a different level
+    list silently renumbers every row.
+    """
+    return {
+        col: sorted(train_X[col].dropna().unique().tolist())
+        for col in _present(train_X, idx_cols)
+    }
+
+
+def _as_categorical(frame: pd.DataFrame, categories: dict) -> pd.DataFrame:
+    out = frame.copy()
+    for col, levels in categories.items():
+        if col in out.columns:
+            out[col] = out[col].astype(pd.CategoricalDtype(categories=levels))
+    return out
+
+
+def encode(
+    train_X: pd.DataFrame,
+    valid_X: pd.DataFrame,
+    encoding: str,
+    idx_cols: Optional[list] = None,
+) -> tuple:
+    """Prepare both matrices under one of the three searched encodings.
+
+    Returns `(train_out, valid_out, enable_categorical)`. In every mode the
+    validation columns are forced onto the training columns: a category
+    present only in validation would otherwise shift every column after it,
+    and the booster would read the wrong feature at each position — silently,
+    since the shapes still line up.
+
+    Under `native`, a level unseen in training becomes NaN rather than
+    borrowing another level's code. XGBoost consumes NaN natively, so an
+    unknown category is treated as missing, which is what it is.
+    """
+    if encoding == "ordinal":
+        return train_X, valid_X.reindex(columns=train_X.columns), False
+    if encoding == "native":
+        categories = training_categories(train_X, idx_cols)
+        train_out = _as_categorical(train_X, categories)
+        valid_out = _as_categorical(valid_X.reindex(columns=train_X.columns),
+                                    categories)
+        return train_out, valid_out, True
+    if encoding == "one_hot":
+        train_out, valid_out = model_common.expand_one_hot(
+            train_X, valid_X, idx_cols=_present(train_X, idx_cols)
+        )
+        return train_out, valid_out, False
+    raise ValueError(f"encoding tidak dikenal: {encoding!r}, pilih dari {ENCODINGS}")
+
+
+def apply_encoding(
+    X: pd.DataFrame,
+    encoding: str,
+    columns: list,
+    categories: dict,
+    idx_cols: Optional[list] = None,
+) -> tuple:
+    """Encode a frame for prediction against a layout recorded at fit time.
+
+    A booster reloaded next month against columns in a different order does
+    not fail — it predicts confidently from the wrong features, which is
+    worse. `columns` is the authority here, not whatever the caller passed in.
+    """
+    if encoding == "one_hot":
+        out = pd.get_dummies(X, columns=_present(X, idx_cols))
+    elif encoding == "native":
+        out = _as_categorical(X, categories)
+    elif encoding == "ordinal":
+        out = X
+    else:
+        raise ValueError(f"encoding tidak dikenal: {encoding!r}, pilih dari {ENCODINGS}")
+
+    out = out.reindex(columns=columns, fill_value=0)
+    if encoding == "native":
+        out = _as_categorical(out, categories)
+    return out, encoding == "native"
