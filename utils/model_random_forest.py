@@ -369,6 +369,15 @@ def fit_final(
 ) -> dict:
     """Fit on every eligible row before December, purged at that boundary.
 
+    Eligibility comes from `walk_forward.eligible_rows`, not from a date filter
+    written here. The rows this model is finally trained on have to be the rows
+    it was scored on, and the scoring cuts are not just the date: the first 28
+    days of each segment have no usable lag window, and the last few days have
+    no target at all, because the lead-time sum runs past the end of the data.
+    Selecting rows independently here silently trained the shipped model on a
+    different population than the reported metrics describe — and, since the
+    target cut was missing, on labels that were NaN.
+
     The bundle records the exact training column order alongside the model. A
     forest reloaded next week against columns in a different order does not
     fail — it predicts confidently from the wrong features, which is worse.
@@ -376,7 +385,7 @@ def fit_final(
     params = {**DEFAULT_PARAMS, **params, "n_estimators": n_estimators}
     feature_cols = feature_cols or modeling_prep.FEATURE_COLS
 
-    frame = df[df[date_col] < test_start]
+    frame = walk_forward.eligible_rows(df, date_col=date_col, test_start=test_start)
     frame = frame[purging.lookahead_safe_mask(frame, test_start, date_col=date_col)]
     assert_no_nan(frame, feature_cols)
 

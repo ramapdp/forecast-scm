@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from utils import model_random_forest as rf
+from utils import modeling_prep, purging, walk_forward
 
 
 FEATURES = ["feat_a", "feat_b", "cat_idx"]
@@ -243,9 +244,12 @@ from pathlib import Path
 
 
 def _dated_frame(n=400, seed=3):
+    """One pair's series, long enough that the 28-day warm-up cut leaves rows."""
     frame = _frame(n, seed=seed)
     frame["Tanggal"] = pd.date_range("2025-01-01", periods=n, freq="D")
     frame["lead_time_days"] = 3.0
+    frame["Kode Barang"] = "FGS-00001"
+    frame["Nama Cabang"] = "KY001"
     return frame
 
 
@@ -274,6 +278,28 @@ class TestFitFinal(unittest.TestCase):
         bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES, n_estimators=20)
         safe = frame[frame["Tanggal"] <= pd.Timestamp("2025-11-27")]
         self.assertLessEqual(bundle["n_train"], len(safe))
+
+    def test_rows_without_a_target_are_dropped(self):
+        """The last days of a segment have no label; they cannot be trained on."""
+        frame = _dated_frame(n=400)
+        blank = frame["Tanggal"].between("2025-06-01", "2025-06-05")
+        frame.loc[blank, "target_lead_time_cumulative"] = np.nan
+        bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES,
+                              n_estimators=20)
+        clean = _dated_frame(n=400)
+        reference = rf.fit_final(clean, self._params(), feature_cols=FEATURES,
+                                 n_estimators=20)
+        self.assertEqual(bundle["n_train"], reference["n_train"] - int(blank.sum()))
+
+    def test_the_warmup_window_is_excluded(self):
+        """Training rows are the eligible rows, not every row before December."""
+        frame = _dated_frame(n=400)
+        bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES,
+                              n_estimators=20)
+        expected = walk_forward.eligible_rows(frame)
+        expected = expected[purging.lookahead_safe_mask(
+            expected, modeling_prep.TEST_START)]
+        self.assertEqual(bundle["n_train"], len(expected))
 
     def test_final_tree_count_overrides_the_searched_one(self):
         bundle = rf.fit_final(_dated_frame(), self._params(),
