@@ -325,6 +325,10 @@ oleh yang paham datanya".
 
 ## 🟢 Sanity check rutin (jalankan tiap kali dataset di-refresh atau sebelum training)
 
+> **Data 2026 masuk?** Baca `docs/checklist-refresh-data-2026.md` lebih dulu — di sana
+> tercatat apa yang gagal keras, apa yang salah diam-diam (terutama `ID_HOLIDAYS` yang tidak
+> dijaga `check_year_coverage`), dan apa yang harus di-derive ulang.
+
 - [ ] **Verifikasi `EXCLUDED_ITEMS` (`xxx.FGS.00066/67/68/69`) benar-benar tidak muncul
   di `dataset/model_ready/*.parquet`, dan Santan/Gula Cendol (`xxx.FGS.00070/71`) sudah dalam
   Satuan Porsi (bukan Gr)** — penting untuk diingat karena `eda.ipynb` **tidak bisa** dipakai
