@@ -15,13 +15,14 @@ here, which happens to agree with the statistics: a leaf holding one sample
 cannot estimate a 0.9 quantile at all.
 """
 
+import random
 from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
 from quantile_forest import RandomForestQuantileRegressor
 
-from . import modeling_prep
+from . import modeling_prep, walk_forward
 
 QUANTILE = 0.9
 
@@ -166,3 +167,110 @@ def make_fit_predict(
         return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
 
     return fit_predict
+
+
+SEARCH_FOLDS = (3, 5)
+
+# Enough training rows to size the memory screen realistically before the data
+# is loaded — fold 5 trains on roughly this many rows.
+TYPICAL_N_TRAIN = 1_280_000
+
+
+def sample_search_space(
+    n_candidates: int = 18,
+    n_train: int = TYPICAL_N_TRAIN,
+    seed: int = 42,
+    memory_budget: int = MEMORY_BUDGET_BYTES,
+    space: Optional[dict] = None,
+) -> list:
+    """Distinct, within-budget parameter sets drawn at random.
+
+    Random rather than grid: the space is 1,152 combinations and only a few of
+    its dimensions carry real signal, so random draws cover each dimension's
+    range better than a truncated grid at the same cost.
+    """
+    space = SEARCH_SPACE if space is None else space
+    rng = random.Random(seed)
+    keys = sorted(space)
+    seen, candidates = set(), []
+
+    for _ in range(n_candidates * 200):
+        if len(candidates) == n_candidates:
+            break
+        drawn = {key: rng.choice(space[key]) for key in keys}
+        signature = tuple(drawn[key] for key in keys)
+        if signature in seen:
+            continue
+        candidate = {**DEFAULT_PARAMS, **drawn}
+        if estimate_leaf_memory_bytes(candidate, n_train) > memory_budget:
+            continue
+        seen.add(signature)
+        candidates.append(candidate)
+
+    if len(candidates) < n_candidates:
+        raise ValueError(
+            f"hanya {len(candidates)} dari {n_candidates} kandidat muat dalam "
+            f"budget {memory_budget / 1024 ** 3:.1f} GB"
+        )
+    return candidates
+
+
+def run_search(
+    df: pd.DataFrame,
+    candidates: list,
+    folds: tuple = SEARCH_FOLDS,
+    alpha: float = QUANTILE,
+    model_name: str = "random_forest",
+    feature_cols: Optional[list] = None,
+    verbose: bool = True,
+) -> pd.DataFrame:
+    """Score every candidate on the search folds only.
+
+    A candidate that raises is recorded with NaN metrics rather than aborting
+    the run: eighteen fits is a long afternoon, and losing all of it to the
+    seventeenth configuration would be a poor trade.
+    """
+    frame = walk_forward.eligible_rows(df)
+    rows = []
+    for candidate_id, candidate in enumerate(candidates):
+        record = {"candidate_id": candidate_id,
+                  **{key: candidate[key] for key in sorted(SEARCH_SPACE)}}
+        try:
+            fit_predict = make_fit_predict(candidate, feature_cols=feature_cols,
+                                           quantile=alpha)
+            parts = [
+                walk_forward.run_fold(frame, fold_id, fit_predict,
+                                      model_name=model_name, alpha=alpha,
+                                      prepared=True)
+                for fold_id in folds
+            ]
+            results = pd.concat(parts, ignore_index=True)
+            for metric in ("pinball", "mae", "coverage", "fill_rate"):
+                record[metric] = walk_forward.pooled_metric(
+                    results, model_name, metric=metric, folds=folds
+                )
+            record["error"] = None
+        except (MemoryError, ValueError) as failure:
+            for metric in ("pinball", "mae", "coverage", "fill_rate"):
+                record[metric] = float("nan")
+            record["error"] = str(failure)
+        if verbose:
+            print(f"[{candidate_id + 1}/{len(candidates)}] "
+                  f"pinball={record['pinball']:.4f} {record['error'] or ''}")
+        rows.append(record)
+    return pd.DataFrame(rows)
+
+
+def select_best(search_results: pd.DataFrame, candidates: list) -> dict:
+    """The candidate with the lowest pooled pinball across the search folds.
+
+    Pinball alone decides it. The service level is uniform across every SKU by
+    the data owner's decision, so the selection criterion has to be uniform
+    too — picking on a per-segment metric would optimize for a split the
+    business does not make.
+    """
+    scored = search_results[search_results["pinball"].notna()]
+    if scored.empty:
+        raise ValueError("tidak ada kandidat yang berhasil dinilai")
+    best_id = int(scored.loc[scored["pinball"].idxmin(), "candidate_id"])
+    return candidates[best_id]

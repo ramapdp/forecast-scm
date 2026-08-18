@@ -170,5 +170,73 @@ class TestMakeFitPredict(unittest.TestCase):
             predict(train, valid)
 
 
+class TestSampleSearchSpace(unittest.TestCase):
+    def test_returns_the_requested_number_of_candidates(self):
+        self.assertEqual(len(rf.sample_search_space(18, n_train=1_280_000, seed=1)), 18)
+
+    def test_candidates_are_distinct(self):
+        candidates = rf.sample_search_space(18, n_train=1_280_000, seed=1)
+        signatures = {tuple(sorted(c.items(), key=lambda kv: kv[0])) for c in candidates}
+        self.assertEqual(len(signatures), 18)
+
+    def test_the_same_seed_reproduces_the_same_list(self):
+        first = rf.sample_search_space(10, n_train=1_280_000, seed=7)
+        second = rf.sample_search_space(10, n_train=1_280_000, seed=7)
+        self.assertEqual(first, second)
+
+    def test_different_seeds_give_different_lists(self):
+        first = rf.sample_search_space(10, n_train=1_280_000, seed=7)
+        second = rf.sample_search_space(10, n_train=1_280_000, seed=8)
+        self.assertNotEqual(first, second)
+
+    def test_every_candidate_fits_the_memory_budget(self):
+        for candidate in rf.sample_search_space(18, n_train=1_280_000, seed=1):
+            self.assertLessEqual(
+                rf.estimate_leaf_memory_bytes(candidate, 1_280_000),
+                rf.MEMORY_BUDGET_BYTES,
+                candidate,
+            )
+
+    def test_every_candidate_carries_a_full_parameter_set(self):
+        for candidate in rf.sample_search_space(5, n_train=1_280_000, seed=1):
+            for key in rf.DEFAULT_PARAMS:
+                self.assertIn(key, candidate)
+
+    def test_a_tiny_budget_that_admits_nothing_raises(self):
+        with self.assertRaisesRegex(ValueError, "budget"):
+            rf.sample_search_space(18, n_train=1_280_000, seed=1, memory_budget=10)
+
+    def test_only_searched_parameters_vary(self):
+        candidates = rf.sample_search_space(18, n_train=1_280_000, seed=1)
+        self.assertEqual({c["n_estimators"] for c in candidates},
+                         {rf.DEFAULT_PARAMS["n_estimators"]})
+        self.assertEqual({c["random_state"] for c in candidates},
+                         {rf.DEFAULT_PARAMS["random_state"]})
+
+
+class TestSelectBest(unittest.TestCase):
+    def test_picks_the_lowest_pinball(self):
+        candidates = [{"max_depth": 12}, {"max_depth": 16}, {"max_depth": 20}]
+        results = pd.DataFrame({
+            "candidate_id": [0, 1, 2],
+            "pinball": [5.0, 3.0, 4.0],
+        })
+        self.assertEqual(rf.select_best(results, candidates), {"max_depth": 16})
+
+    def test_ignores_a_candidate_that_failed(self):
+        candidates = [{"max_depth": 12}, {"max_depth": 16}]
+        results = pd.DataFrame({
+            "candidate_id": [0, 1],
+            "pinball": [np.nan, 4.0],
+        })
+        self.assertEqual(rf.select_best(results, candidates), {"max_depth": 16})
+
+    def test_raises_when_every_candidate_failed(self):
+        candidates = [{"max_depth": 12}]
+        results = pd.DataFrame({"candidate_id": [0], "pinball": [np.nan]})
+        with self.assertRaisesRegex(ValueError, "tidak ada kandidat"):
+            rf.select_best(results, candidates)
+
+
 if __name__ == "__main__":
     unittest.main()
