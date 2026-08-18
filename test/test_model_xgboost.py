@@ -360,5 +360,105 @@ class TestWalkForwardIntegration(unittest.TestCase):
             self.assertLess(stamp, pd.Timestamp("2025-12-01"))
 
 
+import tempfile
+from pathlib import Path
+
+
+class TestFitFinal(unittest.TestCase):
+    def _params(self, **overrides):
+        return {**xgb.DEFAULT_PARAMS, "max_depth": 3, "learning_rate": 0.3,
+                "min_child_weight": 1, "random_state": 0, **overrides}
+
+    def _bundle(self, frame=None, **overrides):
+        return xgb.fit_final(frame if frame is not None else _dated_frame(400),
+                             self._params(**overrides), feature_cols=FEATURES,
+                             max_rounds=40, tail_days=14, idx_cols=["cat_idx"])
+
+    def test_bundle_records_what_prediction_needs(self):
+        bundle = self._bundle()
+        for key in ("model", "params", "feature_cols", "columns", "categories",
+                    "idx_cols", "encoding", "log_target", "best_iteration",
+                    "quantile", "n_train"):
+            self.assertIn(key, bundle)
+        self.assertEqual(bundle["feature_cols"], FEATURES)
+        self.assertEqual(bundle["quantile"], xgb.QUANTILE)
+
+    def test_training_stops_before_december(self):
+        frame = _dated_frame(400)
+        bundle = self._bundle(frame)
+        eligible = frame[frame["Tanggal"] < pd.Timestamp("2025-12-01")]
+        self.assertLessEqual(bundle["n_train"], len(eligible))
+        self.assertGreater(bundle["n_train"], 0)
+
+    def test_the_december_boundary_is_purged(self):
+        """lead_time_days is 3, so 2025-11-29 onward is contaminated."""
+        frame = _dated_frame(400)
+        bundle = self._bundle(frame)
+        safe = frame[frame["Tanggal"] <= pd.Timestamp("2025-11-27")]
+        self.assertLessEqual(bundle["n_train"], len(safe))
+
+    def test_rows_without_a_target_are_dropped(self):
+        frame = _dated_frame(400)
+        blank = frame["Tanggal"].between("2025-06-01", "2025-06-05")
+        frame.loc[blank, "target_lead_time_cumulative"] = np.nan
+        bundle = self._bundle(frame)
+        reference = self._bundle(_dated_frame(400))
+        self.assertEqual(bundle["n_train"], reference["n_train"] - int(blank.sum()))
+
+    def test_the_warmup_window_is_excluded(self):
+        frame = _dated_frame(400)
+        bundle = self._bundle(frame)
+        expected = walk_forward.eligible_rows(frame)
+        expected = expected[purging.lookahead_safe_mask(
+            expected, pd.Timestamp("2025-12-01"))]
+        self.assertEqual(bundle["n_train"], len(expected))
+
+    def test_the_final_model_is_trained_on_every_eligible_row(self):
+        """Tail included: the tail chooses the round count, then rejoins."""
+        bundle = self._bundle()
+        self.assertEqual(bundle["model"].n_estimators, bundle["best_iteration"])
+
+    def test_predict_bundle_returns_one_value_per_row(self):
+        frame = _dated_frame(400)
+        bundle = self._bundle(frame)
+        self.assertEqual(xgb.predict_bundle(bundle, frame).shape, (len(frame),))
+
+    def test_predict_bundle_is_non_negative(self):
+        frame = _dated_frame(400)
+        bundle = self._bundle(frame)
+        self.assertTrue((xgb.predict_bundle(bundle, frame) >= 0).all())
+
+    def test_predict_bundle_ignores_the_input_column_order(self):
+        for encoding in ("ordinal", "native", "one_hot"):
+            frame = _dated_frame(400)
+            bundle = self._bundle(frame, encoding=encoding)
+            shuffled = frame[list(reversed(frame.columns))]
+            np.testing.assert_allclose(
+                xgb.predict_bundle(bundle, frame),
+                xgb.predict_bundle(bundle, shuffled),
+                err_msg=encoding,
+            )
+
+    def test_a_saved_bundle_predicts_identically_after_loading(self):
+        frame = _dated_frame(400)
+        bundle = self._bundle(frame)
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "bundle.joblib")
+            xgb.save_bundle(bundle, path)
+            reloaded = xgb.load_bundle(path)
+        np.testing.assert_allclose(xgb.predict_bundle(bundle, frame),
+                                   xgb.predict_bundle(reloaded, frame))
+
+    def test_log_target_bundles_predict_on_the_original_scale(self):
+        frame = _dated_frame(400)
+        raw = self._bundle(frame, log_target=False)
+        logged = self._bundle(frame, log_target=True)
+        self.assertLess(
+            abs(xgb.predict_bundle(logged, frame).mean()
+                - xgb.predict_bundle(raw, frame).mean()),
+            20.0,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

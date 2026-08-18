@@ -275,3 +275,95 @@ def make_fit_predict(
 
     fit_predict.best_iterations = []
     return fit_predict
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_FILE = str(BASE_DIR / "models/xgboost_q90.joblib")
+BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/xgb_best_params.json")
+SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/xgb_search_results.csv")
+RESULTS_FILE = str(BASE_DIR / "dataset/model_ready/xgb_walk_forward_results.csv")
+
+
+def fit_final(
+    df: pd.DataFrame,
+    params: dict,
+    feature_cols: Optional[list] = None,
+    tail_days: int = ES_TAIL_DAYS,
+    early_stopping_rounds: int = EARLY_STOPPING_ROUNDS,
+    max_rounds: int = MAX_ROUNDS,
+    idx_cols: Optional[list] = None,
+    date_col: str = modeling_prep.DATE_COL,
+    test_start: pd.Timestamp = modeling_prep.TEST_START,
+) -> dict:
+    """Fit on every eligible row before December, purged at that boundary.
+
+    Eligibility comes from `walk_forward.eligible_rows`, not from a date filter
+    written here. The rows this model is finally trained on have to be the rows
+    it was scored on, and the scoring cuts are not just the date: the first 28
+    days of each segment have no usable lag window, and the last few days have
+    no target at all, because the lead-time sum runs past the end of the data.
+
+    Same two-fit protocol as walk-forward. The bundle records the training
+    column order, the encoding, and the category levels, because a booster
+    reloaded next month against a different layout does not fail — it predicts
+    confidently from the wrong features, which is worse.
+    """
+    params = {**DEFAULT_PARAMS, **params}
+    feature_cols = feature_cols or modeling_prep.FEATURE_COLS
+
+    frame = walk_forward.eligible_rows(df, date_col=date_col, test_start=test_start)
+    frame = frame[purging.lookahead_safe_mask(frame, test_start, date_col=date_col)]
+    model_common.assert_no_nan(frame, feature_cols)
+
+    fit_rows, es_rows = split_early_stopping(frame, tail_days=tail_days,
+                                             date_col=date_col)
+    fit_X, es_X, enable = encode(fit_rows[feature_cols], es_rows[feature_cols],
+                                 params["encoding"], idx_cols=idx_cols)
+    probe = build_estimator(params, max_rounds, enable_categorical=enable,
+                            early_stopping_rounds=early_stopping_rounds)
+    probe.fit(fit_X, _target(fit_rows, params),
+              eval_set=[(es_X, _target(es_rows, params))], verbose=False)
+    best_iteration = int(probe.best_iteration) + 1
+
+    train_X, _, enable = encode(frame[feature_cols], frame[feature_cols],
+                                params["encoding"], idx_cols=idx_cols)
+    model = build_estimator(params, best_iteration, enable_categorical=enable)
+    model.fit(train_X, _target(frame, params), verbose=False)
+
+    return {
+        "model": model,
+        "params": params,
+        "feature_cols": feature_cols,
+        "columns": list(train_X.columns),
+        "categories": training_categories(frame[feature_cols], idx_cols=idx_cols),
+        "idx_cols": idx_cols,
+        "encoding": params["encoding"],
+        "log_target": params["log_target"],
+        "best_iteration": best_iteration,
+        "quantile": QUANTILE,
+        "n_train": int(len(frame)),
+    }
+
+
+def predict_bundle(bundle: dict, frame: pd.DataFrame) -> np.ndarray:
+    """Predict with a fitted bundle, forcing the recorded column order."""
+    features, _ = apply_encoding(frame[bundle["feature_cols"]],
+                                 bundle["encoding"], bundle["columns"],
+                                 bundle["categories"],
+                                 idx_cols=bundle["idx_cols"])
+    prediction = bundle["model"].predict(features)
+    if bundle["log_target"]:
+        prediction = modeling_prep.inverse_log_target(prediction)
+    return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
+
+
+def save_bundle(bundle: dict, path: str = MODEL_FILE) -> None:
+    model_common.save_bundle(bundle, path)
+
+
+def load_bundle(path: str = MODEL_FILE) -> dict:
+    return model_common.load_bundle(path)
+
+
+def save_best_params(params: dict, path: str = BEST_PARAMS_FILE) -> None:
+    model_common.save_best_params(params, path)
