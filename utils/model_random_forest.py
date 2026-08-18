@@ -227,6 +227,7 @@ def run_search(
     feature_cols: Optional[list] = None,
     verbose: bool = True,
     checkpoint_path: Optional[str] = None,
+    resume: bool = True,
 ) -> pd.DataFrame:
     """Score every candidate on the search folds only.
 
@@ -239,10 +240,30 @@ def run_search(
     exception to handle — so every finished candidate is flushed to disk
     immediately, and the file doubles as the only progress signal available
     while the run is buried inside a notebook cell.
+
+    `resume` is on by default because that is what the checkpoint is for. A
+    restart that recomputes finished candidates converts the checkpoint into a
+    progress bar, which is not worth hours of CPU. The stale-checkpoint guard
+    below is the price: resuming across a changed search space or seed would
+    blend candidates from two different experiments and hand back a winner
+    that was never actually evaluated.
     """
     frame = walk_forward.eligible_rows(df)
     rows = []
+    completed = set()
+
+    if resume and checkpoint_path is not None and Path(checkpoint_path).exists():
+        prior = pd.read_csv(checkpoint_path)
+        _assert_checkpoint_matches(prior, candidates, checkpoint_path)
+        rows = prior.to_dict("records")
+        completed = {int(value) for value in prior["candidate_id"]}
+        if verbose and completed:
+            print(f"melanjutkan dari checkpoint: {len(completed)} kandidat sudah selesai",
+                  flush=True)
+
     for candidate_id, candidate in enumerate(candidates):
+        if candidate_id in completed:
+            continue
         record = {"candidate_id": candidate_id,
                   **{key: candidate[key] for key in sorted(SEARCH_SPACE)}}
         try:
@@ -271,8 +292,45 @@ def run_search(
         rows.append(record)
         if checkpoint_path is not None:
             Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-            pd.DataFrame(rows).to_csv(checkpoint_path, index=False)
-    return pd.DataFrame(rows)
+            _ordered(rows).to_csv(checkpoint_path, index=False)
+    return _ordered(rows)
+
+
+def _ordered(rows: list) -> pd.DataFrame:
+    """Candidate order, so select_best() can index `candidates` by position
+    regardless of the order a resumed run happened to finish them in."""
+    return (pd.DataFrame(rows)
+            .sort_values("candidate_id")
+            .reset_index(drop=True))
+
+
+def _assert_checkpoint_matches(prior: pd.DataFrame, candidates: list, path: str) -> None:
+    """Refuse a checkpoint whose rows describe different candidates.
+
+    Compares the searched parameters rather than trusting the file name. NaN
+    stands in for None in the CSV, and booleans survive the round trip as
+    numpy bools, so both are normalised before comparison.
+    """
+    for _, row in prior.iterrows():
+        candidate_id = int(row["candidate_id"])
+        if candidate_id >= len(candidates):
+            raise ValueError(
+                f"checkpoint {path} memuat candidate_id {candidate_id} "
+                f"di luar {len(candidates)} kandidat saat ini"
+            )
+        for key in sorted(SEARCH_SPACE):
+            expected = candidates[candidate_id][key]
+            actual = None if pd.isna(row[key]) else row[key]
+            if isinstance(expected, bool):
+                actual = bool(actual)
+            elif isinstance(expected, (int, float)) and actual is not None:
+                actual = type(expected)(actual)
+            if expected != actual:
+                raise ValueError(
+                    f"checkpoint {path} tidak cocok dengan ruang pencarian: "
+                    f"kandidat {candidate_id} punya {key}={actual}, "
+                    f"seharusnya {expected}"
+                )
 
 
 def select_best(search_results: pd.DataFrame, candidates: list) -> dict:

@@ -360,5 +360,97 @@ class TestRunSearchCheckpoint(unittest.TestCase):
         self.assertEqual(len(returned), 2)
 
 
+class TestRunSearchResume(unittest.TestCase):
+    """What just happened in practice: a six-hour search died at candidate 12
+    and the checkpoint held. Restarting from zero would have thrown away the
+    twelve finished fits, so a resume has to be the default, not an option."""
+
+    def _panel(self):
+        rows = []
+        for i, date in enumerate(pd.date_range("2025-05-01", periods=245, freq="D")):
+            rows.append({
+                "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
+                "Tanggal": date,
+                "target_lead_time_cumulative": float(i % 7),
+                "lead_time_days": 3.0, "lag_1": float(i % 5),
+                "roll_mean_7": float(i % 4), "demand_segment": "smooth",
+                "is_delivery_day": bool(i % 2),
+                "feat_a": float(i), "feat_b": float(i % 3), "cat_idx": i % 3,
+            })
+        from utils import modeling_prep
+        return modeling_prep.assign_folds(pd.DataFrame(rows))
+
+    def _candidates(self, n=3):
+        depths = [4, 5, 6]
+        return [
+            {**rf.DEFAULT_PARAMS, "n_estimators": 5, "max_depth": depths[i],
+             "min_samples_leaf": 5, "max_samples_leaf": 5}
+            for i in range(n)
+        ]
+
+    def _run(self, path, candidates, **kwargs):
+        return rf.run_search(self._panel(), candidates, folds=(1,),
+                             feature_cols=FEATURES, verbose=False,
+                             checkpoint_path=path, **kwargs)
+
+    def test_a_finished_candidate_is_not_recomputed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            candidates = self._candidates()
+            self._run(path, candidates)
+
+            # Forge an unmistakable value; a resume must return it untouched.
+            saved = pd.read_csv(path)
+            saved.loc[saved["candidate_id"] == 0, "pinball"] = -999.0
+            saved = saved[saved["candidate_id"] < 2]
+            saved.to_csv(path, index=False)
+
+            resumed = self._run(path, candidates)
+            self.assertEqual(len(resumed), 3)
+            row = resumed[resumed["candidate_id"] == 0].iloc[0]
+            self.assertEqual(float(row["pinball"]), -999.0)
+
+    def test_resume_false_recomputes_everything(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            candidates = self._candidates()
+            self._run(path, candidates)
+            saved = pd.read_csv(path)
+            saved.loc[saved["candidate_id"] == 0, "pinball"] = -999.0
+            saved.to_csv(path, index=False)
+
+            fresh = self._run(path, candidates, resume=False)
+            row = fresh[fresh["candidate_id"] == 0].iloc[0]
+            self.assertNotEqual(float(row["pinball"]), -999.0)
+
+    def test_results_come_back_in_candidate_order(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            candidates = self._candidates()
+            self._run(path, candidates)
+            saved = pd.read_csv(path)
+            saved[saved["candidate_id"] == 1].to_csv(path, index=False)
+
+            resumed = self._run(path, candidates)
+            self.assertEqual(list(resumed["candidate_id"]), [0, 1, 2])
+
+    def test_a_checkpoint_from_a_different_search_space_is_refused(self):
+        """Silently mixing candidates from two different spaces would produce a
+        winner that never existed."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            self._run(path, self._candidates())
+            different = self._candidates()
+            different[0]["max_depth"] = 11
+            with self.assertRaisesRegex(ValueError, "checkpoint"):
+                self._run(path, different)
+
+    def test_a_missing_checkpoint_simply_runs_everything(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "absent.csv")
+            result = self._run(path, self._candidates())
+            self.assertEqual(len(result), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
