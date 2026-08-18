@@ -125,5 +125,108 @@ class TestPrepareFold(unittest.TestCase):
             walk_forward.prepare_fold(_panel(), 9)
 
 
+def _perfect(train, valid):
+    """A model that cheats. Used to assert the plumbing, not the modeling:
+    a perfect prediction must score MAE 0, so any non-zero MAE means the
+    runner mis-aligned predictions with labels.
+    """
+    return valid["target_lead_time_cumulative"].to_numpy(dtype=float)
+
+
+def _constant(value):
+    def fit_predict(train, valid):
+        return np.full(len(valid), float(value))
+    return fit_predict
+
+
+class TestRunFold(unittest.TestCase):
+    def test_a_perfect_model_scores_zero_error(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        overall = results[(results["model"] == "rf") & results["group_col"].isna()]
+        self.assertEqual(len(overall), 1)
+        self.assertAlmostEqual(float(overall.iloc[0]["mae"]), 0.0)
+        self.assertAlmostEqual(float(overall.iloc[0]["pinball"]), 0.0)
+
+    def test_predictions_are_aligned_row_by_row_not_just_in_count(self):
+        """Reversing the prediction vector must change the score. If it does
+        not, the runner is comparing sorted or re-indexed values.
+        """
+        def reversed_model(train, valid):
+            return _perfect(train, valid)[::-1]
+
+        straight = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        flipped = walk_forward.run_fold(_panel(), 1, reversed_model, model_name="rf")
+        straight_mae = float(straight[straight["group_col"].isna() & (straight["model"] == "rf")].iloc[0]["mae"])
+        flipped_mae = float(flipped[flipped["group_col"].isna() & (flipped["model"] == "rf")].iloc[0]["mae"])
+        self.assertAlmostEqual(straight_mae, 0.0)
+        self.assertGreater(flipped_mae, 0.0)
+
+    def test_every_naive_baseline_is_scored_too(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        self.assertEqual(
+            set(results["model"].unique()),
+            {"rf", "naive_zero", "naive_lag_1", "naive_roll_mean_7"},
+        )
+
+    def test_model_and_baselines_are_scored_on_identical_row_counts(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        overall = results[results["group_col"].isna()]
+        self.assertEqual(overall["n"].nunique(), 1)
+
+    def test_reports_each_group_column(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        self.assertEqual(
+            set(results["group_col"].dropna().unique()),
+            set(walk_forward.GROUP_COLS),
+        )
+
+    def test_group_row_counts_sum_to_the_overall_count(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        rf = results[results["model"] == "rf"]
+        overall = int(rf[rf["group_col"].isna()].iloc[0]["n"])
+        for group_col in walk_forward.GROUP_COLS:
+            grouped = rf[rf["group_col"] == group_col]
+            self.assertEqual(int(grouped["n"].sum()), overall, group_col)
+
+    def test_carries_every_metric_column(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        for column in ["n", "mae", "pinball", "coverage", "fill_rate",
+                       "shortfall_units", "overstock_units"]:
+            self.assertIn(column, results.columns)
+
+    def test_rejects_a_prediction_of_the_wrong_length(self):
+        def short(train, valid):
+            return np.zeros(len(valid) - 1)
+
+        with self.assertRaisesRegex(ValueError, "panjang"):
+            walk_forward.run_fold(_panel(), 1, short)
+
+
+class TestRunWalkForward(unittest.TestCase):
+    def test_covers_every_fold(self):
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf")
+        self.assertEqual(sorted(results["fold_id"].unique()), list(walk_forward.FOLDS))
+
+    def test_a_huge_constant_overshoots_and_a_zero_undershoots(self):
+        high = walk_forward.run_walk_forward(_panel(), _constant(1000), model_name="rf")
+        low = walk_forward.run_walk_forward(_panel(), _constant(0), model_name="rf")
+        self.assertAlmostEqual(walk_forward.pooled_metric(high, "rf", "coverage"), 1.0)
+        self.assertLess(walk_forward.pooled_metric(low, "rf", "coverage"), 1.0)
+
+    def test_pooled_metric_weights_folds_by_row_count(self):
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf")
+        self.assertAlmostEqual(walk_forward.pooled_metric(results, "rf", "pinball"), 0.0)
+
+    def test_pooled_metric_can_be_restricted_to_the_search_folds(self):
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf")
+        value = walk_forward.pooled_metric(results, "rf", "pinball", folds=(3, 5))
+        self.assertAlmostEqual(value, 0.0)
+
+    def test_is_deterministic_for_a_deterministic_model(self):
+        first = walk_forward.run_walk_forward(_panel(), _constant(5), model_name="rf")
+        second = walk_forward.run_walk_forward(_panel(), _constant(5), model_name="rf")
+        pd.testing.assert_frame_equal(first, second)
+
+
 if __name__ == "__main__":
     unittest.main()
