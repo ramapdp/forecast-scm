@@ -460,5 +460,59 @@ class TestFitFinal(unittest.TestCase):
         )
 
 
+class TestSearchWrappers(unittest.TestCase):
+    def test_the_default_budget_is_thirty_candidates(self):
+        self.assertEqual(len(xgb.sample_search_space()), xgb.N_CANDIDATES)
+        self.assertEqual(xgb.N_CANDIDATES, 30)
+
+    def test_the_same_seed_reproduces_the_same_list(self):
+        self.assertEqual(xgb.sample_search_space(6, seed=1),
+                         xgb.sample_search_space(6, seed=1))
+
+    def test_candidates_are_distinct(self):
+        keys = sorted(xgb.SEARCH_SPACE)
+        drawn = xgb.sample_search_space(20, seed=1)
+        signatures = {tuple(c[k] for k in keys) for c in drawn}
+        self.assertEqual(len(signatures), 20)
+
+    def test_every_candidate_carries_a_full_parameter_set(self):
+        for candidate in xgb.sample_search_space(5, seed=1):
+            for key in xgb.DEFAULT_PARAMS:
+                self.assertIn(key, candidate)
+
+    def test_only_searched_parameters_vary(self):
+        candidates = xgb.sample_search_space(20, seed=1)
+        self.assertEqual({c["random_state"] for c in candidates},
+                         {xgb.DEFAULT_PARAMS["random_state"]})
+
+    def test_the_search_folds_are_three_and_five(self):
+        self.assertEqual(xgb.SEARCH_FOLDS, (3, 5))
+
+    def test_run_search_scores_every_candidate(self):
+        # Starts in 2024 on purpose: run_search cannot pass tail_days through to
+        # make_fit_predict, so the fold's training window has to be long enough
+        # for the real 30-day tail plus the 28-day warm-up cut.
+        rows = []
+        for i, date in enumerate(pd.date_range("2024-10-01", periods=460, freq="D")):
+            rows.append({
+                "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
+                "Tanggal": date,
+                "target_lead_time_cumulative": float(i % 7),
+                "lead_time_days": 3.0, "lag_1": float(i % 5),
+                "roll_mean_7": float(i % 4), "demand_segment": "smooth",
+                "is_delivery_day": bool(i % 2),
+                "feat_a": float(i), "feat_b": float(i % 3), "cat_idx": i % 3,
+            })
+        panel = modeling_prep.assign_folds(pd.DataFrame(rows))
+        candidates = [{**xgb.DEFAULT_PARAMS, "max_depth": d, "min_child_weight": 1}
+                      for d in (3, 4)]
+        results = xgb.run_search(panel, candidates, folds=(1,),
+                                 feature_cols=FEATURES, verbose=False)
+        self.assertEqual(list(results["candidate_id"]), [0, 1])
+        self.assertTrue(results["pinball"].notna().all())
+        for key in xgb.SEARCH_SPACE:
+            self.assertIn(key, results.columns)
+
+
 if __name__ == "__main__":
     unittest.main()

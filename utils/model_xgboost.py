@@ -367,3 +367,59 @@ def load_bundle(path: str = MODEL_FILE) -> dict:
 
 def save_best_params(params: dict, path: str = BEST_PARAMS_FILE) -> None:
     model_common.save_best_params(params, path)
+
+
+SEARCH_FOLDS = (3, 5)
+
+# More draws than the Random Forest's 18, because this space has more
+# dimensions that genuinely move the score — not because XGBoost is being
+# given an easier ride. The asymmetry is reported in docs/hasil-modeling-xgb.md.
+N_CANDIDATES = 30
+
+select_best = model_common.select_best
+
+
+def sample_search_space(
+    n_candidates: int = N_CANDIDATES,
+    seed: int = 42,
+    space: Optional[dict] = None,
+) -> list:
+    """Distinct parameter sets drawn at random from SEARCH_SPACE.
+
+    No affordability screen: `hist` holds a quantized feature matrix — tens of
+    megabytes at this size — so there is no analogue of the quantile forest's
+    leaf-storage bound to screen against.
+    """
+    return model_common.sample_search_space(
+        space=SEARCH_SPACE if space is None else space,
+        defaults=DEFAULT_PARAMS,
+        n_candidates=n_candidates,
+        seed=seed,
+        screen=None,
+    )
+
+
+def run_search(
+    df: pd.DataFrame,
+    candidates: list,
+    folds: tuple = SEARCH_FOLDS,
+    alpha: float = QUANTILE,
+    model_name: str = "xgboost",
+    feature_cols: Optional[list] = None,
+    verbose: bool = True,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = True,
+) -> pd.DataFrame:
+    """Score every XGBoost candidate on the search folds.
+
+    XGBoostError joins the caught types: a candidate whose parameter
+    combination the library rejects should be recorded and skipped, exactly
+    like an over-budget forest, rather than ending a multi-hour run.
+    """
+    return model_common.run_search(
+        df, candidates, make_fit_predict=make_fit_predict,
+        search_space=SEARCH_SPACE, folds=folds, alpha=alpha,
+        model_name=model_name, feature_cols=feature_cols, verbose=verbose,
+        checkpoint_path=checkpoint_path, resume=resume,
+        catch=(MemoryError, ValueError, XGBoostError),
+    )
