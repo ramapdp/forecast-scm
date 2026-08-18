@@ -226,12 +226,19 @@ def run_search(
     model_name: str = "random_forest",
     feature_cols: Optional[list] = None,
     verbose: bool = True,
+    checkpoint_path: Optional[str] = None,
 ) -> pd.DataFrame:
     """Score every candidate on the search folds only.
 
     A candidate that raises is recorded with NaN metrics rather than aborting
     the run: eighteen fits is a long afternoon, and losing all of it to the
     seventeenth configuration would be a poor trade.
+
+    `checkpoint_path` extends that reasoning past what Python can catch. A
+    search at this scale runs for hours, and an OS-level kill leaves no
+    exception to handle — so every finished candidate is flushed to disk
+    immediately, and the file doubles as the only progress signal available
+    while the run is buried inside a notebook cell.
     """
     frame = walk_forward.eligible_rows(df)
     rows = []
@@ -259,8 +266,12 @@ def run_search(
             record["error"] = str(failure)
         if verbose:
             print(f"[{candidate_id + 1}/{len(candidates)}] "
-                  f"pinball={record['pinball']:.4f} {record['error'] or ''}")
+                  f"pinball={record['pinball']:.4f} {record['error'] or ''}",
+                  flush=True)
         rows.append(record)
+        if checkpoint_path is not None:
+            Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(rows).to_csv(checkpoint_path, index=False)
     return pd.DataFrame(rows)
 
 

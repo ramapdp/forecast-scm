@@ -310,5 +310,55 @@ class TestFitFinal(unittest.TestCase):
         )
 
 
+class TestRunSearchCheckpoint(unittest.TestCase):
+    """A six-hour search must not lose fourteen finished candidates because the
+    fifteenth was killed by the OS."""
+
+    def _panel(self):
+        rows = []
+        for i, date in enumerate(pd.date_range("2025-05-01", periods=245, freq="D")):
+            rows.append({
+                "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
+                "Tanggal": date,
+                "target_lead_time_cumulative": float(i % 7),
+                "lead_time_days": 3.0, "lag_1": float(i % 5),
+                "roll_mean_7": float(i % 4), "demand_segment": "smooth",
+                "is_delivery_day": bool(i % 2),
+                "feat_a": float(i), "feat_b": float(i % 3), "cat_idx": i % 3,
+            })
+        from utils import modeling_prep
+        return modeling_prep.assign_folds(pd.DataFrame(rows))
+
+    def _candidates(self):
+        return [
+            {**rf.DEFAULT_PARAMS, "n_estimators": 5, "max_depth": 4,
+             "min_samples_leaf": 5, "max_samples_leaf": 5, "max_depth_label": d}
+            for d in (1, 2)
+        ]
+
+    def test_writes_a_row_per_candidate_as_it_finishes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            rf.run_search(self._panel(), self._candidates(), folds=(1,),
+                          feature_cols=FEATURES, verbose=False,
+                          checkpoint_path=path)
+            self.assertEqual(len(pd.read_csv(path)), 2)
+
+    def test_checkpoint_matches_the_returned_frame(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            returned = rf.run_search(self._panel(), self._candidates(), folds=(1,),
+                                     feature_cols=FEATURES, verbose=False,
+                                     checkpoint_path=path)
+            saved = pd.read_csv(path)
+            self.assertEqual(len(saved), len(returned))
+            self.assertEqual(list(saved["candidate_id"]), list(returned["candidate_id"]))
+
+    def test_runs_without_a_checkpoint_path(self):
+        returned = rf.run_search(self._panel(), self._candidates(), folds=(1,),
+                                 feature_cols=FEATURES, verbose=False)
+        self.assertEqual(len(returned), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
