@@ -178,10 +178,14 @@ def save_model(model, path) / load_model(path)
 `make_fit_predict(params)` returns the callable the runner injects. Inside it,
 in order:
 
-1. `impute_features()` — `quantile-forest`, like sklearn's forests before
-   1.4, does not accept NaN. The function already exists and is already
-   tested, including the sentinel-99 rule that keeps "outside the Eid window"
-   from being read as "today is Eid".
+1. `assert_no_nan()` — `quantile-forest` does not accept NaN, but
+   `build_model_input()` already ran `impute_features()` before writing the
+   parquet, and a verification on the real file found zero nulls across all 56
+   `FEATURE_COLS`. Re-running the imputer here would be actively wrong:
+   `was_relocated` is derived from `days_since_relocation.notna()`, and that
+   column is already filled with 0.0, so a second pass would set the indicator
+   `True` on every row and destroy the distinction it exists to preserve. The
+   wrapper therefore checks the invariant and fails loudly instead.
 2. optional one-hot expansion of the seven `*_idx` columns, driven by the
    `one_hot` parameter; the expansion is fit on training columns and
    reindexed onto validation so an absent category cannot shift columns.
@@ -190,15 +194,44 @@ in order:
 4. fit, then `predict(X_valid, quantiles=0.9)`, clipped at 0 — a negative
    shipment quantity is not a thing.
 
-**`max_samples_leaf` is measured, not assumed.** This `quantile-forest`
-parameter controls how many training targets each leaf retains, and therefore
-whether the 0.9 quantile is read from a real within-leaf distribution or only
-from variation across trees. Retaining more is the statistically right answer
-for intermittent demand and the expensive one for memory. **The first
-implementation step is a benchmark** — one fit on fold 5's full training set
-(~1.28M rows), recording wall time and peak RSS at the storage setting under
-consideration. The tuning grid size is fixed only after that number exists,
-and the measured numbers are recorded in `docs/hasil-modeling-rf.md`.
+### 1.3 The leaf-storage memory bound
+
+`quantile-forest` 1.4.2 stores the per-leaf training distribution as a **dense**
+`int64` array of shape `(n_estimators, max_node_count, n_outputs,
+max_samples_leaf)` (`_quantile_forest.py`, `_get_y_train_leaves`). Its footprint
+is therefore fully determined before any fit runs:
+
+```
+bytes = n_estimators x node_count x max_samples_leaf x 8
+node_count <= min(2^(max_depth+1), ~2 x n_train / min_samples_leaf)
+```
+
+At 200 trees on fold 5's 1.28M training rows:
+
+| `min_samples_leaf` | `max_samples_leaf` | Leaf storage |
+|---|---|---|
+| 1, `max_depth=None` | 1 | ~4 GB |
+| 20 | 20 | ~2.0 GB |
+| 50 | 20 | ~0.8 GB |
+| 100 | 50 | ~1.0 GB |
+
+This rules out the unbounded end of the search space, and the statistics agree
+with the arithmetic: a leaf holding one sample cannot estimate a 0.9 quantile
+at all. `max_depth=None` and `min_samples_leaf` below 20 are therefore excluded
+from the space in Part 2, and `model_random_forest.py` exposes
+
+```python
+def estimate_leaf_memory_bytes(params, n_train) -> int
+```
+
+which every candidate passes through before it is fitted. Configurations above
+a 3 GB budget are rejected with a clear message rather than discovered by the
+OOM killer twenty minutes in.
+
+The formula is an upper bound, not a measurement, so **the first implementation
+step is still a benchmark**: one fit on fold 5's full training set recording
+wall time and peak RSS, to confirm the bound holds and to size the search.
+Measured numbers go into `docs/hasil-modeling-rf.md`.
 
 ## Part 2 — Hyperparameter search
 
@@ -210,17 +243,26 @@ searching it wastes budget on a question with a known answer; it is pinned at
 
 | Parameter | Values |
 |---|---|
-| `max_depth` | `None`, 12, 20, 30 |
-| `min_samples_leaf` | 1, 5, 20, 50 |
+| `max_depth` | 12, 16, 20 |
+| `min_samples_leaf` | 20, 50, 100, 200 |
+| `max_samples_leaf` | 1, 20, 50 |
 | `max_features` | `"sqrt"`, 0.3, 0.5, 1.0 |
 | `max_samples` | `None`, 0.5 |
 | `log_target` | `False`, `True` |
 | `one_hot` | `False`, `True` |
 
-18 candidates drawn with a fixed seed. Random search rather than grid because
-the space is 512 combinations and the informative dimensions are few — random
-sampling covers each dimension's range better than a truncated grid at equal
-cost.
+18 candidates drawn with a fixed seed, each screened by
+`estimate_leaf_memory_bytes()` and redrawn if it exceeds the 3 GB budget.
+Random search rather than grid because the space is 1,152 combinations and the
+informative dimensions are few — random sampling covers each dimension's range
+better than a truncated grid at equal cost.
+
+`max_depth=None` and `min_samples_leaf` under 20 are absent by design, per
+§1.3. `max_samples_leaf` is searched rather than fixed because it trades
+quantile fidelity against memory directly, and 1 (the library default, which
+reduces each leaf to a single stored value) is kept in the space as the cheap
+end of that trade so the cost of buying fidelity is measured rather than
+assumed.
 
 ### 2.2 Protocol
 
