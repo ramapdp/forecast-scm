@@ -8,7 +8,4 @@ matplotlib
 scikit-learn==1.6.1
 quantile-forest==1.4.2
 joblib==1.5.3
-# Requires the OpenMP runtime, which is not a Python package and cannot be
-# pinned here: the macOS wheel dynamically links libomp.dylib. Install it once
-# with `brew install libomp` (Linux: libgomp, usually already present).
 xgboost==2.1.4
