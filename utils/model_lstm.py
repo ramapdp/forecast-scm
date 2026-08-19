@@ -33,7 +33,7 @@ MAX_CANDIDATES = 20
 
 DEFAULT_PARAMS = {
     "hidden_size": 128,
-    "num_layers": 2,
+    "num_layers": 1,
     "dropout": 0.2,
     "learning_rate": 1e-3,
     "batch_size": 1024,
@@ -42,9 +42,17 @@ DEFAULT_PARAMS = {
     "random_state": 42,
 }
 
+# Shrunk from {hidden 64/128/256} x {1, 2 layers} after the epoch cost was
+# measured on fold 5 (2026-08-19, CPU): a 2-layer hidden-128 epoch costs 259 s
+# against 104 s for its 1-layer twin, which alone puts `candidate_budget` under
+# its six-candidate floor. Depth is the dimension that was dropped rather than
+# width, because dropping it buys the most seconds per dimension removed;
+# hidden 256 went with it as the next most expensive draw. The consequence —
+# this search never asks whether a second layer would have helped — belongs in
+# the results document, not in a silently raised ceiling.
 SEARCH_SPACE = {
-    "hidden_size": [64, 128, 256],
-    "num_layers": [1, 2],
+    "hidden_size": [64, 128],
+    "num_layers": [1],
     "dropout": [0.0, 0.2, 0.3],
     "learning_rate": [3e-4, 1e-3],
     "batch_size": [1024, 2048],
