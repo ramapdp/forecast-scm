@@ -263,7 +263,7 @@ def run_epoch(
         nn.utils.clip_grad_norm_(model.parameters(), params["grad_clip"])
         optimizer.step()
 
-        total += float(loss) * len(batch)
+        total += float(loss.detach()) * len(batch)
         seen += len(batch)
     return total / max(seen, 1)
 
