@@ -9,13 +9,14 @@ information reaching the model is not, and docs/hasil-modeling-lstm.md says so
 in the head-to-head section rather than leaving a reader to discover it.
 """
 
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import torch
 from torch import nn
 
-from . import model_common, modeling_prep, sequence_windows
+from . import model_common, modeling_prep, purging, sequence_windows, walk_forward
 
 QUANTILE = 0.9
 
@@ -508,3 +509,191 @@ def bind_panel(
 
     make.index = index
     return make
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_FILE = str(BASE_DIR / "models/lstm_q90.joblib")
+BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/lstm_best_params.json")
+SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/lstm_search_results.csv")
+RESULTS_FILE = str(BASE_DIR / "dataset/model_ready/lstm_walk_forward_results.csv")
+
+
+def fit_final(
+    df,
+    params: dict,
+    feature_cols: Optional[list] = None,
+    lookback: int = modeling_prep.LOOKBACK,
+    tail_days: int = ES_TAIL_DAYS,
+    max_epochs: int = MAX_EPOCHS,
+    patience: int = EARLY_STOPPING_EPOCHS,
+    quantile: float = QUANTILE,
+    device_name: str = "cpu",
+    sizes: Optional[list] = None,
+    date_col: str = modeling_prep.DATE_COL,
+    test_start=modeling_prep.TEST_START,
+) -> dict:
+    """Fit on every eligible row before December, purged at that boundary.
+
+    Eligibility comes from `walk_forward.eligible_rows`, not from a date
+    filter written here: the rows this model is finally trained on have to be
+    the rows it was scored on, and the scoring cuts are not just the date.
+
+    The **windows**, though, are cut from the full `df` — the same reason
+    `build_index` takes the whole panel. Context rows outside the eligible set
+    are still legitimate history.
+    """
+    params = {**DEFAULT_PARAMS, **params}
+    index = sequence_windows.build_index(df, feature_cols=feature_cols,
+                                         lookback=lookback, date_col=date_col)
+    device = resolve_device(device_name)
+    sizes = sizes if sizes is not None else embedding_sizes(
+        idx_cols=index["idx_cols"])
+
+    frame = walk_forward.eligible_rows(df, lookback=lookback, date_col=date_col,
+                                       test_start=test_start)
+    frame = frame[purging.lookahead_safe_mask(frame, test_start, date_col=date_col)]
+    model_common.assert_no_nan(frame, index["feature_cols"])
+
+    ends = sequence_windows.window_ends(index, frame)
+    _assert_no_december(index, ends, test_start=test_start)
+
+    scaler = modeling_prep.fit_scaler(frame, index["dynamic_cols"])
+    scaled = scale_values(index["values"], scaler, index["dynamic_cols"])
+
+    fit_rows, es_rows = model_common.split_early_stopping(
+        frame, tail_days=tail_days, date_col=date_col)
+    _, best_epoch = fit_with_early_stopping(
+        params, index,
+        sequence_windows.window_ends(index, fit_rows), _target(fit_rows, params),
+        sequence_windows.window_ends(index, es_rows), _target(es_rows, params),
+        quantile=quantile, sizes=sizes, device=device, scaled=scaled,
+        max_epochs=max_epochs, patience=patience, lookback=lookback)
+
+    model = fit_epochs(params, index, ends, _target(frame, params),
+                       epochs=best_epoch, quantile=quantile, sizes=sizes,
+                       device=device, scaled=scaled, lookback=lookback)
+
+    return {
+        "state_dict": {key: value.cpu() for key, value
+                       in model.state_dict().items()},
+        "params": params,
+        "feature_cols": index["feature_cols"],
+        "dynamic_cols": index["dynamic_cols"],
+        "idx_cols": index["idx_cols"],
+        "embedding_sizes": sizes,
+        "scaler": scaler,
+        "log_target": params["log_target"],
+        "best_epoch": int(best_epoch),
+        "quantile": quantile,
+        "lookback": lookback,
+        "n_train": int(len(frame)),
+    }
+
+
+def predict_bundle(bundle: dict, panel, frame) -> np.ndarray:
+    """Predict with a fitted bundle, forcing the recorded column order.
+
+    `panel` is required and not optional: an LSTM cannot predict from a row on
+    its own — it needs the 28 days behind it. Rebuilding the index from
+    `bundle["feature_cols"]` is what pins the column order, so a panel whose
+    columns arrive in a different order produces identical predictions.
+    """
+    index = sequence_windows.build_index(
+        panel, feature_cols=bundle["feature_cols"], lookback=bundle["lookback"])
+    device = resolve_device(bundle["params"].get("device", "cpu"))
+    model = build_model(bundle["params"], len(bundle["dynamic_cols"]),
+                        bundle["embedding_sizes"], bundle["params"]["random_state"])
+    model.load_state_dict(bundle["state_dict"])
+    model.to(device)
+
+    scaled = scale_values(index["values"], bundle["scaler"], bundle["dynamic_cols"])
+    ends = sequence_windows.window_ends(index, frame)
+    prediction = np.asarray(
+        predict(model, scaled, index["cats"], ends, device=device,
+                lookback=bundle["lookback"]),
+        dtype="float64",
+    )
+    if bundle["log_target"]:
+        prediction = modeling_prep.inverse_log_target(prediction)
+    return np.clip(prediction, 0.0, None)
+
+
+def save_bundle(bundle: dict, path: str = MODEL_FILE) -> None:
+    model_common.save_bundle(bundle, path)
+
+
+def load_bundle(path: str = MODEL_FILE) -> dict:
+    return model_common.load_bundle(path)
+
+
+def save_best_params(params: dict, path: str = BEST_PARAMS_FILE) -> None:
+    model_common.save_best_params(params, path)
+
+
+# Identical to the Random Forest and XGBoost searches, and that is the point:
+# if this model searched on different folds, "folds 1, 2 and 4 are untouched
+# by model selection" would collapse for all three models at once.
+SEARCH_FOLDS = (3, 5)
+
+select_best = model_common.select_best
+
+
+def sample_search_space(
+    n_candidates: int,
+    seed: int = 42,
+    space: Optional[dict] = None,
+) -> list:
+    """Distinct parameter sets drawn at random from SEARCH_SPACE.
+
+    No affordability screen: unlike the quantile forest there is no
+    leaf-storage bound to screen against — a batch of 2048 windows is 11 MB
+    whatever the hidden size.
+
+    `n_candidates` has no default on purpose. It comes from
+    `candidate_budget()` and its measured inputs, so hard-coding one here
+    would invite skipping the measurement.
+    """
+    return model_common.sample_search_space(
+        space=SEARCH_SPACE if space is None else space,
+        defaults=DEFAULT_PARAMS,
+        n_candidates=n_candidates,
+        seed=seed,
+        screen=None,
+    )
+
+
+def run_search(
+    df,
+    candidates: list,
+    folds: tuple = SEARCH_FOLDS,
+    alpha: float = QUANTILE,
+    model_name: str = "lstm",
+    feature_cols: Optional[list] = None,
+    verbose: bool = True,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = True,
+    device_name: str = "cpu",
+    lookback: int = modeling_prep.LOOKBACK,
+    sizes: Optional[list] = None,
+):
+    """Score every LSTM candidate on the search folds.
+
+    `df` is the panel, passed to both `run_search` (which cuts eligible rows
+    from it) and `bind_panel` (which cuts windows from it) — the same frame in
+    both places, so the rows scored and the rows windowed cannot drift apart.
+    """
+    return model_common.run_search(
+        df,
+        candidates,
+        make_fit_predict=bind_panel(df, feature_cols=feature_cols,
+                                    lookback=lookback, device_name=device_name,
+                                    sizes=sizes),
+        search_space=SEARCH_SPACE,
+        folds=folds,
+        alpha=alpha,
+        model_name=model_name,
+        feature_cols=feature_cols,
+        verbose=verbose,
+        checkpoint_path=checkpoint_path,
+        resume=resume,
+    )

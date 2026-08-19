@@ -331,5 +331,68 @@ class TestBindPanel(unittest.TestCase):
         self.assertIn("berbeda dari yang dipakai membangun indeks",
                       str(caught.exception))
 
+class TestFitFinalAndBundle(unittest.TestCase):
+    def _bundle(self):
+        panel = _fold_panel()
+        bundle = model_lstm.fit_final(
+            panel, SMALL, feature_cols=FOLD_FEATURES, lookback=7,
+            sizes=[(3, 2)], max_epochs=3, patience=2)
+        return panel, bundle
+
+    def test_the_bundle_records_everything_needed_to_reload(self):
+        _, bundle = self._bundle()
+        for key in ("state_dict", "params", "feature_cols", "dynamic_cols",
+                    "idx_cols", "embedding_sizes", "scaler", "log_target",
+                    "best_epoch", "quantile", "n_train", "lookback"):
+            self.assertIn(key, bundle)
+        self.assertEqual(bundle["quantile"], 0.9)
+        self.assertEqual(bundle["feature_cols"], FOLD_FEATURES)
+
+    def test_no_training_row_reaches_december(self):
+        """fit_final takes its rows from walk_forward.eligible_rows(), which
+        cuts December before anything else — so this checks the cut survived
+        the extra purge and the window mapping.
+        """
+        panel, bundle = self._bundle()
+        self.assertGreater(bundle["n_train"], 0)
+        eligible = walk_forward.eligible_rows(panel, lookback=7)
+        self.assertLess(eligible["Tanggal"].max(), modeling_prep.TEST_START)
+        self.assertLessEqual(bundle["n_train"], len(eligible))
+
+    def test_predict_bundle_returns_non_negative_values_per_row(self):
+        panel, bundle = self._bundle()
+        frame = walk_forward.eligible_rows(panel, lookback=7).head(20)
+        prediction = model_lstm.predict_bundle(bundle, panel, frame)
+        self.assertEqual(prediction.shape, (20,))
+        self.assertTrue((prediction >= 0).all())
+
+    def test_a_column_shuffled_frame_produces_identical_predictions(self):
+        """The bundle forces the recorded column order. A model reloaded
+        against a different layout does not fail — it predicts confidently
+        from the wrong features, which is worse.
+        """
+        panel, bundle = self._bundle()
+        frame = walk_forward.eligible_rows(panel, lookback=7).head(20)
+        shuffled_panel = panel[list(reversed(panel.columns))]
+        straight = model_lstm.predict_bundle(bundle, panel, frame)
+        shuffled = model_lstm.predict_bundle(bundle, shuffled_panel, frame)
+        np.testing.assert_allclose(straight, shuffled, rtol=1e-5)
+
+
+class TestSearchWrappers(unittest.TestCase):
+    def test_the_same_seed_reproduces_the_identical_candidate_list(self):
+        first = model_lstm.sample_search_space(5, seed=42)
+        second = model_lstm.sample_search_space(5, seed=42)
+        self.assertEqual(first, second)
+
+    def test_every_candidate_carries_the_defaults_it_did_not_draw(self):
+        for candidate in model_lstm.sample_search_space(5, seed=42):
+            self.assertEqual(candidate["random_state"], 42)
+            self.assertEqual(candidate["grad_clip"], 1.0)
+            self.assertIn(candidate["hidden_size"], [64, 128, 256])
+
+    def test_the_search_folds_match_the_other_two_models(self):
+        self.assertEqual(model_lstm.SEARCH_FOLDS, (3, 5))
+
 if __name__ == "__main__":
     unittest.main()
