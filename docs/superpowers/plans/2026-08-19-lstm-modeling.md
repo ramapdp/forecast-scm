@@ -2409,5 +2409,45 @@ hand-engineered summary of them."
 
 ## Measured benchmark
 
-_Filled in by Task 8, Step 4. Until then this section is empty by design — the search budget must come from a measurement, not from this document._
+Measured 2026-08-19 on `dataset/model_ready/model_input.parquet` (1.502.522 rows,
+82 columns), fold 5, `DEFAULT_PARAMS`, one full two-fit round.
+
+| | |
+|---|---|
+| Device chosen | **CPU** |
+| Fold 5 rows | 1.292.778 training / 59.629 validation |
+| `best_epoch` | **3** (of `MAX_EPOCHS = 100`) |
+| `sec_per_epoch` | **102.0** |
+| Wall time, two fits + predict | 1.121,6 s (18,7 min) |
+| Peak RSS | 4,60 GB |
+| Predictions | mean 44,84, max 1.721,11 |
+| **`N_CANDIDATES`** | **12** |
+
+`candidate_budget(102.0, 3)` = `28800 // (2 * 102.0 * (2*3 + 5))` = 12, capped
+below `MAX_CANDIDATES = 20` by the budget rather than by the cap.
+
+**Device.** MPS was not benchmarked end to end. A 15-batch probe on fold 5
+measured **0,392 s/batch on MPS against 0,193 s/batch on CPU** — MPS has no
+fused LSTM kernel at this hidden size — so a full MPS round would have spent
+about four hours confirming a device that had already lost by 2×.
+
+**The search space was shrunk before this benchmark ran.** At the original
+`DEFAULT_PARAMS` (`hidden_size=128, num_layers=2`) an epoch cost 259 s, which
+makes `candidate_budget` raise for any `best_epoch >= 3` — its designed signal
+to shrink the space rather than raise the ceiling. Measured per-epoch costs on
+fold 5, CPU:
+
+| hidden | layers | batch | s/epoch |
+|---:|---:|---:|---:|
+| 64 | 1 | 1024 | 75 |
+| 64 | 1 | 2048 | 47 |
+| 128 | 1 | 1024 | 104 |
+| 128 | 1 | 2048 | 83 |
+| 128 | 2 | 1024 | 259 |
+
+`SEARCH_SPACE` therefore dropped `num_layers=2` and `hidden_size=256`, and
+`DEFAULT_PARAMS` moved to `num_layers=1` — the most expensive *retained* combo,
+so the benchmark above measures the worst case of the space actually searched.
+The consequence is that this search never asks whether a second layer would
+have helped; `docs/hasil-modeling-lstm.md` §4 and §10 must say so.
 
