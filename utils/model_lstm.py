@@ -190,3 +190,177 @@ def candidate_budget(
             f"jangan naikkan plafon {budget_seconds}s diam-diam"
         )
     return min(raw, maximum)
+
+
+def scale_values(values: np.ndarray, scaler: dict, dynamic_cols: list) -> np.ndarray:
+    """Standardise the whole panel matrix with one fold's scaler.
+
+    The scaler is fit on that fold's training rows only. Applying it to every
+    row, context rows included, is safe — what leaks is *fitting* it outside
+    the training window, never applying it.
+    """
+    mean = np.array([scaler[col][0] for col in dynamic_cols], dtype="float32")
+    std = np.array([scaler[col][1] for col in dynamic_cols], dtype="float32")
+    return ((values - mean) / std).astype("float32")
+
+
+def _shuffled_batches(count: int, batch_size: int, generator) -> list:
+    order = torch.randperm(count, generator=generator).numpy()
+    return [order[start:start + batch_size] for start in range(0, count, batch_size)]
+
+
+def _to_tensors(scaled, cats, ends, lookback, device):
+    windows = sequence_windows.gather(scaled, ends, lookback=lookback)
+    x_dynamic = torch.from_numpy(windows).to(device)
+    x_cats = torch.from_numpy(cats[ends].astype("int64")).to(device)
+    return x_dynamic, x_cats
+
+
+def run_epoch(
+    model: QuantileLSTM,
+    optimizer,
+    scaled: np.ndarray,
+    cats: np.ndarray,
+    ends: np.ndarray,
+    targets: np.ndarray,
+    params: dict,
+    quantile: float,
+    generator,
+    device,
+    lookback: int = modeling_prep.LOOKBACK,
+) -> float:
+    """One pass over the training windows, returning the mean loss.
+
+    Windows are shuffled across segments. Each one is self-contained, so no
+    ordering needs preserving between batches.
+    """
+    model.train()
+    total, seen = 0.0, 0
+    for batch in _shuffled_batches(len(ends), params["batch_size"], generator):
+        x_dynamic, x_cats = _to_tensors(scaled, cats, ends[batch], lookback, device)
+        y = torch.from_numpy(targets[batch].astype("float32")).to(device)
+
+        optimizer.zero_grad()
+        loss = pinball_loss(model(x_dynamic, x_cats), y, quantile)
+        if not torch.isfinite(loss):
+            # Fails this candidate through run_search's existing catch tuple.
+            # RuntimeError is not raised here on purpose: PyTorch uses it for
+            # genuine bugs as well as OOM, so widening the tuple would launder
+            # bugs into NaN rows.
+            raise ValueError(
+                "loss LSTM menjadi NaN/inf — kandidat digagalkan"
+            )
+        loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), params["grad_clip"])
+        optimizer.step()
+
+        total += float(loss) * len(batch)
+        seen += len(batch)
+    return total / max(seen, 1)
+
+
+@torch.no_grad()
+def predict(
+    model: QuantileLSTM,
+    scaled: np.ndarray,
+    cats: np.ndarray,
+    ends: np.ndarray,
+    device,
+    lookback: int = modeling_prep.LOOKBACK,
+    batch_size: int = 4096,
+) -> np.ndarray:
+    """Predictions in `ends` order, so they line up with the caller's frame."""
+    model.eval()
+    if len(ends) == 0:
+        return np.empty(0, dtype="float32")
+    parts = []
+    for start in range(0, len(ends), batch_size):
+        chunk = ends[start:start + batch_size]
+        x_dynamic, x_cats = _to_tensors(scaled, cats, chunk, lookback, device)
+        parts.append(model(x_dynamic, x_cats).cpu().numpy())
+    return np.concatenate(parts)
+
+
+def _evaluate(model, scaled, cats, ends, targets, quantile, device, lookback):
+    prediction = predict(model, scaled, cats, ends, device=device, lookback=lookback)
+    difference = targets.astype("float64") - prediction.astype("float64")
+    return float(np.maximum(quantile * difference,
+                            (quantile - 1.0) * difference).mean())
+
+
+def fit_with_early_stopping(
+    params: dict,
+    index: dict,
+    fit_ends: np.ndarray,
+    fit_targets: np.ndarray,
+    es_ends: np.ndarray,
+    es_targets: np.ndarray,
+    quantile: float,
+    sizes: list,
+    device,
+    scaled: Optional[np.ndarray] = None,
+    max_epochs: int = MAX_EPOCHS,
+    patience: int = EARLY_STOPPING_EPOCHS,
+    lookback: int = modeling_prep.LOOKBACK,
+) -> tuple:
+    """Fit on the purged rows, stop on the tail, report the epoch that won.
+
+    Under `log_target` the stopping metric is computed on the log scale. That
+    is sound: early stopping only chooses an epoch count *within* one
+    candidate. Candidates are compared to each other by pinball on the
+    original scale, after inversion.
+    """
+    scaled = index["values"] if scaled is None else scaled
+    model = build_model(params, len(index["dynamic_cols"]), sizes,
+                        params["random_state"])
+    model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
+    generator = torch.Generator().manual_seed(params["random_state"])
+
+    best_score, best_epoch, since_improvement = float("inf"), 1, 0
+    for epoch in range(1, max_epochs + 1):
+        run_epoch(model, optimizer, scaled, index["cats"], fit_ends, fit_targets,
+                  params, quantile, generator, device, lookback)
+        score = _evaluate(model, scaled, index["cats"], es_ends, es_targets,
+                          quantile, device, lookback)
+        if score < best_score:
+            best_score, best_epoch, since_improvement = score, epoch, 0
+        else:
+            since_improvement += 1
+            if since_improvement >= patience:
+                break
+    model.best_score = best_score
+    return model, best_epoch
+
+
+def fit_epochs(
+    params: dict,
+    index: dict,
+    ends: np.ndarray,
+    targets: np.ndarray,
+    epochs: int,
+    quantile: float,
+    sizes: list,
+    device,
+    scaled: Optional[np.ndarray] = None,
+    lookback: int = modeling_prep.LOOKBACK,
+) -> QuantileLSTM:
+    """The second fit: same seed, all training rows, a fixed epoch count.
+
+    One epoch here contains about 5% more gradient steps than one epoch of the
+    first fit, because the early-stopping tail is back in. That is accepted:
+    pinning by epoch means "the same number of passes over the data", which is
+    the more meaningful invariant than a fixed step count.
+    """
+    scaled = index["values"] if scaled is None else scaled
+    model = build_model(params, len(index["dynamic_cols"]), sizes,
+                        params["random_state"])
+    model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
+    generator = torch.Generator().manual_seed(params["random_state"])
+
+    for _ in range(epochs):
+        run_epoch(model, optimizer, scaled, index["cats"], ends, targets,
+                  params, quantile, generator, device, lookback)
+    model.epochs_run = epochs
+    return model

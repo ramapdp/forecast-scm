@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import torch
 
-from utils import model_lstm
+from utils import model_lstm, sequence_windows
 
 
 class TestPinballLoss(unittest.TestCase):
@@ -99,6 +99,110 @@ class TestCandidateBudget(unittest.TestCase):
             model_lstm.candidate_budget(sec_per_epoch=600.0, best_epoch=20)
         self.assertIn("perkecil ruang search", str(caught.exception))
 
+
+def _tiny_index(n=80, seed=3):
+    """A one-pair panel small enough to train on in a test."""
+    import pandas as pd
+    rng = np.random.default_rng(seed)
+    feat = rng.normal(size=n).astype("float64")
+    panel = pd.DataFrame({
+        "Tanggal": pd.date_range("2025-01-01", periods=n, freq="D"),
+        "Kode Barang": "FGS-00001",
+        "Nama Cabang": "KY001",
+        "segment_id": 1,
+        "feat_a": feat,
+        "feat_b": rng.normal(size=n),
+        "cat_idx": rng.integers(0, 3, size=n),
+        "target_lead_time_cumulative": np.abs(feat * 5 + 10),
+    })
+    index = sequence_windows.build_index(
+        panel, feature_cols=["feat_a", "feat_b", "cat_idx"], lookback=7)
+    return panel, index
+
+
+class TestScaleValues(unittest.TestCase):
+    def test_each_column_is_standardised_by_its_own_statistics(self):
+        _, index = _tiny_index()
+        scaler = {"feat_a": (1.0, 2.0), "feat_b": (0.0, 1.0)}
+        scaled = model_lstm.scale_values(index["values"], scaler,
+                                         index["dynamic_cols"])
+        np.testing.assert_allclose(scaled[:, 0],
+                                   (index["values"][:, 0] - 1.0) / 2.0,
+                                   rtol=1e-6)
+        np.testing.assert_allclose(scaled[:, 1], index["values"][:, 1],
+                                   rtol=1e-6)
+        self.assertEqual(scaled.dtype, np.dtype("float32"))
+
+
+class TestTrainingLoop(unittest.TestCase):
+    def _setup(self):
+        panel, index = _tiny_index()
+        ends = np.arange(7, len(panel))
+        targets = panel["target_lead_time_cumulative"].to_numpy("float32")[ends]
+        params = {**model_lstm.DEFAULT_PARAMS, "hidden_size": 8,
+                  "num_layers": 1, "batch_size": 16}
+        model = model_lstm.build_model(params, n_dynamic=2, sizes=[(3, 2)], seed=42)
+        return index, ends, targets, params, model
+
+    def test_one_epoch_returns_a_finite_mean_loss(self):
+        index, ends, targets, params, model = self._setup()
+        optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
+        loss = model_lstm.run_epoch(
+            model, optimizer, index["values"], index["cats"], ends, targets,
+            params, quantile=0.9,
+            generator=torch.Generator().manual_seed(42),
+            device=torch.device("cpu"), lookback=7)
+        self.assertTrue(np.isfinite(loss))
+
+    def test_a_non_finite_loss_raises_rather_than_poisoning_the_search(self):
+        index, ends, targets, params, model = self._setup()
+        optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
+        poisoned = targets.copy()
+        poisoned[0] = np.inf
+        with self.assertRaises(ValueError) as caught:
+            model_lstm.run_epoch(
+                model, optimizer, index["values"], index["cats"], ends, poisoned,
+                params, quantile=0.9,
+                generator=torch.Generator().manual_seed(42),
+                device=torch.device("cpu"), lookback=7)
+        self.assertIn("NaN", str(caught.exception))
+
+    def test_predict_returns_one_value_per_end(self):
+        index, ends, _, params, model = self._setup()
+        prediction = model_lstm.predict(
+            model, index["values"], index["cats"], ends,
+            device=torch.device("cpu"), lookback=7, batch_size=16)
+        self.assertEqual(prediction.shape, (len(ends),))
+
+    def test_early_stopping_reports_an_epoch_within_the_cap(self):
+        index, ends, targets, params, model = self._setup()
+        fit_ends, es_ends = ends[:50], ends[50:]
+        fitted, best_epoch = model_lstm.fit_with_early_stopping(
+            params, index, fit_ends, targets[:50], es_ends, targets[50:],
+            quantile=0.9, sizes=[(3, 2)], device=torch.device("cpu"),
+            max_epochs=6, patience=2, lookback=7)
+        self.assertGreaterEqual(best_epoch, 1)
+        self.assertLessEqual(best_epoch, 6)
+        self.assertIsInstance(fitted, model_lstm.QuantileLSTM)
+
+    def test_fit_epochs_runs_exactly_the_requested_number_of_epochs(self):
+        index, ends, targets, params, model = self._setup()
+        fitted = model_lstm.fit_epochs(
+            params, index, ends, targets, epochs=3, quantile=0.9,
+            sizes=[(3, 2)], device=torch.device("cpu"), lookback=7)
+        self.assertEqual(fitted.epochs_run, 3)
+
+    def test_the_same_seed_produces_identical_predictions(self):
+        index, ends, targets, params, _ = self._setup()
+        outputs = []
+        for _ in range(2):
+            fitted = model_lstm.fit_epochs(
+                params, index, ends, targets, epochs=2, quantile=0.9,
+                sizes=[(3, 2)], device=torch.device("cpu"), lookback=7)
+            outputs.append(model_lstm.predict(
+                fitted, index["values"], index["cats"], ends,
+                device=torch.device("cpu"), lookback=7))
+        np.testing.assert_allclose(outputs[0], outputs[1], rtol=1e-5)
 
 if __name__ == "__main__":
     unittest.main()
