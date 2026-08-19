@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import torch
 
-from utils import model_lstm, sequence_windows
+from utils import model_common, model_lstm, modeling_prep, sequence_windows, walk_forward
 
 
 class TestPinballLoss(unittest.TestCase):
@@ -203,6 +203,133 @@ class TestTrainingLoop(unittest.TestCase):
                 fitted, index["values"], index["cats"], ends,
                 device=torch.device("cpu"), lookback=7))
         np.testing.assert_allclose(outputs[0], outputs[1], rtol=1e-5)
+
+import pandas as pd
+
+
+def _fold_panel(n_days=200, n_pairs=2, seed=7):
+    """A panel long enough to reach fold 5 and survive a 7-day warm-up."""
+    rng = np.random.default_rng(seed)
+    parts = []
+    for pair in range(n_pairs):
+        feat = rng.normal(size=n_days)
+        parts.append(pd.DataFrame({
+            "Tanggal": pd.date_range("2025-05-01", periods=n_days, freq="D"),
+            "Kode Barang": f"FGS-0000{pair}",
+            "Nama Cabang": "KY001",
+            "segment_id": 1,
+            "feat_a": feat,
+            "feat_b": rng.normal(size=n_days),
+            "cat_idx": rng.integers(0, 3, size=n_days),
+            "lead_time_days": 3.0,
+            "demand_segment": "smooth",
+            "is_delivery_day": True,
+            "target_lead_time_cumulative": np.abs(feat * 5 + 10),
+        }))
+    panel = pd.concat(parts, ignore_index=True)
+    return modeling_prep.assign_folds(panel)
+
+
+FOLD_FEATURES = ["feat_a", "feat_b", "cat_idx"]
+SMALL = {**model_lstm.DEFAULT_PARAMS, "hidden_size": 8, "num_layers": 1,
+         "batch_size": 64}
+
+
+class TestFitPredict(unittest.TestCase):
+    def _index_and_split(self):
+        panel = _fold_panel()
+        index = sequence_windows.build_index(panel, feature_cols=FOLD_FEATURES,
+                                             lookback=7)
+        frame = walk_forward.eligible_rows(panel, lookback=7)
+        split = walk_forward.prepare_fold(frame, 5, prepared=True)
+        return panel, index, split["train"], split["valid"]
+
+    def _fit_predict(self, index, **kwargs):
+        # sizes is passed explicitly: the fixture's `cat_idx` has no entry in
+        # the real category_mapping.json that embedding_sizes() would read.
+        return model_lstm.make_fit_predict(
+            SMALL, index=index, quantile=0.9, tail_days=30,
+            sizes=[(3, 2)],
+            max_epochs=kwargs.pop("max_epochs", 3),
+            patience=kwargs.pop("patience", 2), **kwargs)
+
+    def test_it_returns_one_prediction_per_validation_row(self):
+        _, index, train, valid = self._index_and_split()
+        prediction = self._fit_predict(index)(train, valid)
+        self.assertEqual(prediction.shape, (len(valid),))
+
+    def test_predictions_are_never_negative(self):
+        _, index, train, valid = self._index_and_split()
+        prediction = self._fit_predict(index)(train, valid)
+        self.assertTrue((prediction >= 0).all())
+
+    def test_no_training_row_is_dated_inside_the_validation_month(self):
+        """G3. This checks the position mapping, not fold_train_mask —
+        window_ends() returning wrong positions is the new failure mode.
+        """
+        _, index, train, valid = self._index_and_split()
+        train_ends = sequence_windows.window_ends(index, train)
+        self.assertLess(index["dates"][train_ends].max(),
+                        np.datetime64(valid["Tanggal"].min(), "D"))
+
+    def test_the_early_stopping_tail_is_absent_from_the_first_fit(self):
+        """G4."""
+        _, index, train, _ = self._index_and_split()
+        fit_rows, es_rows = model_common.split_early_stopping(train, tail_days=30)
+        fit_ends = set(sequence_windows.window_ends(index, fit_rows).tolist())
+        es_ends = set(sequence_windows.window_ends(index, es_rows).tolist())
+        self.assertEqual(fit_ends & es_ends, set())
+
+    def test_no_window_reaches_into_december(self):
+        """G5."""
+        _, index, train, valid = self._index_and_split()
+        ends = np.concatenate([
+            sequence_windows.window_ends(index, train),
+            sequence_windows.window_ends(index, valid),
+        ])
+        self.assertLess(index["dates"][ends].max(),
+                        np.datetime64(modeling_prep.TEST_START, "D"))
+
+    def test_the_best_epoch_of_each_fold_is_recorded(self):
+        _, index, train, valid = self._index_and_split()
+        fit_predict = self._fit_predict(index)
+        fit_predict(train, valid)
+        self.assertEqual(len(fit_predict.best_epochs), 1)
+        self.assertGreaterEqual(fit_predict.best_epochs[0], 1)
+
+    def test_log_target_round_trips_to_the_original_scale(self):
+        _, index, train, valid = self._index_and_split()
+        logged = model_lstm.make_fit_predict(
+            {**SMALL, "log_target": True}, index=index, quantile=0.9,
+            sizes=[(3, 2)], max_epochs=2, patience=2)(train, valid)
+        self.assertTrue(np.isfinite(logged).all())
+        self.assertTrue((logged >= 0).all())
+
+
+class TestBindPanel(unittest.TestCase):
+    def test_it_matches_run_searchs_expected_signature(self):
+        panel = _fold_panel()
+        make = model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
+                                     lookback=7, sizes=[(3, 2)])
+        fit_predict = make(SMALL, feature_cols=FOLD_FEATURES, quantile=0.9)
+        self.assertTrue(callable(fit_predict))
+
+    def test_the_index_is_built_once_and_reused(self):
+        panel = _fold_panel()
+        make = model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
+                                     lookback=7, sizes=[(3, 2)])
+        first = make(SMALL, quantile=0.9)
+        second = make(SMALL, quantile=0.9)
+        self.assertIs(first.index, second.index)
+
+    def test_a_different_feature_list_raises(self):
+        panel = _fold_panel()
+        make = model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
+                                     lookback=7, sizes=[(3, 2)])
+        with self.assertRaises(ValueError) as caught:
+            make(SMALL, feature_cols=["feat_a"], quantile=0.9)
+        self.assertIn("berbeda dari yang dipakai membangun indeks",
+                      str(caught.exception))
 
 if __name__ == "__main__":
     unittest.main()

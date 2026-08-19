@@ -364,3 +364,147 @@ def fit_epochs(
                   params, quantile, generator, device, lookback)
     model.epochs_run = epochs
     return model
+
+
+def _target(frame, params: dict) -> np.ndarray:
+    values = frame[modeling_prep.TARGET_COL].to_numpy(dtype="float64")
+    return (np.log1p(values) if params["log_target"] else values).astype("float32")
+
+
+def _assert_no_december(index: dict, ends: np.ndarray,
+                        test_start=modeling_prep.TEST_START) -> None:
+    """G5. Redundant with the fold definitions, and kept anyway: the cost of
+    one accidental leak is the credibility of the final number.
+    """
+    if len(ends) and index["dates"][ends].max() >= np.datetime64(test_start, "D"):
+        raise ValueError("ada window yang menyentuh Desember 2025")
+
+
+def _assert_train_precedes_valid(index: dict, train_ends: np.ndarray,
+                                 valid_ends: np.ndarray) -> None:
+    """G3. Checks the *position mapping*, not `fold_train_mask` — the frames
+    were already split correctly by `walk_forward`, so what this can still
+    catch is `window_ends()` handing back the wrong rows.
+    """
+    if len(train_ends) and len(valid_ends):
+        if index["dates"][train_ends].max() >= index["dates"][valid_ends].min():
+            raise ValueError(
+                "posisi window training tidak seluruhnya mendahului validasi"
+            )
+
+
+def make_fit_predict(
+    params: Optional[dict] = None,
+    index: Optional[dict] = None,
+    feature_cols: Optional[list] = None,
+    quantile: float = QUANTILE,
+    tail_days: int = ES_TAIL_DAYS,
+    max_epochs: int = MAX_EPOCHS,
+    patience: int = EARLY_STOPPING_EPOCHS,
+    device_name: str = "cpu",
+    sizes: Optional[list] = None,
+) -> "object":
+    """The callable `walk_forward.run_fold()` injects.
+
+    Two fits. The first runs on the purged fit rows with the 30-day tail as
+    its eval set and reports the epoch that won. The second discards that
+    model, re-initialises from the same seed, and trains on **every** training
+    row for exactly that many epochs — so the model producing the reported
+    predictions has seen the same population the Random Forest and XGBoost
+    were trained on.
+
+    Best epochs are recorded on the returned callable rather than returned,
+    because `walk_forward` accepts predictions and nothing else — and their
+    spread across folds is worth reporting.
+    """
+    if index is None:
+        raise ValueError("make_fit_predict butuh indeks dari bind_panel()")
+    params = {**DEFAULT_PARAMS, **(params or {})}
+    device = resolve_device(device_name)
+    # From category_mapping.json unless the caller supplies its own — tests do,
+    # because a synthetic _idx fixture column has no entry in that file.
+    sizes = sizes if sizes is not None else embedding_sizes(
+        idx_cols=index["idx_cols"])
+    lookback = index["lookback"]
+
+    def fit_predict(train, valid) -> np.ndarray:
+        model_common.assert_no_nan(train, index["feature_cols"])
+        model_common.assert_no_nan(valid, index["feature_cols"])
+
+        train_ends = sequence_windows.window_ends(index, train)
+        valid_ends = sequence_windows.window_ends(index, valid)
+        _assert_train_precedes_valid(index, train_ends, valid_ends)
+        _assert_no_december(index, np.concatenate([train_ends, valid_ends]))
+
+        # One scaler for the whole fold, used by both fits. The tail's
+        # statistics sit inside the training window so nothing leaks into
+        # validation; sharing it is what makes best_epoch transfer between
+        # two fits that would otherwise see differently scaled inputs.
+        scaler = modeling_prep.fit_scaler(train, index["dynamic_cols"])
+        scaled = scale_values(index["values"], scaler, index["dynamic_cols"])
+
+        fit_rows, es_rows = model_common.split_early_stopping(
+            train, tail_days=tail_days)
+        fit_ends = sequence_windows.window_ends(index, fit_rows)
+        es_ends = sequence_windows.window_ends(index, es_rows)
+
+        _, best_epoch = fit_with_early_stopping(
+            params, index, fit_ends, _target(fit_rows, params),
+            es_ends, _target(es_rows, params), quantile=quantile, sizes=sizes,
+            device=device, scaled=scaled, max_epochs=max_epochs,
+            patience=patience, lookback=lookback)
+        fit_predict.best_epochs.append(int(best_epoch))
+
+        model = fit_epochs(
+            params, index, train_ends, _target(train, params), epochs=best_epoch,
+            quantile=quantile, sizes=sizes, device=device, scaled=scaled,
+            lookback=lookback)
+
+        prediction = predict(model, scaled, index["cats"], valid_ends,
+                             device=device, lookback=lookback)
+        prediction = np.asarray(prediction, dtype="float64")
+        if params["log_target"]:
+            prediction = modeling_prep.inverse_log_target(prediction)
+        # A negative shipment quantity is not a thing.
+        return np.clip(prediction, 0.0, None)
+
+    fit_predict.best_epochs = []
+    fit_predict.index = index
+    return fit_predict
+
+
+def bind_panel(
+    panel,
+    feature_cols: Optional[list] = None,
+    lookback: int = modeling_prep.LOOKBACK,
+    device_name: str = "cpu",
+    tail_days: int = ES_TAIL_DAYS,
+    max_epochs: int = MAX_EPOCHS,
+    patience: int = EARLY_STOPPING_EPOCHS,
+    sizes: Optional[list] = None,
+):
+    """Give `model_common.run_search()` a callable of the signature it expects.
+
+    `run_search` calls `make_fit_predict(candidate, feature_cols=...,
+    quantile=...)`. There is no slot for the panel, and adding one would
+    change a signature the other two models already satisfy — so the panel is
+    bound here instead.
+
+    The window index is built **once**. It costs a sort of 1.5M rows;
+    rebuilding it per candidate would repeat that N x 2 times for nothing.
+    """
+    index = sequence_windows.build_index(panel, feature_cols=feature_cols,
+                                         lookback=lookback)
+
+    def make(params=None, feature_cols=None, quantile: float = QUANTILE):
+        if feature_cols is not None and list(feature_cols) != index["feature_cols"]:
+            raise ValueError(
+                "feature_cols berbeda dari yang dipakai membangun indeks"
+            )
+        return make_fit_predict(params, index=index, quantile=quantile,
+                                tail_days=tail_days, max_epochs=max_epochs,
+                                patience=patience, device_name=device_name,
+                                sizes=sizes)
+
+    make.index = index
+    return make
