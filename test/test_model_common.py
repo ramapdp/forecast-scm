@@ -206,5 +206,50 @@ class TestBundleIO(unittest.TestCase):
             self.assertEqual(json.loads(written), {"a": 1, "b": 2})
 
 
+class TestSplitEarlyStopping(unittest.TestCase):
+    """The mechanism moved here from model_xgboost because it is not
+    XGBoost-specific: any model that must choose its own capacity without
+    reading the validation fold needs a purged training tail.
+    """
+
+    def _dated_frame(self, n=200, lead_time=3.0):
+        rng = np.random.default_rng(11)
+        return pd.DataFrame({
+            "Tanggal": pd.date_range("2025-01-01", periods=n, freq="D"),
+            "feat_a": rng.normal(size=n),
+            "target_lead_time_cumulative": np.abs(rng.normal(size=n)) * 10,
+            "lead_time_days": lead_time,
+            "Kode Barang": "FGS-00001",
+            "Nama Cabang": "KY001",
+            "segment_id": 1,
+        })
+
+    def test_the_tail_is_the_last_thirty_days(self):
+        train = self._dated_frame()
+        _, es_rows = model_common.split_early_stopping(train, tail_days=30)
+        self.assertEqual(len(es_rows), 30)
+        self.assertEqual(es_rows["Tanggal"].max(), train["Tanggal"].max())
+
+    def test_no_es_date_precedes_a_fit_date(self):
+        fit_rows, es_rows = model_common.split_early_stopping(self._dated_frame())
+        self.assertLess(fit_rows["Tanggal"].max(), es_rows["Tanggal"].min())
+
+    def test_fit_rows_whose_label_window_crosses_the_tail_are_purged(self):
+        # lead_time_days=3 means the label at H sums H+1..H+3, so the last
+        # three days before the tail carry a label built inside the tail.
+        train = self._dated_frame(lead_time=3.0)
+        fit_rows, es_rows = model_common.split_early_stopping(train, tail_days=30)
+        es_start = es_rows["Tanggal"].min()
+        self.assertLessEqual(fit_rows["Tanggal"].max(),
+                             es_start - pd.Timedelta(days=4))
+
+    def test_an_empty_training_frame_raises(self):
+        with self.assertRaises(ValueError):
+            model_common.split_early_stopping(self._dated_frame().iloc[0:0])
+
+    def test_a_window_too_short_for_the_tail_raises(self):
+        with self.assertRaises(ValueError):
+            model_common.split_early_stopping(self._dated_frame(n=20), tail_days=30)
+
 if __name__ == "__main__":
     unittest.main()

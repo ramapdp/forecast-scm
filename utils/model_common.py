@@ -19,7 +19,7 @@ from typing import Callable, Optional
 import joblib
 import pandas as pd
 
-from . import modeling_prep, walk_forward
+from . import modeling_prep, purging, walk_forward
 
 # The encoded categoricals, the only columns one-hot expansion touches.
 IDX_COLS = [col for col in modeling_prep.FEATURE_COLS if col.endswith("_idx")]
@@ -37,6 +37,45 @@ def assert_no_nan(frame: pd.DataFrame, feature_cols: list) -> None:
     offenders = counts[counts > 0]
     if len(offenders):
         raise ValueError(f"NaN pada fitur: {offenders.to_dict()}")
+
+
+ES_TAIL_DAYS = 30
+
+
+def split_early_stopping(
+    train: pd.DataFrame,
+    tail_days: int = ES_TAIL_DAYS,
+    date_col: str = modeling_prep.DATE_COL,
+) -> tuple:
+    """Split a fold's training rows into fit rows and an early-stopping tail.
+
+    The tail is the last `tail_days` calendar days. The purge on the fit side
+    is not extra caution: `target_lead_time_cumulative` sums over
+    H+1..H+lead_time_days, so a fit row dated within `lead_time_days` of the
+    tail carries a label built partly out of the early-stopping window. Without
+    the purge, early stopping would be reading a signal it had partly trained
+    on and would stop too late — the identical leak `fold_train_mask()`
+    prevents at the fold boundary, one scale down.
+
+    Lives here rather than in one model's module because two models need it:
+    XGBoost chooses a boosting-round count this way, the LSTM chooses an epoch
+    count. Neither mechanism is specific to its model family.
+    """
+    if train.empty:
+        raise ValueError("frame training kosong")
+
+    es_start = train[date_col].max() - pd.Timedelta(days=tail_days - 1)
+    es_rows = train[train[date_col] >= es_start]
+    fit_rows = train[train[date_col] < es_start]
+    fit_rows = fit_rows[purging.lookahead_safe_mask(fit_rows, es_start,
+                                                    date_col=date_col)]
+
+    if fit_rows.empty:
+        raise ValueError(
+            f"jendela training terlalu pendek untuk tail {tail_days} hari: "
+            f"tidak ada baris tersisa untuk fit"
+        )
+    return fit_rows, es_rows
 
 
 def expand_one_hot(
