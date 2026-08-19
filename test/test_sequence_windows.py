@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import sequence_windows
+from utils import modeling_prep, sequence_windows
 
 
 def _panel(n_days=60, n_pairs=2, start="2025-01-01", seed=5):
@@ -96,6 +96,87 @@ class TestBuildIndex(unittest.TestCase):
         self.assertEqual(index["dates"][position],
                          np.datetime64("2025-01-10", "D"))
 
+
+class TestWindowEnds(unittest.TestCase):
+    def test_ends_follow_the_frames_own_row_order(self):
+        panel = _panel()
+        index = sequence_windows.build_index(panel, feature_cols=FEATURES,
+                                             lookback=7)
+        frame = panel.iloc[[70, 12, 95]].copy()
+        ends = sequence_windows.window_ends(index, frame)
+        self.assertEqual(len(ends), 3)
+        self.assertEqual(
+            [index["dates"][e] for e in ends],
+            [np.datetime64(d, "D") for d in frame["Tanggal"]],
+        )
+
+    def test_a_row_absent_from_the_panel_raises(self):
+        panel = _panel()
+        index = sequence_windows.build_index(panel, feature_cols=FEATURES,
+                                             lookback=7)
+        frame = panel.iloc[[0]].copy()
+        frame["Tanggal"] = pd.Timestamp("2030-01-01")
+        with self.assertRaises(ValueError) as caught:
+            sequence_windows.window_ends(index, frame)
+        self.assertIn("tidak ditemukan", str(caught.exception))
+
+
+class TestGather(unittest.TestCase):
+    def test_a_window_is_the_lookback_rows_ending_at_the_end_position(self):
+        panel = _panel()
+        index = sequence_windows.build_index(panel, feature_cols=FEATURES,
+                                             lookback=7)
+        batch = sequence_windows.gather(index["values"], np.array([10]),
+                                        lookback=7)
+        self.assertEqual(batch.shape, (1, 7, 2))
+        np.testing.assert_allclose(batch[0], index["values"][4:11])
+
+    def test_gather_is_correct_for_a_shuffled_batch(self):
+        panel = _panel()
+        index = sequence_windows.build_index(panel, feature_cols=FEATURES,
+                                             lookback=7)
+        ends = np.array([40, 9, 77, 15])
+        batch = sequence_windows.gather(index["values"], ends, lookback=7)
+        for position, end in enumerate(ends):
+            np.testing.assert_allclose(batch[position],
+                                       index["values"][end - 6:end + 1])
+
+    def test_the_fast_path_matches_to_sequences_window_for_window(self):
+        """The unreadable path is verified by the readable one.
+
+        modeling_prep.to_sequences() is the reference implementation; it is
+        unusable at panel scale but exactly right at fixture scale.
+        """
+        panel = _panel(n_days=60, n_pairs=2)
+        panel["fold_id"] = np.nan
+        dynamic = ["feat_a", "feat_b"]
+
+        reference = modeling_prep.to_sequences(
+            panel, feature_cols=dynamic, lookback=7,
+            pair_cols=["Kode Barang", "Nama Cabang", "segment_id"],
+        )
+
+        index = sequence_windows.build_index(panel, feature_cols=FEATURES,
+                                             lookback=7)
+        eligible = modeling_prep.drop_warmup_rows(panel, lookback=7)
+        eligible = eligible[eligible["target_lead_time_cumulative"].notna()]
+        ends = sequence_windows.window_ends(index, eligible)
+        fast = sequence_windows.gather(index["values"], ends, lookback=7)
+
+        self.assertEqual(fast.shape, reference["X"].shape)
+        np.testing.assert_allclose(fast, reference["X"], rtol=1e-6)
+
+    def test_cats_are_read_at_the_prediction_row_not_across_the_window(self):
+        """Kategori Barang_idx changes inside 301 real segments, so a
+        per-segment categorical array would be wrong there and silent.
+        """
+        panel = _panel(n_days=40, n_pairs=1)
+        panel.loc[panel.index >= 20, "cat_idx"] = 2
+        panel.loc[panel.index < 20, "cat_idx"] = 1
+        index = sequence_windows.build_index(panel, feature_cols=FEATURES,
+                                             lookback=7)
+        self.assertEqual(int(index["cats"][19, 0]), 1)
+        self.assertEqual(int(index["cats"][20, 0]), 2)
 
 if __name__ == "__main__":
     unittest.main()

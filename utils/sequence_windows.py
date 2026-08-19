@@ -124,3 +124,47 @@ def _assert_windows_fit(dates, positions, segment_code, lookback) -> None:
         raise ValueError(
             f"ada window yang tidak mencakup tepat {lookback} hari berurutan"
         )
+
+
+def window_ends(index: dict, frame: pd.DataFrame) -> np.ndarray:
+    """Row positions in `index["values"]` for a frame of prediction rows.
+
+    Returned in the frame's **own row order**, so a caller can line
+    predictions up against `valid.index` without a join — which is what
+    `walk_forward.run_fold()` assumes when it wraps the array in a Series.
+    """
+    key = pd.MultiIndex.from_frame(frame[index["key_cols"]])
+    ends = index["lookup"].reindex(key).to_numpy()
+    missing = pd.isna(ends)
+    if missing.any():
+        raise ValueError(
+            f"{int(missing.sum())} baris tidak ditemukan di panel; "
+            "frame prediksi harus berasal dari panel yang sama dengan indeks"
+        )
+    return ends.astype(np.int64)
+
+
+def gather(
+    values: np.ndarray,
+    ends: np.ndarray,
+    lookback: int = modeling_prep.LOOKBACK,
+) -> np.ndarray:
+    """`(len(ends), lookback, n_features)` — the window ending at each position.
+
+    `values` is taken as an argument rather than read from the index so a
+    per-fold scaled copy can be passed without rebuilding anything.
+
+    `sliding_window_view` costs nothing: it is a strided view over `values`.
+    The only allocation is the batch itself, produced by the fancy index.
+    """
+    if len(ends) == 0:
+        return np.empty((0, lookback, values.shape[1]), dtype="float32")
+    if ends.min() < lookback - 1:
+        raise ValueError(
+            f"posisi akhir {int(ends.min())} terlalu awal untuk window "
+            f"{lookback} hari"
+        )
+    windows = sliding_window_view(values, lookback, axis=0)
+    return np.ascontiguousarray(
+        windows[ends - lookback + 1].transpose(0, 2, 1)
+    )
