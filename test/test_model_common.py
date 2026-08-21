@@ -253,3 +253,88 @@ class TestSplitEarlyStopping(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRunSearchCost(unittest.TestCase):
+    """What a candidate cost is as much a result as what it scored.
+
+    The LSTM search overran its eight-hour ceiling by roughly 2x because
+    `best_epoch` varies across the space while the budget formula treats it as
+    a constant measured once. Neither the epoch count nor the wall time was
+    recorded, so the overrun could only be reconstructed afterwards from the
+    modification timestamps of the checkpoint file.
+    """
+
+    def _candidates(self):
+        return [{**DEFAULTS, "alpha": a} for a in (1, 2)]
+
+    def _reporting(self, attribute, per_fold=(4, 6)):
+        """A model that reports its own chosen capacity the way the real ones
+        do: one value appended to a list on the callable, per fold."""
+        def make(params, feature_cols=None, quantile=0.9):
+            inner = _mean_fit_predict(params)
+
+            def fit_predict(train, valid):
+                getattr(fit_predict, attribute).append(
+                    per_fold[len(getattr(fit_predict, attribute))])
+                return inner(train, valid)
+
+            setattr(fit_predict, attribute, [])
+            return fit_predict
+        return make
+
+    def _run(self, make, folds=(1, 2), candidates=None, **kwargs):
+        return model_common.run_search(
+            _panel(), candidates or self._candidates(), make_fit_predict=make,
+            search_space=SPACE, folds=folds, alpha=0.9, model_name="toy",
+            feature_cols=FEATURES, verbose=False, **kwargs,
+        )
+
+    def test_the_epochs_an_lstm_chose_land_in_best_epoch_one_per_fold(self):
+        results = self._run(self._reporting("best_epochs"))
+        self.assertEqual(list(results["best_epoch"]), ["4,6", "4,6"])
+
+    def test_the_rounds_an_xgboost_chose_land_there_too(self):
+        """Same column, same meaning — the capacity early stopping picked."""
+        results = self._run(self._reporting("best_iterations", per_fold=(30, 45)))
+        self.assertEqual(list(results["best_epoch"]), ["30,45"] * 2)
+
+    def test_a_model_that_reports_no_capacity_leaves_the_column_empty(self):
+        results = self._run(_mean_fit_predict)
+        self.assertTrue(results["best_epoch"].isna().all())
+
+    def test_every_candidate_records_its_wall_time(self):
+        results = self._run(_mean_fit_predict)
+        self.assertTrue(results["elapsed_seconds"].notna().all())
+        self.assertTrue((results["elapsed_seconds"] >= 0).all())
+
+    def test_a_failed_candidate_still_records_what_it_burned(self):
+        """A candidate that dies after forty minutes is the most expensive row
+        in the table, and the one a budget post-mortem most needs."""
+        def exploding(params, feature_cols=None, quantile=0.9):
+            def fit_predict(train, valid):
+                raise ValueError("meledak")
+            return fit_predict
+
+        results = self._run(exploding)
+        self.assertTrue(results["pinball"].isna().all())
+        self.assertTrue(results["elapsed_seconds"].notna().all())
+        self.assertTrue(results["best_epoch"].isna().all())
+
+    def test_a_checkpoint_written_before_these_columns_existed_still_resumes(self):
+        """Three searches already have checkpoints on disk in the old shape,
+        one of them mid-run. Resuming must not demand columns they lack.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            self._run(_mean_fit_predict, checkpoint_path=path)
+            old = pd.read_csv(path).drop(columns=["best_epoch", "elapsed_seconds"])
+            old.to_csv(path, index=False)
+
+            three = [{**DEFAULTS, "alpha": a} for a in (1, 2, 3)]
+            results = self._run(self._reporting("best_epochs"), candidates=three,
+                                checkpoint_path=path)
+
+            self.assertEqual(list(results["candidate_id"]), [0, 1, 2])
+            self.assertTrue(results.loc[:1, "elapsed_seconds"].isna().all())
+            self.assertEqual(results.loc[2, "best_epoch"], "4,6")
