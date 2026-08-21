@@ -206,5 +206,135 @@ class TestBundleIO(unittest.TestCase):
             self.assertEqual(json.loads(written), {"a": 1, "b": 2})
 
 
+class TestSplitEarlyStopping(unittest.TestCase):
+    """The mechanism moved here from model_xgboost because it is not
+    XGBoost-specific: any model that must choose its own capacity without
+    reading the validation fold needs a purged training tail.
+    """
+
+    def _dated_frame(self, n=200, lead_time=3.0):
+        rng = np.random.default_rng(11)
+        return pd.DataFrame({
+            "Tanggal": pd.date_range("2025-01-01", periods=n, freq="D"),
+            "feat_a": rng.normal(size=n),
+            "target_lead_time_cumulative": np.abs(rng.normal(size=n)) * 10,
+            "lead_time_days": lead_time,
+            "Kode Barang": "FGS-00001",
+            "Nama Cabang": "KY001",
+            "segment_id": 1,
+        })
+
+    def test_the_tail_is_the_last_thirty_days(self):
+        train = self._dated_frame()
+        _, es_rows = model_common.split_early_stopping(train, tail_days=30)
+        self.assertEqual(len(es_rows), 30)
+        self.assertEqual(es_rows["Tanggal"].max(), train["Tanggal"].max())
+
+    def test_no_es_date_precedes_a_fit_date(self):
+        fit_rows, es_rows = model_common.split_early_stopping(self._dated_frame())
+        self.assertLess(fit_rows["Tanggal"].max(), es_rows["Tanggal"].min())
+
+    def test_fit_rows_whose_label_window_crosses_the_tail_are_purged(self):
+        # lead_time_days=3 means the label at H sums H+1..H+3, so the last
+        # three days before the tail carry a label built inside the tail.
+        train = self._dated_frame(lead_time=3.0)
+        fit_rows, es_rows = model_common.split_early_stopping(train, tail_days=30)
+        es_start = es_rows["Tanggal"].min()
+        self.assertLessEqual(fit_rows["Tanggal"].max(),
+                             es_start - pd.Timedelta(days=4))
+
+    def test_an_empty_training_frame_raises(self):
+        with self.assertRaises(ValueError):
+            model_common.split_early_stopping(self._dated_frame().iloc[0:0])
+
+    def test_a_window_too_short_for_the_tail_raises(self):
+        with self.assertRaises(ValueError):
+            model_common.split_early_stopping(self._dated_frame(n=20), tail_days=30)
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRunSearchCost(unittest.TestCase):
+    """What a candidate cost is as much a result as what it scored.
+
+    The LSTM search overran its eight-hour ceiling by roughly 2x because
+    `best_epoch` varies across the space while the budget formula treats it as
+    a constant measured once. Neither the epoch count nor the wall time was
+    recorded, so the overrun could only be reconstructed afterwards from the
+    modification timestamps of the checkpoint file.
+    """
+
+    def _candidates(self):
+        return [{**DEFAULTS, "alpha": a} for a in (1, 2)]
+
+    def _reporting(self, attribute, per_fold=(4, 6)):
+        """A model that reports its own chosen capacity the way the real ones
+        do: one value appended to a list on the callable, per fold."""
+        def make(params, feature_cols=None, quantile=0.9):
+            inner = _mean_fit_predict(params)
+
+            def fit_predict(train, valid):
+                getattr(fit_predict, attribute).append(
+                    per_fold[len(getattr(fit_predict, attribute))])
+                return inner(train, valid)
+
+            setattr(fit_predict, attribute, [])
+            return fit_predict
+        return make
+
+    def _run(self, make, folds=(1, 2), candidates=None, **kwargs):
+        return model_common.run_search(
+            _panel(), candidates or self._candidates(), make_fit_predict=make,
+            search_space=SPACE, folds=folds, alpha=0.9, model_name="toy",
+            feature_cols=FEATURES, verbose=False, **kwargs,
+        )
+
+    def test_the_epochs_an_lstm_chose_land_in_best_epoch_one_per_fold(self):
+        results = self._run(self._reporting("best_epochs"))
+        self.assertEqual(list(results["best_epoch"]), ["4,6", "4,6"])
+
+    def test_the_rounds_an_xgboost_chose_land_there_too(self):
+        """Same column, same meaning — the capacity early stopping picked."""
+        results = self._run(self._reporting("best_iterations", per_fold=(30, 45)))
+        self.assertEqual(list(results["best_epoch"]), ["30,45"] * 2)
+
+    def test_a_model_that_reports_no_capacity_leaves_the_column_empty(self):
+        results = self._run(_mean_fit_predict)
+        self.assertTrue(results["best_epoch"].isna().all())
+
+    def test_every_candidate_records_its_wall_time(self):
+        results = self._run(_mean_fit_predict)
+        self.assertTrue(results["elapsed_seconds"].notna().all())
+        self.assertTrue((results["elapsed_seconds"] >= 0).all())
+
+    def test_a_failed_candidate_still_records_what_it_burned(self):
+        """A candidate that dies after forty minutes is the most expensive row
+        in the table, and the one a budget post-mortem most needs."""
+        def exploding(params, feature_cols=None, quantile=0.9):
+            def fit_predict(train, valid):
+                raise ValueError("meledak")
+            return fit_predict
+
+        results = self._run(exploding)
+        self.assertTrue(results["pinball"].isna().all())
+        self.assertTrue(results["elapsed_seconds"].notna().all())
+        self.assertTrue(results["best_epoch"].isna().all())
+
+    def test_a_checkpoint_written_before_these_columns_existed_still_resumes(self):
+        """Three searches already have checkpoints on disk in the old shape,
+        one of them mid-run. Resuming must not demand columns they lack.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            self._run(_mean_fit_predict, checkpoint_path=path)
+            old = pd.read_csv(path).drop(columns=["best_epoch", "elapsed_seconds"])
+            old.to_csv(path, index=False)
+
+            three = [{**DEFAULTS, "alpha": a} for a in (1, 2, 3)]
+            results = self._run(self._reporting("best_epochs"), candidates=three,
+                                checkpoint_path=path)
+
+            self.assertEqual(list(results["candidate_id"]), [0, 1, 2])
+            self.assertTrue(results.loc[:1, "elapsed_seconds"].isna().all())
+            self.assertEqual(results.loc[2, "best_epoch"], "4,6")

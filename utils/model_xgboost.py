@@ -65,36 +65,10 @@ ESTIMATOR_KEYS = ("max_depth", "learning_rate", "min_child_weight",
                   "subsample", "colsample_bytree", "reg_lambda", "random_state")
 
 
-def split_early_stopping(
-    train: pd.DataFrame,
-    tail_days: int = ES_TAIL_DAYS,
-    date_col: str = modeling_prep.DATE_COL,
-) -> tuple:
-    """Split a fold's training rows into fit rows and an early-stopping tail.
-
-    The tail is the last `tail_days` calendar days. The purge on the fit side
-    is not extra caution: `target_lead_time_cumulative` sums over
-    H+1..H+lead_time_days, so a fit row dated within `lead_time_days` of the
-    tail carries a label built partly out of the early-stopping window. Without
-    the purge, early stopping would be reading a signal it had partly trained
-    on and would stop too late — the identical leak `fold_train_mask()`
-    prevents at the fold boundary, one scale down.
-    """
-    if train.empty:
-        raise ValueError("frame training kosong")
-
-    es_start = train[date_col].max() - pd.Timedelta(days=tail_days - 1)
-    es_rows = train[train[date_col] >= es_start]
-    fit_rows = train[train[date_col] < es_start]
-    fit_rows = fit_rows[purging.lookahead_safe_mask(fit_rows, es_start,
-                                                    date_col=date_col)]
-
-    if fit_rows.empty:
-        raise ValueError(
-            f"jendela training terlalu pendek untuk tail {tail_days} hari: "
-            f"tidak ada baris tersisa untuk fit"
-        )
-    return fit_rows, es_rows
+# Moved to model_common: the LSTM chooses its epoch count the same way.
+# Re-exported so test/test_model_xgboost.py and notebook/modeling_xgb.ipynb
+# keep working with no line changed.
+split_early_stopping = model_common.split_early_stopping
 
 
 ENCODINGS = ("ordinal", "native", "one_hot")

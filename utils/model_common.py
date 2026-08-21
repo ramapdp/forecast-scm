@@ -13,13 +13,14 @@ Random Forest's leaf-storage bound has no XGBoost analogue.
 
 import json
 import random
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
 import joblib
 import pandas as pd
 
-from . import modeling_prep, walk_forward
+from . import modeling_prep, purging, walk_forward
 
 # The encoded categoricals, the only columns one-hot expansion touches.
 IDX_COLS = [col for col in modeling_prep.FEATURE_COLS if col.endswith("_idx")]
@@ -37,6 +38,45 @@ def assert_no_nan(frame: pd.DataFrame, feature_cols: list) -> None:
     offenders = counts[counts > 0]
     if len(offenders):
         raise ValueError(f"NaN pada fitur: {offenders.to_dict()}")
+
+
+ES_TAIL_DAYS = 30
+
+
+def split_early_stopping(
+    train: pd.DataFrame,
+    tail_days: int = ES_TAIL_DAYS,
+    date_col: str = modeling_prep.DATE_COL,
+) -> tuple:
+    """Split a fold's training rows into fit rows and an early-stopping tail.
+
+    The tail is the last `tail_days` calendar days. The purge on the fit side
+    is not extra caution: `target_lead_time_cumulative` sums over
+    H+1..H+lead_time_days, so a fit row dated within `lead_time_days` of the
+    tail carries a label built partly out of the early-stopping window. Without
+    the purge, early stopping would be reading a signal it had partly trained
+    on and would stop too late — the identical leak `fold_train_mask()`
+    prevents at the fold boundary, one scale down.
+
+    Lives here rather than in one model's module because two models need it:
+    XGBoost chooses a boosting-round count this way, the LSTM chooses an epoch
+    count. Neither mechanism is specific to its model family.
+    """
+    if train.empty:
+        raise ValueError("frame training kosong")
+
+    es_start = train[date_col].max() - pd.Timedelta(days=tail_days - 1)
+    es_rows = train[train[date_col] >= es_start]
+    fit_rows = train[train[date_col] < es_start]
+    fit_rows = fit_rows[purging.lookahead_safe_mask(fit_rows, es_start,
+                                                    date_col=date_col)]
+
+    if fit_rows.empty:
+        raise ValueError(
+            f"jendela training terlalu pendek untuk tail {tail_days} hari: "
+            f"tidak ada baris tersisa untuk fit"
+        )
+    return fit_rows, es_rows
 
 
 def expand_one_hot(
@@ -105,6 +145,12 @@ def sample_search_space(
 
 SEARCH_METRICS = ("pinball", "mae", "coverage", "fill_rate")
 
+# Where a model leaves the capacity its own early stopping picked, one value
+# per fold. Two names because the two models that have such a thing named it
+# after their own unit; both mean "how much model the data asked for", and a
+# search that does not record it cannot explain its own wall clock afterwards.
+CAPACITY_ATTRS = ("best_epochs", "best_iterations")
+
 
 def run_search(
     df: pd.DataFrame,
@@ -156,6 +202,8 @@ def run_search(
             continue
         record = {"candidate_id": candidate_id,
                   **{key: candidate[key] for key in sorted(search_space)}}
+        fit_predict, message = None, None
+        started = time.perf_counter()
         try:
             fit_predict = make_fit_predict(candidate, feature_cols=feature_cols,
                                            quantile=alpha)
@@ -170,20 +218,42 @@ def run_search(
                 record[metric] = walk_forward.pooled_metric(
                     results, model_name, metric=metric, folds=folds
                 )
-            record["error"] = None
         except catch as failure:
             for metric in SEARCH_METRICS:
                 record[metric] = float("nan")
-            record["error"] = str(failure)
+            message = str(failure)
+        # Recorded outside the try so a candidate that died after forty minutes
+        # still reports the forty minutes.
+        record["best_epoch"] = _reported_capacity(fit_predict)
+        record["elapsed_seconds"] = round(time.perf_counter() - started, 1)
+        record["error"] = message
         if verbose:
             print(f"[{candidate_id + 1}/{len(candidates)}] "
-                  f"pinball={record['pinball']:.4f} {record['error'] or ''}",
+                  f"pinball={record['pinball']:.4f} "
+                  f"epoch={record['best_epoch'] or '-'} "
+                  f"{record['elapsed_seconds']:.0f}s {record['error'] or ''}",
                   flush=True)
         rows.append(record)
         if checkpoint_path is not None:
             Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
             _ordered(rows).to_csv(checkpoint_path, index=False)
     return _ordered(rows)
+
+
+def _reported_capacity(fit_predict) -> Optional[str]:
+    """The per-fold capacity a model chose, joined for one CSV cell.
+
+    A string rather than a number because a candidate is scored on several
+    folds and their spread is the interesting part — one number would have to
+    be a mean, and a mean of two epochs hides the fold that ran twice as long.
+    None for a model with no such notion, which is every Random Forest and any
+    candidate that failed before finishing its first fold.
+    """
+    for name in CAPACITY_ATTRS:
+        values = getattr(fit_predict, name, None)
+        if values:
+            return ",".join(str(int(value)) for value in values)
+    return None
 
 
 def _ordered(rows: list) -> pd.DataFrame:
