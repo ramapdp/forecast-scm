@@ -12,17 +12,28 @@ sudah bergeser, cari nama konstantanya, jangan percaya nomor barisnya.
 
 ## 0. Urutan menjalankan refresh
 
-Dua perintah, dan urutannya wajib — `prepare_forecast_data` **tidak** memanggil `modeling_prep`:
+Urutannya wajib, dan yang paling mudah terlewat: `prepare_forecast_data` **tidak** memanggil
+`modeling_prep`, jadi keduanya harus dijalankan sendiri-sendiri:
 
 ```bash
-.venv/bin/python3 -m utils.merge_dataset          # kalau ada file CSV baru
-.venv/bin/python3 -m utils.prepare_forecast_data  # featured.parquet + train/test.parquet
-.venv/bin/python3 -m utils.modeling_prep          # model_input.parquet + category_mapping.json
+.venv/bin/python3 -m utils.merge_dataset               # kalau ada file CSV baru
+.venv/bin/python3 -m utils.verify_category_consistency # gerbang: nol SKU multi-kategori
+.venv/bin/python3 -m utils.prepare_forecast_data       # featured.parquet + train/test.parquet
+.venv/bin/python3 -m utils.modeling_prep               # model_input.parquet + category_mapping.json
 .venv/bin/python3 -m unittest discover -p "test_*.py"
 ```
 
-Kalau hanya perintah kedua yang dijalankan, `model_input.parquet` tetap berisi data lama tanpa
+Kalau hanya perintah ketiga yang dijalankan, `model_input.parquet` tetap berisi data lama tanpa
 peringatan apa pun. Tidak ada guard otomatis untuk ini.
+
+`verify_category_consistency` keluar dengan status 1 kalau setelah normalisasi masih ada SKU
+yang memikul lebih dari satu `Kategori Barang` — tanda reklasifikasi kategori belum sepenuhnya
+tertangani, entah karena ada SKU baru yang perlu masuk
+`normalize_items.EXPLICIT_CATEGORY_OVERRIDES` atau karena data sumber berubah di luar dugaan.
+Jalankan sebelum pipeline, supaya tidak membangun ulang 1,5 juta baris di atas kategori yang
+salah. Baris berlabel `Barang Semi FG (WIP-2)` di `dataset.csv` **bukan** kegagalan: sejak
+konfirmasi 2026-08-22 reklasifikasi ditangani di lapisan normalisasi, bukan di data sumber
+(lihat B-9 di `batasan-penelitian.md`).
 
 ---
 
