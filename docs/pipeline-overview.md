@@ -7,6 +7,44 @@ what the model-training phase, which is not yet built, is expected to do with
 it. For the detailed design rationale behind individual stages, see the dated
 specs in `docs/superpowers/specs/`.
 
+## 0. Stale model artifacts — read before loading any `models/*.joblib`
+
+**`models/random_forest_q90.joblib`, `models/xgboost_q90.joblib` and
+`models/lstm_q90.joblib` are stale as of 2026-08-23. Do not use them for
+predictions, comparisons, or reported numbers.** All three were trained on
+`model_input.parquet` as it stood on 19–20 Aug 2026, before the WIP-2 category
+refresh.
+
+What changed: the data owner confirmed on 2026-08-22 that `Barang Semi FG
+(WIP-2)` was an old administrative label for ten SKUs (`FGS-00001`,
+`FGS-00002`, `FGS-00003`, `FGS-00004`, `FGS-00005`, `FGS-00012`, `FGS-00013`,
+`FGS-00018`, `FGS-00049`, `FGS-00053`), so their whole history now reads
+`Barang Jadi (FG)`. 19,987 rows moved category. See B-9 in
+`docs/batasan-penelitian.md`.
+
+The `category_mapping.json` file itself did **not** get renumbered — per the
+index-stability policy (§4.12(e) of `docs/metodologi-preprocessing.md`), WIP-2
+keeps index 4 as an orphan and no other category shifted. That is exactly what
+makes this failure quiet: a stale model still loads, still finds every column
+it expects, and still returns confident numbers. What broke is narrower and
+invisible at load time — for those ten SKUs, rows that fed the model as
+category 4 now arrive as category 3, and index 4 no longer occurs in the data
+at all. Each model absorbed that differently:
+
+| Model | What it learned | What is now wrong |
+|---|---|---|
+| Random Forest | `one_hot=true` — a dedicated indicator column for WIP-2 | The column is now all-zero; splits trained on it are dead weight, and the ten SKUs' early rows route down FG branches they were never fitted on |
+| XGBoost | `encoding="native"` — `Kategori Barang_idx` declared with levels 1–8 | Level 4 is declared but unreachable; category splits placing WIP-2 on one side no longer separate anything |
+| LSTM | A category embedding with 9 rows | Embedding row 4 is now dead; the ten SKUs' early rows look up row 3 instead, a vector fitted on a different population |
+
+**Plan: all three will be retrained**, not patched, as part of the multi-quantile
+migration — see
+`docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md` and
+`docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`. The
+measured numbers in `docs/hasil-modeling-{rf,xgb,lstm}.md` describe those stale
+artifacts and stay valid as a record of that run; they are not a description of
+what the current `model_input.parquet` would produce.
+
 ## 1. Inputs
 
 - `dataset/excel/*.xlsx` — original goods-issued ("Barang Keluar") exports, one

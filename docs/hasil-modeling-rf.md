@@ -5,6 +5,15 @@ Angka terukur dari jalannya `notebook/modeling_rf.ipynb`. Desainnya ada di
 ini hanya memuat hasilnya, supaya bukti di balik tulisan hidup di git dan bukan
 cuma di output cell notebook yang bisa hilang saat di-clear.
 
+**Artefak `models/random_forest_q90.joblib` sudah basi (per 2026-08-23) — jangan
+dipakai untuk prediksi.** Ia dilatih 19 Agu 2026 di atas `model_input.parquet`
+sebelum refresh kategori WIP-2 2026-08-22, jadi kolom one-hot WIP-2 kini selalu nol.
+Model yang dimuat ulang tidak akan gagal — ia tetap memberi angka, dari fitur
+yang salah. Angka di dokumen ini tetap sah sebagai catatan run tersebut, bukan
+sebagai gambaran `model_input.parquet` yang sekarang. Model ini akan **dilatih
+ulang** dalam migrasi multi-kuantil berikutnya; latar lengkapnya di §0
+`docs/pipeline-overview.md` dan B-9 `docs/batasan-penelitian.md`.
+
 **Desember 2025 tidak dibuka.** Semua angka di bawah datang dari walk-forward
 lima fold di Juli–November 2025. Test set final masih terkunci.
 

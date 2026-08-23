@@ -185,6 +185,23 @@ konfirmasi pemilik data, bukan pada pembandingan baris.
   pusat mencakup semua item dalam satu kali kirim, sehingga satu tingkat layanan
   berlaku untuk seluruh pengiriman.
 
+  **Klarifikasi lanjutan (2026-08-22).** Konfirmasi ulang pemilik data
+  menjelaskan bahwa "seragam untuk semua item" dimaksudkan sebagai **komitmen
+  agregat di level pengiriman**, bukan larangan variasi teknis per item —
+  karena setiap item punya tren pasar berbeda, bahkan item yang sama bisa
+  punya tren berbeda antar cabang. Pengiriman dari pusat tetap mencakup semua
+  item dalam satu kali kirim dengan satu janji tingkat layanan 0,9 ke outlet;
+  yang boleh bervariasi adalah kuantil input per segmen (kategori barang ×
+  `demand_segment`) yang dipakai mencapai janji itu, selama rata-rata
+  tertimbangnya kembali ke 0,9 secara agregat.
+
+  **Konsekuensi.** Model produksi yang dibekukan lewat protokol §19 tetap
+  dilatih dan dipilih pada kuantil 0,9 seragam — klarifikasi ini tidak
+  mengubah proses pemilihan model. Perluasan ke alokasi kuantil tersegmentasi
+  adalah pekerjaan lanjutan terpisah, dijalankan setelah pemenang ditetapkan,
+  bukan bagian dari perbandingan tiga arsitektur. Lihat
+  `docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md`.
+
 Sudah tertutup: 8 nilai `Kota Override` di `dataset/outlet_name_overrides.csv`
 dikonfirmasi pemilik data (2026-08-16), termasuk `KY001` Kutabumi sebagai
 `Kabupaten Tangerang` meski kolom `Kecamatan` di `outlets.csv` menyebut
@@ -211,6 +228,166 @@ data mentah `jan-des-25.csv` juga kosong pada rentang itu (transaksi terakhir
 2025-06-27, kembali 2025-07-11). Sudah dicatat di `dataset/outlet_closures.csv`,
 sehingga ke-13 hari itu tidak lagi ikut sebagai permintaan nol.
 
+Ditutup juga: kategori `Barang Semi FG (WIP-2)` **dikonfirmasi sebagai label
+administratif lama (2026-08-22)** untuk sepuluh SKU — `FGS-00001`, `FGS-00002`,
+`FGS-00003`, `FGS-00004`, `FGS-00005`, `FGS-00012`, `FGS-00013`, `FGS-00018`,
+`FGS-00049`, dan `FGS-00053`. Cara penanganan barangnya tidak pernah berubah;
+hanya penamaan kategorinya yang diperbarui, sehingga seluruh riwayat kesepuluh
+SKU itu harus dibaca sebagai `Barang Jadi (FG)`.
+
+**Konfirmasi ini menggantikan konfirmasi 2026-08-10 untuk kesepuluh SKU
+tersebut, dan hanya untuk mereka.** Konfirmasi 2026-08-10 menetapkan bahwa
+WIP-2 dan `Barang Jadi (FG)` adalah kategori yang benar-benar berbeda sehingga
+tidak boleh disatukan otomatis seperti pasangan sinonim `Minuman`/`Minuman - FG`.
+Aturan umum itu **tetap berlaku** dan tetap dikunci di
+`canonicalize_item_categories()`; yang berubah hanyalah bahwa kesepuluh SKU di
+atas kini menjadi pengecualian bernama. `FGS-00014` (Club Mineral 600ml) **bukan**
+bagian dari kelompok ini — konfirmasi 2026-08-10 untuknya tetap utuh, dan
+kategorinya `Minuman - FG`, bukan `Barang Jadi (FG)`.
+
+Reklasifikasi diterapkan di lapisan normalisasi lewat
+`normalize_items.EXPLICIT_CATEGORY_OVERRIDES`, bukan dengan mengekspor ulang
+data sumber. Konsekuensinya `dataset/dataset.csv` tetap memuat 14.828 baris
+berlabel WIP-2 selamanya, dan itu normal — bukan tanda reklasifikasi gagal.
+Gerbang `utils/verify_category_consistency.py` memeriksa keduanya secara
+terpisah: lapis sumber bersifat informasional, lapis ternormalisasi yang
+menjadi syarat lulus (nol SKU dengan kategori bervariasi).
+Perlu dicatat bahwa 14.828 itu mencakup **11 SKU**, bukan sepuluh: 2.192 baris
+di antaranya milik `FGS-00014`, yang memang tidak ikut pindah ke
+`Barang Jadi (FG)`. Jadi angka lapis sumber ini tidak sebanding langsung
+dengan angka lapis panel di bawah — lihat rantai rekonsiliasinya.
+
+**Dampak terukur pada artefak (diukur 2026-08-22).** `model_input.parquet` kini
+memuat **7 kategori**, turun dari 8; 19.987 baris berpindah dari WIP-2 ke
+`Barang Jadi (FG)` (265.181 → 285.168). Jumlah baris **tidak berubah**
+(1.502.522), begitu pula 70 SKU, 59 cabang, dan 2.979 pasangan item-cabang —
+relabeling hanya menulis ulang satu kolom. Jumlah SKU dengan kategori
+bervariasi turun dari 10 menjadi **0**. Sesuai kebijakan stabilitas indeks
+(§4.12(e) `metodologi-preprocessing.md`), indeks 4 milik WIP-2 **dipertahankan
+sebagai indeks yatim** di `category_mapping.json` dan tidak ada kategori lain
+yang dinomori ulang, sehingga `Kategori Barang_idx` sekarang memakai
+{1, 2, 3, 5, 6, 7, 8}.
+
+**Rekonsiliasi 14.828 (lapis sumber) dengan 19.987 (lapis panel).** Kedua angka
+mengukur artefak yang berbeda pada satuan baris yang berbeda: `dataset.csv`
+berisi satu baris per line item transaksi, sedangkan `model_input.parquet`
+berisi satu baris per `(Kode Barang, Nama Cabang, Tanggal)` termasuk hari
+nol-permintaan. Rantai penuhnya, diukur ulang 2026-08-23 dengan menjalankan
+kembali pipeline memakai `EXPLICIT_CATEGORY_OVERRIDES` versi lama (hanya
+`FGS-00014`), yang mereproduksi baseline 265.181/19.987 persis:
+
+| Langkah | Baris | Keterangan |
+|---|---:|---|
+| WIP-2 di `dataset.csv` | 14.828 | 11 SKU |
+| − `FGS-00014` | −2.192 | di-override ke `Minuman - FG` sejak konfirmasi 2026-08-10, tidak pernah menjadi FG |
+| = hari-transaksi WIP-2, 10 SKU | 12.636 | agregasi harian tidak menyusutkan apa pun — line item-nya sudah unik per SKU/hari/cabang |
+| − gugur di `filter_min_history` | −24 | pasangan dengan <60 hari riwayat pra-cutoff |
+| = baris panel WIP-2, `Kuantitas > 0` | 12.612 | |
+| + hari nol-permintaan hasil `ffill()` | +7.375 | `build_panel.py`, pengisian kolom `CARRY_COLS` pada panel padat |
+| = **baris yang berpindah ke FG** | **19.987** | |
+
+Sumber pertambahan 7.375 baris itu: di data sumber pergantian label terjadi
+serentak pada **2024-03-01** (WIP-2 hanya ada di `jan-24.csv` dan `feb-24.csv`),
+tetapi `build_dense_panel()` mem-`ffill` kategori per pasangan item-cabang.
+Pasangan yang transaksi terakhirnya Januari–Februari 2024 lalu lama menganggur
+menyeret label lama itu jauh ke depan — `FGS-00018` paling ekstrem: 20
+hari-transaksi menjadi 2.279 baris panel (2.259 di antaranya nol, label
+terbawa sampai 2025-03-12), dan `FGS-00013` terbawa sampai 2025-07-20.
+Sebaliknya `FGS-00001` hanya menambah 5 baris karena hampir setiap harinya
+ada transaksi.
+
+Angka 19.987 juga jauh lebih kecil daripada 244.745 — total baris panel
+kesepuluh SKU tersebut — karena mayoritas riwayat panel mereka memang sudah
+berlabel `Barang Jadi (FG)` sejak 2024-03-01; yang berpindah hanya jendela
+Januari–Februari 2024 beserta ekor hari nol yang mewarisinya.
+
+**Verifikasi akhir pada artefak hasil refresh (diukur 2026-08-23).** Dijalankan
+langsung atas `dataset/model_ready/model_input.parquet` (1.502.522 baris, 82
+kolom) setelah pipeline dijalankan ulang, dua angka penutup rantai di atas
+terkonfirmasi harfiah:
+
+1. Jumlah SKU yang punya lebih dari satu nilai `Kategori Barang` sepanjang
+   riwayatnya: **0** — sesuai syarat lulus gerbang
+   `utils/verify_category_consistency.py` pada lapis ternormalisasi.
+2. Nilai unik `Kategori Barang`: **7 nama**, tanpa WIP-2 — `Bahan Baku (RM)`,
+   `Barang Dalam Process (WIP-1)`, `Barang Jadi (FG)`, `Barang Umum`,
+   `Minuman - FG`, `Packaging`, `Snack (FG)`.
+
+Dua catatan penamaan yang bukan anomali refresh, dan yang penyebabnya
+**berbeda** meski sering disebut bersamaan:
+
+- `Snack` muncul sebagai `Snack (FG)` — ini memang hasil kanonikalisasi di
+  `normalize_items.CATEGORY_SYNONYMS`.
+- `Tambahan` (dan `Perlengkapan Resto`) tidak muncul sebagai kategori
+  tersendiri di `model_input.parquet` — ini **bukan** kanonikalisasi.
+  Keduanya masih utuh setelah `load_and_normalize()`, dan itulah sebabnya
+  `verify_category_consistency` melaporkan 9 kategori sementara
+  `model_input.parquet` hanya memuat 7. Keduanya gugur lebih jauh di hilir
+  lewat `build_panel.filter_min_history` (`MIN_HISTORY_DAYS = 60`), karena
+  seluruh SKU-nya berumur pendek: `Tambahan` hanya `FGS-00072` dan
+  `FGS-00073` (82 baris, 2025-01-24 s.d. 2025-03-16), `Perlengkapan Resto`
+  hanya `SPR-00004` (6 baris, 2024-01-21 s.d. 2024-02-20).
+
+Selisih 9 lawan 7 itu karena itu bukan tanda gerbang dan pipeline tidak
+sepakat — keduanya memang mengukur lapisan yang berbeda. Tidak satu pun dari
+keduanya efek reklasifikasi WIP-2.
+
+## B-10. Data biaya/margin per item tidak tersedia pada granularitas dataset saat ini — batasan sementara, menunggu pemetaan
+
+**Status: TERBUKA** sejak 2026-08-22. **Fleksibel** — batasan ini dirancang
+untuk hilang begitu data tersedia, tanpa perubahan kode.
+
+**Fakta.** Harga yang tersedia berbentuk harga menu utuh, bukan per komponen
+item seperti granularitas `(Kode Barang, Nama Cabang)` yang dipakai seluruh
+pipeline ini. Tidak ada satu pun berkas sumber yang memuat biaya produksi
+atau margin per item pada tanggal dokumen ini ditulis.
+
+**Konsekuensi saat ini.** Perhitungan critical ratio (Cu/Co) untuk alokasi
+kuantil per segmen
+(`docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md`)
+tidak presisi untuk SKU yang belum punya entri biaya. SKU tersebut jatuh ke
+jalur proksi (peringkat ordinal masa simpan per kategori dan elisitasi
+kualitatif tim SCM, lihat `dataset/shelf_life_rank_by_category.csv`), yang
+secara metodologis lebih lemah daripada perhitungan biaya langsung.
+
+**Mekanisme penanganan.** `dataset/item_cost_margin.csv` dibaca per baris;
+SKU dengan entri `cost_confidence` bukan `rendah` otomatis memakai jalur
+presisi, sisanya memakai proksi. Keputusan diambil **per SKU**, bukan per
+keseluruhan berkas — pengisian bertahap tidak memerlukan perubahan kode.
+
+**Tabel pelacakan cakupan** (diperbarui setiap kali berkas
+`item_cost_margin.csv` berubah signifikan):
+
+| Tanggal cek | SKU dengan entri presisi | % dari total SKU (70) | % dari total volume | Sumber pengisian |
+|---|---|---|---|---|
+| 2026-08-22 | 0 | 0% | 0% | — (belum dimulai) |
+
+**Kriteria penutupan butir ini.** Ditutup (dipindah ke bagian "Sudah
+tertutup") ketika SKU dengan entri presisi mencakup **≥80% dari total
+volume** — sejalan dengan ambang yang diusulkan di spec segmentasi kuantil
+untuk beralih dari days of supply ke rupiah sebagai metrik utama. Sampai
+ambang ini tercapai, butir tetap berstatus terbuka meskipun sebagian data
+sudah masuk.
+
+## B-11. Trade off overstock/understock dilaporkan dalam days of supply, bukan rupiah, sampai B-10 mencapai ambang cakupan
+
+**Status: mengikuti status B-10.** Butir ini otomatis berubah begitu B-10
+ditutup — lihat kriteria penutupan di B-10 untuk ambang yang sama.
+
+**Fakta.** Satuan fisik pada dataset ini campur (Kg, Porsi, Botol, PCS)
+sebagaimana sudah dicatat di seluruh dokumen hasil model
+(`docs/hasil-modeling-{rf,xgb,lstm}.md` §1). Tanpa data biaya (B-10), tidak
+ada cara mengonversi unit-unit tersebut ke satuan yang sebanding secara
+ekonomi.
+
+**Konsekuensi saat ini.** Metrik evaluasi utama untuk simulasi alokasi
+kuantil tersegmentasi memakai days of supply (unit overstock/shortfall
+dibagi rata-rata demand harian pasangan, `roll_mean_28`) sebagai proksi
+sementara, bukan nilai rupiah. Ini memberi perbandingan yang adil secara
+proporsional antar kategori, tapi tidak menjawab pertanyaan "berapa rupiah
+yang dihemat", yang baru bisa dijawab setelah B-10 terselesaikan sebagian
+besar.
+
 ---
 
 ## Ringkasan untuk bab batasan
@@ -231,3 +408,9 @@ Tiga batasan terpenting, berurutan:
 Ketiganya adalah batasan perumusan masalah dan ketersediaan data. Tidak satu pun
 disebabkan oleh pilihan arsitektur model, dan tidak satu pun dapat diselesaikan
 dengan menyetel ulang hyperparameter.
+
+B-10 dan B-11 adalah batasan yang berbeda sifatnya dari kesembilan butir di
+atas — keduanya bukan keterbatasan data historis yang permanen, melainkan
+kekosongan sementara pada pekerjaan lanjutan (alokasi kuantil tersegmentasi)
+yang secara eksplisit dirancang untuk hilang begitu data biaya/margin per
+item tersedia, tanpa mengubah perumusan masalah inti proyek ini.

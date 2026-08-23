@@ -243,12 +243,22 @@ class TestCanonicalizeItemCategories(unittest.TestCase):
         self.assertEqual(df["Kategori Barang"].iloc[0], "Minuman")
 
     def test_leaves_wip_to_fg_transition_time_varying_not_a_rename(self):
-        # WIP-2 and Barang Jadi (FG) are genuinely different categories
-        # (confirmed by data owner, 2026-08-10), unlike Minuman/Snack which
-        # are the same category relabeled — so unlike those, this pair must
-        # NOT be collapsed to the latest category.
+        # The general rule: WIP-2 and Barang Jadi (FG) are genuinely different
+        # categories (data owner, 2026-08-10), unlike Minuman/Snack which are
+        # the same category relabeled — so this pair must NOT be collapsed to
+        # the latest category by the synonym rule.
+        #
+        # The rule still holds, but it is no longer the whole story. The data
+        # owner later confirmed (2026-08-22) that for ten specific SKUs the
+        # WIP-2 label was administrative only, and those are handled by name
+        # in EXPLICIT_CATEGORY_OVERRIDES — the exception list, not a change to
+        # the rule below. This test therefore uses a code that is deliberately
+        # NOT on that list, so it keeps testing the general rule; the override
+        # path has its own test.
+        code = "FGS-00099"
+        self.assertNotIn(code, normalize_items.EXPLICIT_CATEGORY_OVERRIDES)
         df = pd.DataFrame({
-            "Kode Barang": ["FGS-00001", "FGS-00001"],
+            "Kode Barang": [code, code],
             "Kategori Barang": ["Barang Semi FG (WIP-2)", "Barang Jadi (FG)"],
             "Tanggal": pd.to_datetime(["2024-01-01", "2024-03-01"]),
         })
@@ -256,6 +266,50 @@ class TestCanonicalizeItemCategories(unittest.TestCase):
         self.assertEqual(
             list(result["Kategori Barang"]),
             ["Barang Semi FG (WIP-2)", "Barang Jadi (FG)"],
+        )
+
+    def test_override_applies_to_earliest_rows_not_just_later_ones(self):
+        # The ten SKUs confirmed on 2026-08-22 carry the WIP-2 label only in
+        # their earliest rows. The override has to reach those rows too —
+        # rewriting just the later ones would leave the history split, which
+        # is the exact condition this confirmation removes.
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00001"] * 3,
+            "Kategori Barang": [
+                "Barang Semi FG (WIP-2)",
+                "Barang Semi FG (WIP-2)",
+                "Barang Jadi (FG)",
+            ],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-02-01", "2024-03-01"]),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(list(result["Kategori Barang"]), ["Barang Jadi (FG)"] * 3)
+
+    def test_every_administratively_relabeled_sku_resolves_to_fg(self):
+        # All ten at once, so adding or dropping one from the override map
+        # cannot pass unnoticed.
+        codes = [
+            "FGS-00001", "FGS-00002", "FGS-00003", "FGS-00004", "FGS-00005",
+            "FGS-00012", "FGS-00013", "FGS-00018", "FGS-00049", "FGS-00053",
+        ]
+        df = pd.DataFrame({
+            "Kode Barang": [c for c in codes for _ in range(2)],
+            "Kategori Barang": ["Barang Semi FG (WIP-2)", "Barang Jadi (FG)"] * len(codes),
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-03-01"] * len(codes)),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(set(result["Kategori Barang"]), {"Barang Jadi (FG)"})
+
+    def test_administrative_relabel_does_not_touch_club_mineral_override(self):
+        # FGS-00014 is a different case: WIP-2 -> Minuman - FG, not FG.
+        df = pd.DataFrame({
+            "Kode Barang": ["FGS-00014", "FGS-00001"],
+            "Kategori Barang": ["Barang Semi FG (WIP-2)", "Barang Semi FG (WIP-2)"],
+            "Tanggal": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+        })
+        result = normalize_items.canonicalize_item_categories(df)
+        self.assertEqual(
+            list(result["Kategori Barang"]), ["Minuman - FG", "Barang Jadi (FG)"]
         )
 
     def test_applies_explicit_override_for_club_mineral_600ml(self):
