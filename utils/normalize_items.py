@@ -91,13 +91,40 @@ CATEGORY_SYNONYMS: dict[str, str] = {
     "Snack": "Snack (FG)",
 }
 
-# FGS-00014 (Club Mineral 600ml) was recorded as WIP-2 early on but is
-# actually a drink, confirmed by data owner (2026-08-10) — Barang Semi FG
-# (WIP-2) and Barang Jadi (FG) are genuinely different categories (unlike
-# Minuman/Snack above), so this SKU needs an explicit override rather than
-# falling under the synonym-collapse rule.
+# SKUs whose recorded category must be rewritten for their whole history.
+# The synonym-collapse rule above cannot express these: it only merges labels
+# that mean the same thing everywhere, while each entry here is a statement
+# about one specific SKU.
+#
+# 2026-08-10 (data owner) — FGS-00014 (Club Mineral 600ml) was recorded as
+# WIP-2 early on but is actually a drink, so it reads as Minuman - FG for its
+# whole history. That confirmation also established the general rule that
+# Barang Semi FG (WIP-2) and Barang Jadi (FG) are genuinely different
+# categories, which still holds and is enforced in
+# canonicalize_item_categories() below.
+#
+# 2026-08-22 (data owner) — supersedes the 2026-08-10 confirmation for the ten
+# SKUs listed below, and only for those. WIP-2 turned out to be an old
+# administrative label for them: how the goods are handled never changed, only
+# the category name was updated. Their whole history therefore reads as Barang
+# Jadi (FG) rather than being left time-varying. FGS-00014 is NOT part of this
+# group — it moves to Minuman - FG, not FG, and its 2026-08-10 entry stands.
+_ADMINISTRATIVE_WIP2_RELABEL = [
+    "FGS-00001",  # Ayam Kebuli (0.9)
+    "FGS-00002",  # Kambing Kebuli
+    "FGS-00003",  # Iga Sapi Kebuli
+    "FGS-00004",  # Nasi Kebuli
+    "FGS-00005",  # Sambal - FG
+    "FGS-00012",  # Samosa Beef Original (RM)
+    "FGS-00013",  # Samosa Beef Spicy (RM)
+    "FGS-00018",  # Kambing Kebuli Aqiqah Betina - FG
+    "FGS-00049",  # Iga Dino - FG
+    "FGS-00053",  # Ayam Kebuli (0.6)
+]
+
 EXPLICIT_CATEGORY_OVERRIDES: dict[str, str] = {
     "FGS-00014": "Minuman - FG",
+    **{code: "Barang Jadi (FG)" for code in _ADMINISTRATIVE_WIP2_RELABEL},
 }
 
 

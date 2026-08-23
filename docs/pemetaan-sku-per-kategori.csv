@@ -1,0 +1,71 @@
+﻿Kode Barang;Nama Barang;Kategori Barang;kategori_lama;Satuan;is_event_driven;demand_segment_dominan;demand_segment_rincian;jml_cabang;jml_baris_panel;total_kuantitas;pct_hari_nol;tanggal_awal;tanggal_akhir
+RMT-00017;Saffron Basmati @1kg (RM);Bahan Baku (RM);;Kg;false;intermittent;intermittent:11474|lumpy:247;41;11721;809.0;94.91;2024-01-01;2025-03-10
+WIP-00009;Rabeg;Barang Dalam Process (WIP-1);;Pack;false;intermittent;intermittent:27430|lumpy:5516;58;32946;4629.0;90.36;2024-01-01;2025-12-31
+FGS-00001;Ayam Kebuli (0.9);Barang Jadi (FG);Barang Semi FG (WIP-2);Potong;false;smooth;smooth:30106|erratic:6618;59;36724;3201722.0;0.02;2024-01-01;2025-12-31
+FGS-00002;Kambing Kebuli;Barang Jadi (FG);Barang Semi FG (WIP-2);Porsi;false;erratic;erratic:30976|lumpy:3767|smooth:1888;59;36631;258793.0;10.39;2024-01-01;2025-12-31
+FGS-00003;Iga Sapi Kebuli;Barang Jadi (FG);Barang Semi FG (WIP-2);Porsi;false;lumpy;lumpy:3746|intermittent:3202|erratic:2926|smooth:1942;44;11816;26358.0;33.94;2024-01-01;2025-06-17
+FGS-00004;Nasi Kebuli;Barang Jadi (FG);Barang Semi FG (WIP-2);Porsi;false;smooth;smooth:26027|erratic:10697;59;36724;4166431.5;0.02;2024-01-01;2025-12-31
+FGS-00005;Sambal - FG;Barang Jadi (FG);Barang Semi FG (WIP-2);Porsi;false;smooth;smooth:27489|erratic:9235;59;36724;4309464.0;0.02;2024-01-01;2025-12-31
+FGS-00011;Saus Extra Delmonte @8gr;Barang Jadi (FG);;PCS;false;intermittent;intermittent:752|lumpy:501;5;1253;1324.0;79.01;2025-01-01;2025-09-28
+FGS-00012;Samosa Beef Original (RM);Barang Jadi (FG);Barang Semi FG (WIP-2);PCS;false;intermittent;intermittent:28577|lumpy:4748;56;33325;65781.0;71.11;2024-01-01;2025-12-31
+FGS-00013;Samosa Beef Spicy (RM);Barang Jadi (FG);Barang Semi FG (WIP-2);PCS;false;intermittent;intermittent:29325|lumpy:3560;55;32885;53641.0;74.07;2024-01-01;2025-12-31
+FGS-00018;Kambing Kebuli Aqiqah Betina - FG;Barang Jadi (FG);Barang Semi FG (WIP-2);Porsi;true;intermittent;intermittent:13521;34;13521;16080.0;98.6;2024-01-07;2025-12-20
+FGS-00034;Kambing Kebuli Aqiqah Jantan - FG;Barang Jadi (FG);;Porsi;true;intermittent;intermittent:265;1;265;180.0;99.25;2024-10-30;2025-07-21
+FGS-00049;Iga Dino - FG;Barang Jadi (FG);Barang Semi FG (WIP-2);Porsi;false;intermittent;intermittent:815|lumpy:119;11;934;49.0;95.93;2024-01-20;2024-06-07
+FGS-00051;Iga Jontor - FG;Barang Jadi (FG);;Porsi;false;intermittent;intermittent:639|lumpy:234;8;873;245.0;85.34;2024-07-22;2024-12-26
+FGS-00052;Iga Sapi Original - FG;Barang Jadi (FG);;Porsi;false;erratic;erratic:8731|lumpy:7206|smooth:6374|intermittent:2779;59;25090;64026.0;24.8;2024-09-09;2025-12-31
+FGS-00053;Ayam Kebuli (0.6);Barang Jadi (FG);Barang Semi FG (WIP-2);Potong;false;lumpy;lumpy:2674|intermittent:1663|erratic:1124;17;5461;20594.0;76.01;2024-01-01;2025-02-28
+FGS-00054;India Salaam Basmati Rice @1kg;Barang Jadi (FG);;Kg;false;intermittent;intermittent:2294|lumpy:105;22;2399;164.0;94.54;2024-11-19;2025-06-29
+FGS-00065;Saus Tomat Delmonte @8gr;Barang Jadi (FG);;PCS;false;intermittent;intermittent:752|lumpy:501;5;1253;1324.0;79.01;2025-01-01;2025-09-28
+FGS-00069;Cendol - FG;Barang Jadi (FG);;Porsi;false;lumpy;lumpy:1088|intermittent:773|smooth:167;16;2028;3876.0;47.19;2025-06-03;2025-12-28
+FGS-00070;Santan Cendol - FG;Barang Jadi (FG);;Porsi;false;lumpy;lumpy:2077|intermittent:607;16;2684;4297.0;57.68;2025-01-24;2025-12-28
+FGS-00071;Gula Cendol - FG;Barang Jadi (FG);;Porsi;false;lumpy;lumpy:2077|intermittent:607;16;2684;4297.0;57.68;2025-01-24;2025-12-28
+FGS.00048;Kambing Oven - FG;Barang Jadi (FG);;Ekor;false;intermittent;intermittent:562;1;562;4.0;99.47;2024-03-08;2025-09-20
+FGS.00055;Saus Lemon;Barang Jadi (FG);;Gr;false;intermittent;intermittent:88;1;88;550.0;88.64;2025-01-07;2025-04-04
+FGS.00056;Saus Spicy;Barang Jadi (FG);;Gr;false;intermittent;intermittent:732|lumpy:512;5;1244;11215.0;77.49;2025-01-01;2025-09-28
+Kalender;Kalender;Barang Umum;;PCS;false;intermittent;intermittent:16082|lumpy:2164;47;18246;1542.0;95.15;2024-01-06;2025-12-31
+FGS-00006;Club Mineral 330 ml;Minuman - FG;;Botol;false;lumpy;lumpy:5472|intermittent:2140;24;7612;3714.0;84.16;2024-01-01;2025-12-24
+FGS-00007;7dates Jus Kurma;Minuman - FG;;Botol;false;lumpy;lumpy:26916|intermittent:8667;58;35583;18478.0;73.15;2024-01-01;2025-12-31
+FGS-00008;7dates Susu Kurma;Minuman - FG;;Botol;false;lumpy;lumpy:32229|intermittent:2476|erratic:715;58;35420;34694.0;55.71;2024-01-01;2025-12-31
+FGS-00009;Dahagaku Lemon Sereh 250ml;Minuman - FG;;Botol;false;lumpy;lumpy:29538|intermittent:5382|erratic:731;58;35651;39918.0;52.53;2024-01-01;2025-12-31
+FGS-00014;Club Mineral 600 ml (Menu Pakai Kode CM-600);Minuman - FG;;Botol;false;smooth;smooth:7117|erratic:6096|lumpy:5171|intermittent:2534;48;20918;99733.0;23.44;2024-01-01;2025-12-31
+FGS-00015;Ichi Ocha Melati 350 ml;Minuman - FG;;Botol;false;lumpy;lumpy:18768|intermittent:8415|erratic:731|smooth:504;53;28418;30269.0;53.53;2024-01-01;2025-12-31
+FGS-00017;Susu Almond - FG;Minuman - FG;;Botol;false;lumpy;lumpy:22550|intermittent:11350|erratic:614|smooth:502;58;35016;34276.0;58.4;2024-01-01;2025-12-31
+FGS-00035;Gula Asam 250ml;Minuman - FG;;Botol;false;intermittent;intermittent:29508|lumpy:4169;58;33677;7268.0;84.31;2024-01-01;2025-12-31
+FGS-00037;Kunyit Asam 250ml;Minuman - FG;;Botol;false;intermittent;intermittent:30170|lumpy:2462;58;32632;7351.0;82.99;2024-01-01;2025-12-31
+FGS-00038;Meet Jelly Coklat;Minuman - FG;;Botol;false;intermittent;intermittent:27629|lumpy:4389;58;32018;10788.0;78.44;2024-01-01;2025-12-31
+FGS-00039;Meet Jelly Mangga;Minuman - FG;;Botol;false;intermittent;intermittent:27605|lumpy:4240;58;31845;7195.0;83.9;2024-01-01;2025-12-31
+FGS-00040;Meet Jelly Strawberry;Minuman - FG;;Botol;false;intermittent;intermittent:30381|lumpy:1036;58;31417;8934.0;80.34;2024-01-01;2025-12-31
+FGS-00041;Meet Jelly Leci;Minuman - FG;;Botol;false;intermittent;intermittent:30194|lumpy:1493;58;31687;4688.0;88.62;2024-01-01;2025-12-31
+FGS-00042;Meet Jelly Kopi Susu;Minuman - FG;;Botol;false;intermittent;intermittent:11284|lumpy:827;43;12111;1102.0;92.73;2024-01-01;2025-12-19
+FGS-00043;Meet Jelly Teh Tarik;Minuman - FG;;Botol;false;intermittent;intermittent:26736|lumpy:2746;57;29482;3555.0;90.52;2024-01-01;2025-12-31
+FGS-00050;AirAlam 600 ml (Menu Pakai Kode AA-600);Minuman - FG;;Botol;false;erratic;erratic:9094|smooth:7035|lumpy:4659|intermittent:1977;58;22765;119304.0;16.83;2024-07-04;2025-12-31
+FGS.00053;AirAlam 330 ml (Menu pakai kode AA);Minuman - FG;;Botol;false;lumpy;lumpy:14456|erratic:6895|smooth:1706;58;23057;200256.0;32.84;2024-09-21;2025-12-31
+PCG-00001;Lunch Box;Packaging;;PCS;false;smooth;smooth:26281|erratic:10441;59;36722;2013884.0;0.37;2024-01-01;2025-12-31
+PCG-00002;Lunch Box Aqiqah;Packaging;;PCS;true;intermittent;intermittent:14460|lumpy:3002;41;17462;21349.0;98.24;2024-01-07;2025-12-20
+PCG-00003;Loyang Mini;Packaging;;PCS;false;lumpy;lumpy:20590|erratic:14516|intermittent:1321;59;36427;85898.0;27.29;2024-01-01;2025-12-31
+PCG-00004;Loyang Sedang;Packaging;;PCS;false;lumpy;lumpy:24965|erratic:10232|intermittent:726;58;35923;68427.0;37.06;2024-01-01;2025-12-31
+PCG-00005;Loyang Besar;Packaging;;PCS;false;lumpy;lumpy:25083|intermittent:9976;58;35059;13240.0;79.48;2024-01-01;2025-12-31
+PCG-00006;Box Loyang Mini;Packaging;;PCS;false;lumpy;lumpy:20590|erratic:14516|intermittent:1321;59;36427;85898.0;27.29;2024-01-01;2025-12-31
+PCG-00007;Box Loyang Sedang;Packaging;;PCS;false;lumpy;lumpy:24965|erratic:10232|intermittent:726;58;35923;68468.0;37.05;2024-01-01;2025-12-31
+PCG-00008;Box Loyang Besar;Packaging;;PCS;false;lumpy;lumpy:25083|intermittent:9976;58;35059;13230.0;79.49;2024-01-01;2025-12-31
+PCG-00009;Cup Sambal Dine in;Packaging;;PCS;false;smooth;smooth:26602|erratic:9837;59;36439;1029137.0;2.55;2024-01-01;2025-12-31
+PCG-00010;Cup Sambal Take Away;Packaging;;PCS;false;smooth;smooth:20380|erratic:16344;59;36724;3222735.0;0.02;2024-01-01;2025-12-31
+PCG-00011;Cup Sambal Loyang Mini;Packaging;;PCS;false;lumpy;lumpy:20591|erratic:14518|intermittent:1321;59;36430;171896.0;27.29;2024-01-01;2025-12-31
+PCG-00012;Cup Sambal Loyang Sedang;Packaging;;PCS;false;lumpy;lumpy:24965|erratic:10232|intermittent:726;58;35923;136809.0;37.06;2024-01-01;2025-12-31
+PCG-00013;Cup Sambal Loyang Besar;Packaging;;PCS;false;lumpy;lumpy:25083|intermittent:9976;58;35059;26493.0;79.49;2024-01-01;2025-12-31
+PCG-00021;Gelas 22 Oz;Packaging;;PCS;false;lumpy;lumpy:17553|erratic:5212|intermittent:723|smooth:90;50;23578;52709.0;38.72;2024-01-01;2025-12-11
+PCG-00024;Botol Sambal;Packaging;;Botol;false;intermittent;intermittent:22975|lumpy:2180;50;25155;1575.0;94.75;2024-01-01;2025-12-31
+PCG-00027;Mika Bento;Packaging;;PCS;true;intermittent;intermittent:10355|lumpy:9794;45;20149;22895.0;97.05;2024-01-07;2025-12-31
+PCG-00028;Cup 60 ml;Packaging;;PCS;true;intermittent;intermittent:14217;35;14217;16600.0;98.61;2024-01-07;2025-12-20
+PCG-00030;Rice Bowl 600 ml;Packaging;;PCS;false;lumpy;lumpy:26474|erratic:5543|intermittent:1921|smooth:1394;59;35332;978778.0;45.77;2024-01-01;2025-12-31
+PCG-00036;Paper Lunch Tray;Packaging;;PCS;false;intermittent;intermittent:4059|lumpy:857;15;4916;573.0;92.58;2024-01-02;2025-08-31
+PCG-00038;Gelas 16 Oz;Packaging;;PCS;false;lumpy;lumpy:9436|erratic:4375|intermittent:2339|smooth:605;57;16755;39651.0;33.8;2025-02-23;2025-12-31
+PCG-00044;Gelas 14 Oz (Cendol);Packaging;;Cup;false;lumpy;lumpy:60;1;60;136.0;71.67;2025-01-24;2025-03-24
+FGS-00044;Kentang Mustofa Rabeg;Snack (FG);;Pack;false;intermittent;intermittent:7099|lumpy:382;30;7481;599.0;92.86;2024-01-03;2025-04-29
+FGS-00045;Kentang Mustofa Balado;Snack (FG);;Pack;false;intermittent;intermittent:6632;28;6632;664.0;91.15;2024-01-04;2024-12-01
+FGS-00046;Kentang Mustofa Keju Asin;Snack (FG);;Pack;false;intermittent;intermittent:6841;27;6841;513.0;93.23;2024-01-02;2025-04-29
+FGS-00047;Kentang Mustofa Rumput Laut;Snack (FG);;Pack;false;intermittent;intermittent:5578;26;5578;476.0;92.24;2024-01-01;2024-12-25
+FGS-00048;Kentang Mustofa Mie Goreng;Snack (FG);;Pack;false;intermittent;intermittent:6813;26;6813;550.0;92.93;2024-01-01;2025-04-29
+FGS-00055;Chicken Kebab;Snack (FG);;PCS;false;intermittent;intermittent:22102|lumpy:3341;56;25443;3575.0;90.17;2024-01-03;2025-12-27
+FGS-00056;Beef Kebab;Snack (FG);;PCS;false;intermittent;intermittent:19518|lumpy:7087;56;26605;3564.0;90.87;2024-01-01;2025-12-30
