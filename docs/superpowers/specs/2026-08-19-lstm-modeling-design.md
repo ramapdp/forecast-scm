@@ -1,5 +1,26 @@
 # LSTM modeling — design
 
+## Status — revisi multi-kuantil (2026-08-24)
+
+Arsitektur head dan kriteria pencarian spec ini **direvisi** mengikuti
+`docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`, lewat
+checklist di
+`docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md`
+(butir 2). Yang berubah: head output dari 1 neuron menjadi
+`len(QUANTILE_SET)` neuron, loss total menjadi jumlah pinball loss lintas
+kuantil, dan kriteria pencarian menjadi rata-rata pinball loss lintas kuantil.
+Yang **tidak** berubah: ruang pencarian, protokol dua fit, delapan guard,
+mekanisme windowing, dan seluruh arsitektur sekuensial di Part 1.
+
+`QUANTILE_SET` saat ini berada di **Tahap A** — 19 titik merata
+`[0.05, 0.10, ..., 0.90, 0.95]` — karena tabel pelacakan B-10
+(`docs/batasan-penelitian.md`) masih mencatat 0% volume dengan entri biaya
+presisi, jauh di bawah ambang ≥80% yang mengaktifkan Tahap B.
+
+Seluruh angka terukur di bagian Background di bawah, dan di
+`docs/hasil-modeling-lstm.md`, masih berasal dari run kuantil-0,9 tunggal dan
+**akan digantikan** begitu pencarian dijalankan ulang.
+
 ## Purpose
 
 Train and evaluate the third and last of the candidate models against
@@ -8,8 +29,10 @@ runner the Random Forest and XGBoost specs used.
 
 The deliverable answers one question the first two could not:
 **does a model that reads the raw 28-day sequence beat models that read a
-hand-engineered summary of that same window, at predicting the 0.9 quantile of
-`target_lead_time_cumulative`?**
+hand-engineered summary of that same window, at predicting the conditional
+quantiles of `target_lead_time_cumulative`?** Measured on K1 — the unweighted
+mean pinball loss over every point in `QUANTILE_SET` — not on a single
+quantile point.
 
 This spec is the follow-up promised by
 `docs/superpowers/specs/2026-08-19-xgboost-modeling-design.md`, whose non-goals
@@ -50,6 +73,14 @@ by model selection. That is the context this spec lands in — the interesting
 outcome is not "which model wins" but whether a third model family moves the
 number at all.
 
+**Superseded (2026-08-24).** Those are single-quantile numbers, and the tie
+above is exactly the situation the multi-quantile migration was designed to
+break open: a ranking established at one quantile point is not evidence of a
+ranking across the distribution (Serafin et al. 2024). The table this model is
+actually compared against becomes the three models' mean pinball over
+`QUANTILE_SET`, plus the per-quantile breakdown. The numbers above stay as the
+old-criterion reference until the re-runs land.
+
 ### Measured facts this design rests on
 
 All measured against `model_input.parquet` on 2026-08-19:
@@ -70,8 +101,15 @@ All measured against `model_input.parquet` on 2026-08-19:
 Not reopened here:
 
 - **Primary target** — `target_lead_time_cumulative`.
-- **Loss and service level** — pinball loss at quantile **0.9, uniform across
-  every SKU** (data owner, 2026-08-16).
+- **Service level commitment** — quantile **0.9, uniform across every SKU**
+  (data owner, 2026-08-16), clarified 2026-08-22 as an *aggregate* commitment at
+  the delivery level (B-9). That is the business promise the production model
+  serves, and it is no longer the same thing as the model-comparison criterion.
+- **Loss and comparison criterion** — mean pinball loss over `QUANTILE_SET`
+  (K1), per
+  `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`
+  Bagian 2. Points are averaged unweighted, and every per-quantile score is
+  reported alongside the mean.
 - **Validation** — walk-forward, 5 expanding folds (Jul–Nov 2025). December
   2025 opens exactly once, after all three models have been compared.
 - **Feature set** — `modeling_prep.FEATURE_COLS`, all 56 columns, identical
@@ -188,9 +226,16 @@ The model, the loss, the training loop, early stopping,
 
 ```
 49 dynamic features x 28 steps --> LSTM(hidden_size, num_layers, dropout) --> h_T --+
-                                                                                    +--> concat --> MLP --> 1
+                                                                                    +--> concat --> MLP --> len(QUANTILE_SET)
 7 _idx columns at row H --> 7 Embeddings --> concat (54 dims) --------------------+
 ```
+
+The head is the only part of the network the multi-quantile migration touches:
+one output neuron per point in `QUANTILE_SET` (19 under Tahap A) instead of one
+neuron total. The LSTM trunk, the embeddings, and the concatenation are
+unchanged, so the shared representation is learned once and every quantile
+reads from it — which is the point of a composite head rather than
+`len(QUANTILE_SET)` separate networks.
 
 `num_embeddings` comes from `category_mapping.json` — the maximum index plus
 one, which already includes the reserved `UNKNOWN_INDEX = 0` slot — and never
@@ -214,15 +259,30 @@ a search dimension.
 
 **Loss**
 
-Pinball at alpha = 0.9, applied directly:
+Summed pinball across every point in `QUANTILE_SET`, applied directly. `pred`
+is `(batch, len(QUANTILE_SET))`, `y` is `(batch, 1)` and broadcasts:
 
 ```python
-d = y - pred
-loss = torch.maximum(alpha * d, (alpha - 1) * d).mean()
+alphas = torch.tensor(QUANTILE_SET).view(1, -1)   # (1, Q)
+d = y - pred                                       # (batch, Q)
+loss = torch.maximum(alphas * d, (alphas - 1) * d).sum(dim=1).mean()
 ```
 
-The training objective and the selection criterion are the same function —
-the same property `reg:quantileerror` gave XGBoost.
+Summing over quantiles and averaging over rows means each quantile head
+contributes a gradient of its own scale, which is what keeps the extreme points
+from being dominated by the middle of the grid. K1 is the *mean* over quantiles
+rather than the sum; the two differ only by the constant factor
+`len(QUANTILE_SET)`, so the training objective and the selection criterion
+remain the same function up to that constant — the same property
+`reg:quantileerror` gives XGBoost.
+
+**Crossing.** Nothing in this loss forces the outputs to be monotone in τ, so
+the same crossing check the XGBoost spec adds applies here: for every row, the
+prediction at each τ must be ≤ the prediction at the next τ up. If crossing
+turns out to be material, the documented options are a monotone
+reparameterisation of the head (predict τ=0.05 plus non-negative increments)
+or the arctan pinball loss of Sluijterman et al. (2024) — not a post-hoc sort,
+which would hide the miscalibration rather than fix it.
 
 **Scaling**
 
@@ -297,6 +357,13 @@ SEARCH_SPACE = {
 144 combinations — far smaller than XGBoost's 2,592, so the same number of
 draws covers this space much more densely.
 
+**All candidates must be re-run under the multi-quantile head (2026-08-24).**
+The search space and the seed are unchanged, so the same draws are evaluated,
+but every candidate now trains a `len(QUANTILE_SET)`-output head against a
+summed pinball loss. The recorded scores in
+`dataset/model_ready/lstm_search_results.csv` and the winner in
+`lstm_best_params.json` do not carry over.
+
 Deliberately absent, each because it already has a mechanism:
 
 | Not searched | Why |
@@ -351,11 +418,30 @@ and it is more honest to report it as "one manually chosen configuration" than
 to call it one. If the formula lands under 6, that is the signal to shrink the
 search space — not to quietly raise the ceiling.
 
+**Budget under the multi-quantile head (decision 2026-08-24).** The formula
+above produced **N = 12** on the single-output head. A 19-output head raises
+`sec_per_epoch`, so re-deriving N from the same 8-hour ceiling would shrink the
+search — and shrinking it would mean the LSTM is searched less thoroughly than
+before precisely when its architecture changed, making the re-run not
+comparable to the XGBoost and RF re-runs.
+
+So **N is pinned at 12** for the multi-quantile re-run rather than re-derived.
+The consequence is stated rather than hidden: the 8-hour wall-clock ceiling
+will very likely be exceeded, and the actual wall clock is recorded in
+`docs/hasil-modeling-lstm.md` as a measured cost, not treated as a failure.
+This follows the project's standing position that computation cost is
+deliberately set aside in favour of finding the best model, and closes the
+budget half of open question 2 in the multi-quantile spec. The benchmark still
+runs and still reports `sec_per_epoch` and `best_epoch` — they now document
+what the multi-quantile head costs, instead of deciding N.
+
 ### 2.3 Protocol
 
 - Scored on **folds 3 and 5** only, seed 42.
-- Criterion: **pooled pinball@0.9**, weighted by row count, so November — the
-  smallest fold — does not count as much as September.
+- Criterion: **pooled mean pinball over `QUANTILE_SET`** (K1), weighted by row
+  count, so November — the smallest fold — does not count as much as September.
+  The row-count weighting applies across folds; the averaging across quantile
+  points inside each fold stays unweighted.
 - **No subsampling.** Every training row of each fold is used.
 - Each finished candidate is flushed to
   `dataset/model_ready/lstm_search_results.csv` immediately, and a restart
@@ -399,8 +485,14 @@ care.
 | G4 | Early-stopping tail rows are not among the first fit's `ends` | per fold |
 | G5 | No window contains a date on or after 2025-12-01 | per fold |
 | G6 | Each window's maximum date equals its own prediction row's date — no window ever reaches forward | once, vectorised |
-| G7 | `fit_predict` returns exactly `len(valid)` values, ordered to match `valid.index` | per fold |
+| G7 | `fit_predict` returns exactly `len(valid)` rows x `len(QUANTILE_SET)` columns, ordered to match `valid.index` | per fold |
 | G8 | Predictions are non-negative; `log_target` is inverted **before** clipping | per fold |
+| G9 | No quantile crossing: predictions are non-decreasing across `QUANTILE_SET` within every row | per fold |
+
+G9 is new with the multi-quantile head (2026-08-24). It is reported as a rate
+(fraction of rows with at least one inversion) rather than asserted to zero,
+because a composite pinball head has no structural monotonicity guarantee — a
+non-zero rate is a finding to write down and act on, not a crash.
 
 G1 and G6 carry the most weight and both are cheap, because the panel is dense:
 array position *is* date arithmetic.
@@ -436,9 +528,17 @@ protocol:
 
 | | Random Forest | XGBoost | LSTM |
 |---|---|---|---|
-| Search budget | 18 candidates | 30 candidates | N (6–20, from 2.2) |
+| Search budget | 18 candidates | 30 candidates | 12 candidates (pinned, 2.2) |
 | How capacity is chosen | tree count pinned | rounds by early stopping + refit | epochs by early stopping + refit |
 | Categorical path | one-hot | native categorical | embeddings |
+| Multi-quantile mechanism | read from the same leaves, no retrain | `quantile_alpha` list, one fit | one output neuron per τ, summed loss |
+
+The last row is new with the multi-quantile migration and is the sharpest
+asymmetry in the table: the Random Forest gets every quantile for free from a
+search that never had to be repeated, while XGBoost and the LSTM both paid for
+a full re-search. That is a property of the model families, not a protocol
+choice, but a reader comparing K3 (cost and reproducibility) is entitled to see
+it stated.
 
 The third row is not unfairness — each was chosen by that model's own search or
 by its model family's nature. It is written down so no reader assumes the three
@@ -457,8 +557,9 @@ wins, a reader is entitled to know it won with richer input; and if it loses
 *despite* richer input, that is a far stronger finding than "the LSTM lost".
 
 MAE is reported for context only, never as a winning criterion. Comparing a
-0.9-quantile model's MAE against a mid-point baseline punishes it for doing
-exactly what was asked. Pinball@0.9 decides.
+quantile model's MAE against a mid-point baseline punishes it for doing exactly
+what was asked. The mean pinball over `QUANTILE_SET` decides, with the
+per-quantile breakdown reported beside it.
 
 ## Part 4 — Artifacts
 
@@ -473,7 +574,11 @@ exactly what was asked. Pinball@0.9 decides.
 
 The bundle is one joblib file, matching RF and XGB: `state_dict`,
 `dynamic_cols`, `idx_cols`, `embedding_sizes`, `scaler`, `log_target`,
-`best_epoch`, `quantile`, `feature_cols`, `n_train`. A model reloaded next
+`best_epoch`, `quantile`, `feature_cols`, `n_train`. `quantile` now holds the
+whole of `QUANTILE_SET` in head order, not a scalar — the column order of the
+head is unrecoverable from `state_dict` alone, so recording it is what makes
+the bundle reloadable. The `q90` in the filename is historical and left alone
+so the artifact path stays stable. A model reloaded next
 month against columns in a different order does not fail — it predicts
 confidently from the wrong features, which is worse.
 
@@ -568,6 +673,10 @@ pinned. No `libomp`-style external runtime is required.
 - `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md` — the
   shared feature table, the adapter contract, `to_sequences()`, and the
   lookback-28 decision
+- `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md` —
+  the definition of `QUANTILE_SET` and of criteria K1/K2 this spec now targets
+- `docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md` —
+  the checklist under which this spec was revised
 - `docs/hasil-modeling-rf.md`, `docs/hasil-modeling-xgb.md` — the measured
   results this model is compared against
 - `docs/batasan-penelitian.md` — B-1/B-2/B-3, the pickup-date information

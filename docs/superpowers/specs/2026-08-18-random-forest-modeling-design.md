@@ -1,5 +1,35 @@
 # Random Forest modeling — design
 
+## Status — revisi multi-kuantil (2026-08-24)
+
+Bagian **evaluasi** spec ini diperluas mengikuti
+`docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`, lewat
+checklist di
+`docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md`
+(butir 3). Walk-forward sekarang membaca **seluruh titik `QUANTILE_SET`** dari
+forest yang sama, bukan hanya 0,9.
+
+**Part 2 (Hyperparameter search) tidak berubah sama sekali.** Ini bukan
+kelonggaran, melainkan sifat estimatornya: quantile regression forest menyimpan
+distribusi empiris penuh di tiap daun (Meinshausen 2006), jadi kuantil berapa
+pun dibaca dari forest yang sudah ada tanpa fit ulang. Pemenang pencarian di
+`dataset/model_ready/rf_best_params.json` dan ke-18 baris di
+`rf_search_results.csv` tetap berlaku apa adanya, dan tidak dijalankan ulang.
+
+**Yang tetap perlu di-fit ulang, dan alasannya berbeda.** Walk-forward RF dan
+bundle final `models/random_forest_q90.joblib` tetap harus dibangun ulang —
+bukan karena migrasi multi-kuantil, melainkan karena reclass kategori WIP-2
+2026-08-22 membuat bundle yang ada **stale**: ia masih memuat kolom one-hot
+WIP-2 yang kini selalu nol, dan memuat tanpa error (lihat §0
+`docs/pipeline-overview.md` dan prasyarat §19
+`docs/metodologi-pemodelan-dan-pemilihan-model.md`). "RF tidak perlu retrain"
+berlaku untuk **pencarian hyperparameter**, bukan untuk artefak terlatihnya.
+
+`QUANTILE_SET` saat ini berada di **Tahap A** — 19 titik merata
+`[0.05, 0.10, ..., 0.90, 0.95]` — karena tabel pelacakan B-10
+(`docs/batasan-penelitian.md`) masih mencatat 0% volume dengan entri biaya
+presisi.
+
 ## Purpose
 
 Train and evaluate the first of the three candidate models against
@@ -7,8 +37,10 @@ Train and evaluate the first of the three candidate models against
 that XGBoost and the LSTM will reuse unchanged.
 
 The deliverable is a defensible answer to one question: **does a Random Forest
-predicting the 0.9 quantile of `target_lead_time_cumulative` beat the naive
-baselines, and by how much, per demand segment?**
+predicting the conditional quantiles of `target_lead_time_cumulative` beat the
+naive baselines, and by how much, per demand segment?** Measured on K1 — the
+unweighted mean pinball loss over every point in `QUANTILE_SET` — with the
+per-quantile scores reported alongside.
 
 This spec is the follow-up promised by
 `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md`, which
@@ -43,8 +75,14 @@ Demand segments: intermittent 581,088, lumpy 514,044, erratic 221,181, smooth
 These come from the preprocessing spec and are **not** reopened here:
 
 - **Primary target** — `target_lead_time_cumulative`.
-- **Loss and service level** — pinball loss at **quantile 0.9, uniform across
-  every SKU** (data owner, 2026-08-16).
+- **Service level commitment** — quantile **0.9, uniform across every SKU**
+  (data owner, 2026-08-16), clarified 2026-08-22 as an *aggregate* commitment at
+  the delivery level (B-9). That is the business promise, no longer the same
+  thing as the model-comparison criterion.
+- **Loss and comparison criterion** — mean pinball loss over `QUANTILE_SET`
+  (K1), per
+  `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`
+  Bagian 2.
 - **Validation** — walk-forward, 5 expanding folds (Jul–Nov 2025). December
   2025 opened exactly once, after all three models have been compared.
 - **Feature set** — `modeling_prep.FEATURE_COLS`, identical for every model.
@@ -55,7 +93,7 @@ Settled during brainstorming 2026-08-18.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Quantile mechanism | `quantile-forest`'s `RandomForestQuantileRegressor` | sklearn's `RandomForestRegressor` minimizes squared/absolute error only — it has no quantile loss. A quantile regression forest (Meinshausen 2006) reads the 0.9 quantile off the empirical distribution stored in each leaf, which is the correct estimator for the locked service level |
+| Quantile mechanism | `quantile-forest`'s `RandomForestQuantileRegressor` | sklearn's `RandomForestRegressor` minimizes squared/absolute error only — it has no quantile loss. A quantile regression forest (Meinshausen 2006) reads **any** quantile off the empirical distribution stored in each leaf. Under the multi-quantile criterion this stops being merely correct and becomes the cheapest of the three: the whole of `QUANTILE_SET` comes out of one fit, with no re-search |
 | Scope | Shared walk-forward runner + Random Forest + hyperparameter tuning | The runner is written once and reused by XGBoost and the LSTM, so the comparison is enforced structurally rather than by discipline — the same argument the preprocessing spec made for its adapters |
 | Tuning budget | Random search, 18 candidates, scored on folds 3 and 5; winner refit and reported over all 5 folds | A full grid over 5 folds at 1.28M training rows is not runnable on the available hardware. Reporting the search folds' own scores would be optimistic, so the reported number comes from the full walk-forward |
 | Model granularity | One global model | `demand_segment_idx` is already a feature, so the trees can split on it themselves. Maximum data per model, one artifact to ship weekly. Metrics are still reported per segment |
@@ -191,8 +229,17 @@ in order:
    reindexed onto validation so an absent category cannot shift columns.
 3. optional `log1p` of the target, driven by `log_target`; predictions are
    inverted with `expm1` (`modeling_prep.inverse_log_target`).
-4. fit, then `predict(X_valid, quantiles=0.9)`, clipped at 0 — a negative
-   shipment quantity is not a thing.
+4. fit, then `predict(X_valid, quantiles=QUANTILE_SET)`, clipped at 0 — a
+   negative shipment quantity is not a thing. The call returns
+   `(len(valid), len(QUANTILE_SET))`; passing the whole set in one call rather
+   than looping is what keeps the leaf traversal from being repeated 19 times.
+
+`QUANTILE = 0.9` stays in the module as the **service-level constant** that the
+production allocation layer reads (B-9), separate from `QUANTILE_SET`, which is
+the evaluation grid. They are different things and are named differently on
+purpose. Quantile crossing is structurally impossible here — every point is a
+percentile of one and the same empirical leaf distribution — so the crossing
+check the XGBoost and LSTM specs add has no RF analogue.
 
 ### 1.3 The leaf-storage memory bound
 
@@ -274,8 +321,17 @@ adjacent.
 Selection metric: **pooled pinball@0.9 over the two folds' validation rows**.
 Pooled rather than averaged so folds contribute in proportion to their row
 count. Per-segment pinball is recorded for every candidate but does not decide
-the winner — the service level is uniform across SKUs by the data owner's
-decision, so the selection criterion must be too.
+the winner.
+
+**Not re-run under the multi-quantile migration (2026-08-24).** This search
+stays exactly as it was measured, at pinball@0.9. Re-running it would be
+spending 18 fits to answer a question the estimator makes moot: the winning
+hyperparameters shape the *leaves*, and every point in `QUANTILE_SET` is read
+from those same leaves. The consequence is stated rather than hidden — RF's
+hyperparameters were selected at one quantile point while XGBoost's and the
+LSTM's are selected on the multi-quantile criterion, which is an asymmetry that
+belongs in the head-to-head section of the results documents alongside the
+existing search-budget asymmetry.
 
 The winner is then refit and run across **all five folds**, and that is the
 reported result. Reporting the search folds' own scores would be optimistic
@@ -298,6 +354,14 @@ identical rows:
    crown a model that only won where predicting zero is easy. This is the
    axis the preprocessing spec built `demand_segment` for.
 3. **Per `is_delivery_day`** — the rows that actually drive a shipment.
+4. **Per quantile point** (added 2026-08-24) — the pinball score and the
+   coverage at each τ in `QUANTILE_SET`, reported beside the K1 mean rather
+   than folded into it. K2 is checked on this cut: coverage that drifts the
+   same direction at *every* τ is a much stronger disqualifying signal than a
+   miss at 0.9 alone
+   (`docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`
+   Bagian 3). This is the same "never one global number" discipline the three
+   cuts above already apply, extended to the new axis.
 
 Beyond `mae` and `pinball`, two metrics answer the business question directly
 and are reported everywhere:
@@ -328,7 +392,9 @@ cell.
 
 The saved forest records the feature column order and the `one_hot`/
 `log_target` flags used, because a model loaded a month later with columns in
-a different order fails silently rather than loudly.
+a different order fails silently rather than loudly. The `q90` in the filename
+is historical — the forest serves every point in `QUANTILE_SET` — and is left
+alone so the artifact path stays stable.
 
 ## Part 5 — Testing
 
@@ -396,6 +462,11 @@ XGBoost and the deep-learning framework are added by their own specs.
 
 - `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md` — the
   shared feature table, folds, segments, and the quantile-0.9 decision
+- `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md` —
+  the definition of `QUANTILE_SET` and of criteria K1/K2 this spec's evaluation
+  now targets
+- `docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md` —
+  the checklist under which this spec was revised
 - `docs/superpowers/specs/2026-08-08-lead-time-integration-design.md` —
   `target_lead_time_cumulative` and the region/lead-time features
 - `docs/batasan-penelitian.md` — B-1/B-2/B-3, the pickup-date limitation

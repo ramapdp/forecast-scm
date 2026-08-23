@@ -9,6 +9,16 @@ pemenang di antara Random Forest/XGBoost/LSTM ditetapkan lewat protokol §19
 `metodologi-pemodelan-dan-pemilihan-model.md` — bukan bagian dari perbandingan
 ketiga model itu sendiri.
 
+**Pembaruan 2026-08-24.** Dua hal berubah sejak draf ini ditulis:
+
+1. Reinterpretasi B-9 (pertanyaan terbuka nomor 1) **sudah tertulis** di
+   `docs/batasan-penelitian.md` sebagai "Klarifikasi lanjutan (2026-08-22)" di
+   bawah butir "Tingkat layanan target". Konfirmasi tertulis yang diminta sudah
+   ada; yang masih menahan spec ini adalah pertanyaan terbuka nomor 2, 3, dan 4.
+2. **Bagian 4 (perluasan multi-kuantil) sudah selesai lebih awal**, diwarisi
+   dari migrasi evaluasi multi-kuantil — lihat catatan di Bagian 4 dan tabel
+   urutan pengerjaan yang sudah diperbarui.
+
 ## Purpose
 
 Model produksi saat ini memprediksi satu titik kuantil (0,9) yang seragam
@@ -271,6 +281,28 @@ seperti yang diminta.
 
 ### 4. Perluasan model: multi-kuantil, bukan model baru
 
+> **DIWARISI — selesai lebih awal (2026-08-24).** Bagian ini **tidak lagi
+> menjadi pekerjaan yang tersisa untuk spec ini.** Migrasi evaluasi
+> multi-kuantil
+> (`2026-08-22-model-comparison-refactor-migration.md`, mengikuti
+> `2026-08-22-multi-quantile-evaluation-design.md`) memindahkan perluasan
+> multi-kuantil ke **hulu**: ketiganya diperluas sebagai bagian dari kriteria
+> K1 yang baru, **sebelum** pemenang ditetapkan, karena K1 sekarang adalah
+> rata-rata pinball loss lintas `QUANTILE_SET`. Konsekuensinya, model mana pun
+> yang menang **sudah otomatis punya kapabilitas multi-kuantil** begitu tangga
+> K1–K3 selesai.
+>
+> Teks asli di bawah **sengaja tidak dihapus**, supaya jejak keputusannya tetap
+> terbaca: alasan biaya "jalankan hanya untuk pemenang" masuk akal ketika
+> multi-kuantil hanya melayani spec ini, dan berhenti masuk akal begitu
+> multi-kuantil menjadi kriteria pemilihan model itu sendiri. Yang berubah
+> adalah premisnya, bukan analisis teknis per arsitekturnya — tabel di bawah
+> tetap berlaku persis apa adanya, dan sudah diterapkan ke ketiga spec model.
+>
+> Satu penyesuaian pada tabel: contoh `[0.6, 0.7, 0.8, 0.9, 0.95]` untuk
+> XGBoost adalah ilustrasi dari sebelum `QUANTILE_SET` didefinisikan. Nilai yang
+> berlaku sekarang adalah `QUANTILE_SET` Tahap A (19 titik, spasi 0,05).
+
 Dijalankan pada arsitektur pemenang saja (§21
 `metodologi-pemodelan-dan-pemilihan-model.md` sudah menetapkan pola ini
 untuk SHAP; spec ini mengikuti pola yang sama untuk alasan biaya yang
@@ -354,18 +386,40 @@ langsung terhadap kode saat implementasi, bukan diasumsikan dari dokumen.
 Menyisip di antara butir yang sudah tercatat di §21
 `metodologi-pemodelan-dan-pemilihan-model.md`:
 
+**Diperbarui 2026-08-24** mengikuti migrasi evaluasi multi-kuantil.
+
 | # | Pekerjaan | Sumber |
 |---|---|---|
-| 1–3 | Bekukan §18, buka test set Desember, tulis hasil | sudah direncanakan |
-| **3a** | **Spec ini: alokasi kuantil tersegmentasi pada model pemenang** | **baru** |
+| **0a** | **Migrasi evaluasi multi-kuantil: ubah spec RF/XGB/LSTM, jalankan ulang ketiga notebook, tulis ulang `hasil-modeling-*.md`, revisi §15–19 dan §21** | **baru — `2026-08-22-model-comparison-refactor-migration.md`** |
+| 1–3 | Bekukan §18 (dengan angka multi-kuantil), buka test set Desember, tulis hasil | sudah direncanakan — sekarang bergantung pada 0a |
+| **3a** | **Spec ini: alokasi kuantil tersegmentasi pada model pemenang** — Bagian 4 sudah diwarisi dari 0a, jadi tinggal Bagian 2, 3, 5, 6, 7 | **baru** |
 | 4 | Dekomposisi harian (`target_h1`…`target_h4`) | sudah direncanakan — independen, tidak saling bergantung dengan 3a |
 | 5 | SHAP untuk pemenang saja | sudah direncanakan |
 
-Butir 3a sengaja diletakkan setelah Desember dibuka, bukan sebelumnya,
-karena tangga pemilihan model (§17) butuh kriteria kuantil 0,9 seragam yang
-tetap sampai keputusan G0–K4 selesai — mencampur segmentasi ke dalam
-perbandingan tiga model akan membuat perbandingan itu tidak lagi apple to
-apple, sebagaimana sudah disepakati di diskusi sebelumnya.
+Butir 3a tetap diletakkan setelah Desember dibuka, bukan sebelumnya. Alasannya
+sekarang lebih sempit daripada sebelumnya, dan perlu dinyatakan ulang dengan
+tepat:
+
+- **Alasan yang sudah tidak berlaku.** Sebelumnya butir ini beralasan bahwa
+  tangga §17 "butuh kriteria kuantil 0,9 seragam yang tetap sampai G0–K4
+  selesai". Itu tidak lagi benar — K1 justru sekarang dinilai lintas 19 titik
+  kuantil sekaligus. Kekhawatiran bahwa multi-kuantil membuat perbandingan
+  tidak apple to apple juga tidak terbukti: ketiga model diperluas ke
+  `QUANTILE_SET` yang **sama persis**, pada baris dan fold yang sama, sehingga
+  perbandingannya justru lebih setara, bukan kurang.
+- **Alasan yang masih berlaku.** Yang tetap harus dijaga adalah **kuantil yang
+  dipakai memproduksi angka** selama G0–K4 harus seragam antar model. Ketiga
+  model dinilai pada grid identik; yang belum boleh masuk adalah alokasi kuantil
+  **berbeda per segmen**, karena itu memberi satu model peta alokasi yang tidak
+  dimiliki dua model lain. Jadi yang ditunda adalah *alokasinya*, bukan
+  *kapabilitas multi-kuantilnya*.
+
+**Konsekuensi bersih: migrasi ini memperpendek jalur menuju segmentasi kuantil,
+bukan memperpanjangnya.** Bagian 4 — yang sebelumnya adalah pekerjaan pertama
+butir 3a dan mensyaratkan menunggu pemenang ditetapkan — kini sudah selesai
+sebelum 3a dimulai. Simulasi kalibrasi λ (Bagian 5) bisa langsung berjalan
+begitu pemenang ditetapkan, di atas prediksi multi-kuantil yang sudah ada,
+tanpa satu pun fit tambahan untuk memperluas modelnya lebih dulu.
 
 ## Testing
 

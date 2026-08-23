@@ -16,6 +16,69 @@ kuantil, dasar bukti dari jurnal), lihat
 `2026-08-22-multi-quantile-evaluation-design.md` — dokumen ini tidak
 mengulang isinya, hanya merujuknya per poin.
 
+## Catatan eksekusi (2026-08-24)
+
+Checklist ini mulai dijalankan 2026-08-24. Status per butir:
+
+| Butir | Status |
+|---|---|
+| 1 — spec XGBoost | ✅ selesai |
+| 2 — spec LSTM | ✅ selesai |
+| 3 — spec Random Forest | ✅ selesai |
+| 4 — `metodologi` §15–18 | ⚠️ sebagian: definisi K1/K2 di §15 dan §17 selesai, plus §19 dan §21 (perluasan cakupan, disetujui pemilik proyek 2026-08-24). §16 dan §18 diberi penanda "menunggu penggantian" dan ditulis ulang setelah butir 5 |
+| 5 — `hasil-modeling-{rf,xgb,lstm}.md` | ⬜ menunggu notebook dijalankan ulang |
+| 6 — spec segmentasi kuantil | ✅ selesai |
+| 7 — `batasan-penelitian.md` / `pipeline-overview.md` | ⚠️ direvisi, lihat "Koreksi butir 7" di bawah |
+
+**Prasyarat yang belum tercatat di checklist ini.** "Urutan eksekusi yang
+disarankan" langkah 2 meminta ketiga notebook dijalankan ulang "sesuai spec yang
+sudah diubah", tetapi tidak ada butir yang mencakup **perubahan kodenya**. Kode
+saat ini masih kuantil tunggal dari ujung ke ujung: `evaluation.py`
+`DEFAULT_ALPHA = 0.9` dengan `score()` mengembalikan satu angka pinball,
+`walk_forward.py` dan `model_common.py` menerima `alpha: float` skalar, dan tidak
+ada `QUANTILE_SET` di mana pun. Langkah 2 tidak dapat dijalankan sebelum
+`evaluation.py`, `walk_forward.py`, `model_common.py`, `model_xgboost.py`,
+`model_lstm.py`, `model_random_forest.py`, dan ketiga notebook diubah. Pekerjaan
+itu dicatat sebagai butir 0b di §21 `metodologi-pemodelan-dan-pemilihan-model.md`.
+
+**Koreksi angka kandidat.** Butir 1 di bawah menyebut "18 kandidat" untuk
+XGBoost, dan tabel "Dampak teknis per model" di
+`2026-08-22-multi-quantile-evaluation-design.md` menyebut angka yang sama. Itu
+keliru — 18 adalah anggaran **Random Forest**. Anggaran XGBoost yang benar-benar
+dijalankan adalah **30** (`dataset/model_ready/xgb_search_results.csv` berisi 30
+baris; `docs/hasil-modeling-xgb.md` §"Pencarian hyperparameter"). LSTM = 12 sudah
+benar. Angka yang berlaku: **XGBoost 30, LSTM 12.**
+
+**Keputusan anggaran pencarian (2026-08-24).** Pertanyaan terbuka nomor 2 di spec
+multi-kuantil, bagian anggaran, **ditutup**: anggaran dipertahankan pada 30
+(XGBoost) dan 12 (LSTM), tidak dikurangi meskipun tiap kandidat kini memprediksi
+19 kuantil sekaligus. Dasarnya konsisten dengan posisi proyek yang sudah
+tertulis: ongkos komputasi sengaja dikesampingkan karena tujuannya menemukan
+model terbaik. Untuk LSTM ini berarti N **dipatok** 12, bukan diturunkan ulang
+dari formula anggaran — konsekuensinya plafon 8 jam kemungkinan terlampaui, dan
+itu dicatat sebagai ongkos terukur, bukan kegagalan (lihat §2.2 spec LSTM).
+Bagian *warm start* dari pertanyaan terbuka nomor 2 (peralihan Tahap A → Tahap B)
+**tetap terbuka**.
+
+**Koreksi butir 7.** Butir 7 menyatakan tidak ada perubahan pada
+`batasan-penelitian.md` dengan alasan "B-9 berbicara soal kuantil 0,9 sebagai
+komitmen bisnis, bukan kriteria pemilihan model". Alasan itu benar untuk isi
+utama B-9, tetapi tidak untuk seluruh isinya: paragraf **"Konsekuensi"** di bawah
+"Klarifikasi lanjutan (2026-08-22)" berbicara eksplisit tentang proses pemilihan
+model — "klarifikasi ini tidak mengubah proses pemilihan model" — dan pernyataan
+itu menjadi tidak benar setelah migrasi ini. Sebuah catatan koreksi bertanggal
+2026-08-24 ditambahkan di bawah paragraf tersebut (disetujui pemilik proyek).
+Teks 2026-08-16 dan 2026-08-22 tidak dihapus atau diubah. `pipeline-overview.md`
+memang tidak berubah, sesuai butir 7.
+
+**Prasyarat Random Forest yang perlu dibaca bersama butir 3.** "RF tidak perlu
+retrain" berlaku untuk **pencarian hyperparameter**, bukan untuk artefak
+terlatihnya. `models/random_forest_q90.joblib` basi sejak reclass kategori WIP-2
+2026-08-22 (§0 `docs/pipeline-overview.md`, prasyarat §19
+`docs/metodologi-pemodelan-dan-pemilihan-model.md`), jadi walk-forward RF dan fit
+final-nya tetap harus dijalankan ulang — hanya `rf_best_params.json` yang dipakai
+ulang apa adanya.
+
 ## Purpose
 
 Menerapkan desain di `2026-08-22-multi-quantile-evaluation-design.md` ke
