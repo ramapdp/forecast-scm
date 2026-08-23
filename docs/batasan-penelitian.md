@@ -185,6 +185,23 @@ konfirmasi pemilik data, bukan pada pembandingan baris.
   pusat mencakup semua item dalam satu kali kirim, sehingga satu tingkat layanan
   berlaku untuk seluruh pengiriman.
 
+  **Klarifikasi lanjutan (2026-08-22).** Konfirmasi ulang pemilik data
+  menjelaskan bahwa "seragam untuk semua item" dimaksudkan sebagai **komitmen
+  agregat di level pengiriman**, bukan larangan variasi teknis per item —
+  karena setiap item punya tren pasar berbeda, bahkan item yang sama bisa
+  punya tren berbeda antar cabang. Pengiriman dari pusat tetap mencakup semua
+  item dalam satu kali kirim dengan satu janji tingkat layanan 0,9 ke outlet;
+  yang boleh bervariasi adalah kuantil input per segmen (kategori barang ×
+  `demand_segment`) yang dipakai mencapai janji itu, selama rata-rata
+  tertimbangnya kembali ke 0,9 secara agregat.
+
+  **Konsekuensi.** Model produksi yang dibekukan lewat protokol §19 tetap
+  dilatih dan dipilih pada kuantil 0,9 seragam — klarifikasi ini tidak
+  mengubah proses pemilihan model. Perluasan ke alokasi kuantil tersegmentasi
+  adalah pekerjaan lanjutan terpisah, dijalankan setelah pemenang ditetapkan,
+  bukan bagian dari perbandingan tiga arsitektur. Lihat
+  `docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md`.
+
 Sudah tertutup: 8 nilai `Kota Override` di `dataset/outlet_name_overrides.csv`
 dikonfirmasi pemilik data (2026-08-16), termasuk `KY001` Kutabumi sebagai
 `Kabupaten Tangerang` meski kolom `Kecamatan` di `outlets.csv` menyebut
@@ -315,6 +332,62 @@ Selisih 9 lawan 7 itu karena itu bukan tanda gerbang dan pipeline tidak
 sepakat — keduanya memang mengukur lapisan yang berbeda. Tidak satu pun dari
 keduanya efek reklasifikasi WIP-2.
 
+## B-10. Data biaya/margin per item tidak tersedia pada granularitas dataset saat ini — batasan sementara, menunggu pemetaan
+
+**Status: TERBUKA** sejak 2026-08-22. **Fleksibel** — batasan ini dirancang
+untuk hilang begitu data tersedia, tanpa perubahan kode.
+
+**Fakta.** Harga yang tersedia berbentuk harga menu utuh, bukan per komponen
+item seperti granularitas `(Kode Barang, Nama Cabang)` yang dipakai seluruh
+pipeline ini. Tidak ada satu pun berkas sumber yang memuat biaya produksi
+atau margin per item pada tanggal dokumen ini ditulis.
+
+**Konsekuensi saat ini.** Perhitungan critical ratio (Cu/Co) untuk alokasi
+kuantil per segmen
+(`docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md`)
+tidak presisi untuk SKU yang belum punya entri biaya. SKU tersebut jatuh ke
+jalur proksi (peringkat ordinal masa simpan per kategori dan elisitasi
+kualitatif tim SCM, lihat `dataset/shelf_life_rank_by_category.csv`), yang
+secara metodologis lebih lemah daripada perhitungan biaya langsung.
+
+**Mekanisme penanganan.** `dataset/item_cost_margin.csv` dibaca per baris;
+SKU dengan entri `cost_confidence` bukan `rendah` otomatis memakai jalur
+presisi, sisanya memakai proksi. Keputusan diambil **per SKU**, bukan per
+keseluruhan berkas — pengisian bertahap tidak memerlukan perubahan kode.
+
+**Tabel pelacakan cakupan** (diperbarui setiap kali berkas
+`item_cost_margin.csv` berubah signifikan):
+
+| Tanggal cek | SKU dengan entri presisi | % dari total SKU (70) | % dari total volume | Sumber pengisian |
+|---|---|---|---|---|
+| 2026-08-22 | 0 | 0% | 0% | — (belum dimulai) |
+
+**Kriteria penutupan butir ini.** Ditutup (dipindah ke bagian "Sudah
+tertutup") ketika SKU dengan entri presisi mencakup **≥80% dari total
+volume** — sejalan dengan ambang yang diusulkan di spec segmentasi kuantil
+untuk beralih dari days of supply ke rupiah sebagai metrik utama. Sampai
+ambang ini tercapai, butir tetap berstatus terbuka meskipun sebagian data
+sudah masuk.
+
+## B-11. Trade off overstock/understock dilaporkan dalam days of supply, bukan rupiah, sampai B-10 mencapai ambang cakupan
+
+**Status: mengikuti status B-10.** Butir ini otomatis berubah begitu B-10
+ditutup — lihat kriteria penutupan di B-10 untuk ambang yang sama.
+
+**Fakta.** Satuan fisik pada dataset ini campur (Kg, Porsi, Botol, PCS)
+sebagaimana sudah dicatat di seluruh dokumen hasil model
+(`docs/hasil-modeling-{rf,xgb,lstm}.md` §1). Tanpa data biaya (B-10), tidak
+ada cara mengonversi unit-unit tersebut ke satuan yang sebanding secara
+ekonomi.
+
+**Konsekuensi saat ini.** Metrik evaluasi utama untuk simulasi alokasi
+kuantil tersegmentasi memakai days of supply (unit overstock/shortfall
+dibagi rata-rata demand harian pasangan, `roll_mean_28`) sebagai proksi
+sementara, bukan nilai rupiah. Ini memberi perbandingan yang adil secara
+proporsional antar kategori, tapi tidak menjawab pertanyaan "berapa rupiah
+yang dihemat", yang baru bisa dijawab setelah B-10 terselesaikan sebagian
+besar.
+
 ---
 
 ## Ringkasan untuk bab batasan
@@ -335,3 +408,9 @@ Tiga batasan terpenting, berurutan:
 Ketiganya adalah batasan perumusan masalah dan ketersediaan data. Tidak satu pun
 disebabkan oleh pilihan arsitektur model, dan tidak satu pun dapat diselesaikan
 dengan menyetel ulang hyperparameter.
+
+B-10 dan B-11 adalah batasan yang berbeda sifatnya dari kesembilan butir di
+atas — keduanya bukan keterbatasan data historis yang permanen, melainkan
+kekosongan sementara pada pekerjaan lanjutan (alokasi kuantil tersegmentasi)
+yang secara eksplisit dirancang untuk hilang begitu data biaya/margin per
+item tersedia, tanpa mengubah perumusan masalah inti proyek ini.
