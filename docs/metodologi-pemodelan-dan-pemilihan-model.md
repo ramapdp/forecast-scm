@@ -16,6 +16,7 @@ terbaik yang direncanakan** beserta protokol pembukaan test set.
 | Kandidat model | Random Forest kuantil, XGBoost kuantil, LSTM kuantil |
 | Kriteria pemilihan | `pinball@0.9` |
 | Status | Ketiga model selesai divalidasi; **pemenang belum ditetapkan**; test set Desember 2025 masih terkunci |
+| Artefak model | `models/{random_forest,xgboost,lstm}_q90.joblib` **basi per 2026-08-23** — dilatih sebelum refresh kategori WIP-2, akan dilatih ulang (§19a) |
 | Verifikasi | 667 unit test lulus (`.venv/bin/python3 -m unittest discover -p "test_*.py"`) |
 | Tanggal dokumen | 22 Agustus 2026 |
 
@@ -1242,6 +1243,18 @@ bukti bahwa pemilihan tidak dipengaruhi hasil test.
 **2. Satu run, ketiga model sekaligus.** Ketiga model final di `models/*.joblib`
 plus ketiga baseline dinilai pada baris Desember yang identik, dalam satu
 eksekusi. Tidak dicicil — agar tidak ada kesempatan mengintip lalu mengulang.
+
+> **Prasyarat yang belum terpenuhi (2026-08-23).** Ketiga berkas `models/*.joblib`
+> yang ada sekarang dilatih 19–20 Agu 2026, sebelum refresh kategori WIP-2
+> 2026-08-22 memindahkan 19.987 baris dari WIP-2 ke `Barang Jadi (FG)`.
+> Berkas-berkas itu **tidak boleh dipakai** untuk langkah ini: ketiganya masih
+> memuat WIP-2 sebagai kategori hidup (kolom one-hot pada RF, level 4 pada XGB,
+> baris embedding pada LSTM) padahal data sekarang tidak pernah menghasilkannya
+> lagi. Tidak ada satu pun yang akan gagal saat dimuat — itulah risikonya.
+> Ketiganya dilatih ulang lebih dulu sebagai bagian dari migrasi multi-kuantil
+> (`docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md`),
+> dan §19 baru dapat dijalankan di atas hasil pelatihan ulang itu. Rinciannya di
+> §0 `docs/pipeline-overview.md` dan B-9 `docs/batasan-penelitian.md`.
 
 **3. Laporkan penyebutnya.** Desember dinilai pada **49.717 dari 55.046 baris
 panel** (996 baris warm-up, 4.333 baris tanpa target). Baris yang dikeluarkan
