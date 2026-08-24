@@ -16,7 +16,7 @@ cannot estimate a 0.9 quantile at all.
 """
 
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -202,6 +202,8 @@ def run_search(
     verbose: bool = True,
     checkpoint_path: Optional[str] = None,
     resume: bool = True,
+    only: Optional[Iterable[int]] = None,
+    provenance: Optional[dict] = None,
 ) -> pd.DataFrame:
     """Score every Random Forest candidate on the search folds."""
     return model_common.run_search(
@@ -209,6 +211,7 @@ def run_search(
         search_space=SEARCH_SPACE, folds=folds, quantiles=quantiles,
         model_name=model_name, feature_cols=feature_cols, verbose=verbose,
         checkpoint_path=checkpoint_path, resume=resume,
+        only=only, provenance=provenance,
     )
 
 

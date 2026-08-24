@@ -299,11 +299,12 @@ class TestMakeFitPredict(unittest.TestCase):
         original = xgb.build_estimator
 
         def spy(params, n_estimators, enable_categorical=False,
-                early_stopping_rounds=None, quantiles=xgb.QUANTILES):
+                early_stopping_rounds=None, quantiles=xgb.QUANTILES,
+                device=xgb.DEFAULT_DEVICE):
             model = original(params, n_estimators,
                              enable_categorical=enable_categorical,
                              early_stopping_rounds=early_stopping_rounds,
-                             quantiles=quantiles)
+                             quantiles=quantiles, device=device)
             real_fit = model.fit
 
             def fit(X, y, **kwargs):
@@ -330,12 +331,13 @@ class TestMakeFitPredict(unittest.TestCase):
         original = xgb.build_estimator
 
         def spy(params, n_estimators, enable_categorical=False,
-                early_stopping_rounds=None, quantiles=xgb.QUANTILES):
+                early_stopping_rounds=None, quantiles=xgb.QUANTILES,
+                device=xgb.DEFAULT_DEVICE):
             rounds.append(n_estimators)
             return original(params, n_estimators,
                             enable_categorical=enable_categorical,
                             early_stopping_rounds=early_stopping_rounds,
-                            quantiles=quantiles)
+                            quantiles=quantiles, device=device)
 
         xgb.build_estimator = spy
         try:
@@ -551,5 +553,92 @@ class TestSearchWrappers(unittest.TestCase):
             self.assertIn(key, results.columns)
 
 
+class TestDevice(unittest.TestCase):
+    """Where the booster runs is a parameter, not a hardcoded constant.
+
+    The 19-point grid makes XGBoost the most expensive of the three models
+    (T-14: `one_output_per_tree` builds 19 trees per boosting round), so the
+    search may have to run on a rented GPU. What matters for the methodology
+    is that the device is *recorded* — a candidate chosen on one device and
+    refitted on another was not selected under the arithmetic that produced it.
+    """
+
+    def _params(self, **overrides):
+        return {**xgb.DEFAULT_PARAMS, "max_depth": 3, "learning_rate": 0.3,
+                "min_child_weight": 1, "random_state": 0, **overrides}
+
+    def test_the_booster_runs_on_cpu_unless_told_otherwise(self):
+        estimator = xgb.build_estimator(self._params(), n_estimators=5)
+        self.assertEqual(estimator.get_params()["device"], "cpu")
+
+    def test_the_requested_device_reaches_the_estimator(self):
+        estimator = xgb.build_estimator(self._params(), n_estimators=5,
+                                        device="cuda")
+        self.assertEqual(estimator.get_params()["device"], "cuda")
+
+    def test_an_unknown_device_reaches_the_booster_through_fit_predict(self):
+        """Forwarding is proved by the library rejecting it, not by a mock."""
+        fit_predict = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                           quantiles=(0.5,), tail_days=14,
+                                           max_rounds=5, device="bukan-device")
+        frame = _dated_frame(200)
+        with self.assertRaises(Exception) as caught:
+            fit_predict(frame.iloc[:150], frame.iloc[150:])
+        self.assertIn("bukan-device", str(caught.exception))
+
+    def test_run_search_forwards_the_device_to_every_candidate(self):
+        """run_search records a rejected candidate rather than raising, so a
+        device it cannot honour shows up as an error on every row."""
+        rows = []
+        for i, date in enumerate(pd.date_range("2024-10-01", periods=460, freq="D")):
+            rows.append({
+                "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
+                "Tanggal": date,
+                "target_lead_time_cumulative": float(i % 7),
+                "target_lead_time_cumulative_capped": float(i % 7),
+                "lead_time_days": 3.0, "lag_1": float(i % 5),
+                "roll_mean_7": float(i % 4), "demand_segment": "smooth",
+                "is_delivery_day": bool(i % 2),
+                "feat_a": float(i), "feat_b": float(i % 3), "cat_idx": i % 3,
+            })
+        panel = modeling_prep.assign_folds(pd.DataFrame(rows))
+        candidates = [{**xgb.DEFAULT_PARAMS, "max_depth": 3, "min_child_weight": 1}]
+        results = xgb.run_search(panel, candidates, folds=(1,),
+                                 feature_cols=FEATURES, verbose=False,
+                                 device="bukan-device")
+        self.assertTrue(results["pinball"].isna().all())
+        self.assertIn("bukan-device", str(results["error"].iloc[0]))
+
+    def test_the_bundle_records_the_device_it_was_fitted_on(self):
+        bundle = xgb.fit_final(_dated_frame(400), self._params(),
+                               feature_cols=FEATURES, max_rounds=40,
+                               tail_days=14, idx_cols=["cat_idx"])
+        self.assertEqual(bundle["device"], "cpu")
+        self.assertEqual(bundle["model"].get_params()["device"], "cpu")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRunSearchForwarding(unittest.TestCase):
+    """Notebook memanggil pembungkus per model, bukan model_common. Kalau
+    `only` berhenti di sini, pemecahan shard tidak pernah sampai ke mesinnya."""
+
+    def test_only_and_provenance_reach_model_common(self):
+        from unittest import mock
+        with mock.patch.object(xgb.model_common, "run_search",
+                               return_value=pd.DataFrame()) as spy:
+            xgb.run_search(pd.DataFrame(), [{"a": 1}], only=[3, 4],
+                           provenance={"device": "cuda:0"})
+        self.assertEqual(spy.call_args.kwargs["only"], [3, 4])
+        self.assertEqual(spy.call_args.kwargs["provenance"],
+                         {"device": "cuda:0"})
+
+    def test_the_defaults_stay_none(self):
+        from unittest import mock
+        with mock.patch.object(xgb.model_common, "run_search",
+                               return_value=pd.DataFrame()) as spy:
+            xgb.run_search(pd.DataFrame(), [{"a": 1}])
+        self.assertIsNone(spy.call_args.kwargs["only"])
+        self.assertIsNone(spy.call_args.kwargs["provenance"])
