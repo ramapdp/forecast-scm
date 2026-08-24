@@ -35,6 +35,30 @@ salah. Baris berlabel `Barang Semi FG (WIP-2)` di `dataset.csv` **bukan** kegaga
 konfirmasi 2026-08-22 reklasifikasi ditangani di lapisan normalisasi, bukan di data sumber
 (lihat B-9 di `batasan-penelitian.md`).
 
+### Verifikasi artefak 24 Agustus 2026 — jangan menyimpulkan dari timestamp
+
+Artefak di `dataset/model_ready/` (`featured`, `model_input`, `train`, `test`,
+`category_mapping.json`) semuanya bertanggal **23 Agustus 2026 22:52**, sedangkan commit
+`b7be7dc` yang mereklasifikasi sepuluh SKU WIP-2 bertanggal **24 Agustus 2026 00:03**.
+Artefak tampak **lebih tua** dari commit-nya. Itu artefak dari urutan kerja — pipeline
+dijalankan lebih dulu, commit menyusul — **bukan** tanda artefak ketinggalan.
+
+Sudah diverifikasi dari isinya, bukan dari timestamp:
+
+- `featured`, `model_input`, `train` → 7 kategori, tanpa WIP-2; `test` → 6 (tanpa RM);
+  nol SKU multi-kategori di keempatnya.
+- Kesepuluh SKU (`FGS-00001/2/3/4/5/12/13/18/49/53`, 244.745 baris di `model_input`)
+  seluruhnya `Barang Jadi (FG)`, termasuk 17.344 baris Januari–Februari 2024 — titik
+  paling rawan, karena di situlah label WIP-2 dulu berada.
+
+**Timestamp bukan bukti kesegaran di repo ini.** Verifikasi isi
+(`verify_category_consistency` + nilai unik kategori di parquet), jangan `ls -l`.
+
+`category_mapping.json` masih memuat `"Barang Semi FG (WIP-2)": 4` dan itu **benar**:
+`build_category_mapping()` sengaja mempertahankan index nilai yang sudah pensiun
+(`modeling_prep.py`, "Retired values keep their index") supaya penomoran tidak bergeser dan
+membatalkan model yang sudah dilatih. Nol baris memakai index 4 — slot itu kosong, bukan sisa.
+
 ---
 
 ## A. Akan gagal keras atau salah diam-diam — perbaiki **sebelum** pipeline dijalankan

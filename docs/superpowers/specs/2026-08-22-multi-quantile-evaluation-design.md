@@ -138,7 +138,7 @@ pencarian hyperparameter yang sudah diperluas ke multi-kuantil.
 |---|---|---|
 | Random Forest | **Tidak perlu retrain.** `quantile_forest` membaca kuantil berapa pun dari forest yang sama — pencarian hyperparameter yang sudah ada tetap valid, hanya evaluasi walk-forward perlu diulang untuk membaca seluruh titik `QUANTILE_SET` (19 di Tahap A, 5-7 di Tahap B) alih-alih 1 | Murah |
 | XGBoost | `quantile_alpha` diubah dari skalar `0.9` menjadi daftar `QUANTILE_SET`; pencarian **30** kandidat perlu diulang dengan objective multi-kuantil | Sedang–tinggi |
-| LSTM | Head output diperluas dari 1 neuron menjadi `len(QUANTILE_SET)` neuron, loss = jumlah pinball loss lintas kuantil; pencarian hyperparameter (12 kandidat, ruang 144) perlu diulang pada arsitektur baru | Tinggi |
+| LSTM | Head output diperluas dari 1 neuron menjadi `len(QUANTILE_SET)` neuron, loss = jumlah pinball loss lintas kuantil; pencarian hyperparameter (**30 kandidat**, ruang 144, + 3 seed pada pemenang — lihat koreksi anggaran di bawah) perlu diulang pada arsitektur baru | Tinggi |
 
 > **Koreksi 2026-08-24.** Baris XGBoost semula menyebut "18 kandidat" — itu
 > anggaran Random Forest, bukan XGBoost. Anggaran XGBoost yang terukur adalah 30
@@ -152,6 +152,16 @@ pencarian hyperparameter yang sudah diperluas ke multi-kuantil.
 > pencariannya tidak diulang — tetapi walk-forward dan fit final-nya **tetap**
 > dijalankan ulang, karena bundle-nya basi akibat reclass kategori WIP-2
 > 2026-08-22. Itu prasyarat yang berdiri sendiri, bukan konsekuensi migrasi ini.
+
+**Koreksi 2026-08-24 (pemilik proyek) atas paragraf terakhir kutipan di atas.**
+Kutipan dipertahankan sebagai jejak keputusan, tetapi kalimat "pencariannya
+tidak diulang" **sudah tidak berlaku**: pencarian RF ikut dijalankan ulang, 18
+kandidat, pada data pasca-reclass dan kriteria K1. Pembalikannya memang bukan
+konsekuensi migrasi ini — persis seperti yang ditulis paragraf itu tentang
+bundle — melainkan konsekuensi reclass WIP-2 yang sama: `rf_best_params.json`
+dipilih 2026-08-18, di atas data pra-reclass. Lihat §Part 2
+`2026-08-18-random-forest-modeling-design.md` dan §"Langkah 1–3"
+`2026-08-22-model-comparison-refactor-migration.md`.
 
 ## Testing
 
@@ -208,6 +218,19 @@ pencarian hyperparameter yang sudah diperluas ke multi-kuantil.
      tidak diturunkan ulang dari formula anggaran §2.2 spec LSTM;
      konsekuensinya plafon 8 jam kemungkinan terlampaui, dicatat sebagai ongkos
      terukur di `docs/hasil-modeling-lstm.md`.
+
+     > **Direvisi 2026-08-24 (pemilik proyek, sesudah T-7).** Angka LSTM di
+     > butir ini — 12 kandidat — **tidak lagi berlaku**. Anggaran LSTM
+     > dinaikkan ke **30 kandidat** (setara XGBoost), ruang pencariannya
+     > dipulihkan ke 144 di kode, dan konfigurasi terbaiknya diulang pada 3
+     > seed. Yang berubah bukan posisi soal ongkos — itu tetap dikesampingkan —
+     > melainkan penilaian bahwa ketimpangan anggaran tidak boleh dipertahankan
+     > ketika ketiga model dicari ulang dari nol, karena kekalahan LSTM di K1
+     > menjadi tidak dapat diatribusikan antara arsitektur dan kedangkalan
+     > pencarian. Uraian lengkapnya di §2.2
+     > `2026-08-19-lstm-modeling-design.md` dan §21
+     > `docs/metodologi-pemodelan-dan-pemilihan-model.md`. Anggaran XGBoost (30)
+     > dan RF (18) tidak berubah.
    - **Peralihan ke Tahap B memicu pengulangan pencarian dengan grid yang
      berbeda** (5-7 titik dari critical ratio, bukan 19 titik merata).
      Apakah pencarian Tahap B dimulai dari nol, atau bisa memanfaatkan

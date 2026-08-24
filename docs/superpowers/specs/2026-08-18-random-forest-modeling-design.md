@@ -9,12 +9,19 @@ checklist di
 (butir 3). Walk-forward sekarang membaca **seluruh titik `QUANTILE_SET`** dari
 forest yang sama, bukan hanya 0,9.
 
-**Part 2 (Hyperparameter search) tidak berubah sama sekali.** Ini bukan
-kelonggaran, melainkan sifat estimatornya: quantile regression forest menyimpan
-distribusi empiris penuh di tiap daun (Meinshausen 2006), jadi kuantil berapa
-pun dibaca dari forest yang sudah ada tanpa fit ulang. Pemenang pencarian di
-`dataset/model_ready/rf_best_params.json` dan ke-18 baris di
-`rf_search_results.csv` tetap berlaku apa adanya, dan tidak dijalankan ulang.
+**Part 2 (Hyperparameter search) dijalankan ulang — keputusan dibalik
+2026-08-24 (pemilik proyek).** Sifat estimatornya tidak berubah: quantile
+regression forest menyimpan distribusi empiris penuh di tiap daun (Meinshausen
+2006), jadi kuantil berapa pun dibaca dari forest yang sudah ada tanpa fit
+ulang, dan atas dasar itu revisi sebelumnya memutuskan pencarian tidak diulang.
+Yang membalik keputusan bukan migrasi multi-kuantilnya, melainkan **data**:
+`rf_best_params.json` dipilih 2026-08-18, sebelum reclass WIP-2 masuk ke
+artefak (dibangun ulang 2026-08-23 22:52). Kebasian yang sama sudah diterima
+sebagai alasan membuang bundle terlatih; mempertahankan hyperparameter yang
+dipilih di atas data itu sementara model yang di-fit di atasnya dibuang bukan
+posisi yang bertahan kalau dinyatakan terus terang. Ruang dan anggarannya tidak
+berubah (18 kandidat, `SEARCH_FOLDS = (3, 5)`); yang berubah hanya data dan
+kriterianya (K1). Uraian lengkap di Part 2.
 
 **Yang tetap perlu di-fit ulang, dan alasannya berbeda.** Walk-forward RF dan
 bundle final `models/random_forest_q90.joblib` tetap harus dibangun ulang —
@@ -323,15 +330,31 @@ Pooled rather than averaged so folds contribute in proportion to their row
 count. Per-segment pinball is recorded for every candidate but does not decide
 the winner.
 
-**Not re-run under the multi-quantile migration (2026-08-24).** This search
-stays exactly as it was measured, at pinball@0.9. Re-running it would be
-spending 18 fits to answer a question the estimator makes moot: the winning
-hyperparameters shape the *leaves*, and every point in `QUANTILE_SET` is read
-from those same leaves. The consequence is stated rather than hidden — RF's
-hyperparameters were selected at one quantile point while XGBoost's and the
-LSTM's are selected on the multi-quantile criterion, which is an asymmetry that
-belongs in the head-to-head section of the results documents alongside the
-existing search-budget asymmetry.
+**Re-run under the multi-quantile migration (decision reversed 2026-08-24,
+project owner).** An earlier revision of this paragraph kept the search as
+measured at pinball@0.9, on the argument that re-running it would spend 18 fits
+to answer a question the estimator makes moot: the winning hyperparameters
+shape the *leaves*, and every point in `QUANTILE_SET` is read from those same
+leaves. That argument is retained here because it is still the reason the
+re-run is expected to be cheap in information — but it was overturned on a
+point it never addressed.
+
+`rf_best_params.json` was selected on 2026-08-18, **before** the WIP-2
+reclassification landed in the artefacts (rebuilt 2026-08-23 22:52). The same
+staleness is already accepted as sufficient reason to discard the trained
+bundle; keeping the hyperparameters chosen on that data while discarding the
+model fitted on it is not a position that survives being stated plainly. The
+leaf argument also covers the criterion only in part: identical leaves do not
+guarantee that ranking 18 candidates by K1 reproduces the ranking by
+pinball@0.9.
+
+So the search **is** re-run, at the same budget of 18 candidates, on the
+current data and the K1 criterion. This makes T-7's premise true as written —
+all three models are searched from scratch under one criterion — and removes
+the criterion asymmetry that the previous revision consigned to the
+limitations section. Measured cost of the reversal: ~3.9 hours (36 fits), the
+only search of the three that can be re-run without changing the scale of
+Phase 3.
 
 The winner is then refit and run across **all five folds**, and that is the
 reported result. Reporting the search folds' own scores would be optimistic

@@ -230,11 +230,15 @@ recording the owner confirmation and date, matching the comment style of
 
 ## Schema and volume impact
 
-- `FEATURED_COLUMNS` gains `segment_id` → **64 columns** for
-  `featured`/`train`/`test`; `model_input.parquet` → 76.
-- `featured.parquet` drops the 19,304 fabricated rows to **≈1,503,564**. The
-  exact figure must be re-measured during implementation: removing closed days
-  can push a pair below `MIN_HISTORY_DAYS`, cascading a few more removals.
+- `FEATURED_COLUMNS` gains `segment_id` → **68 columns** for
+  `featured`/`train`/`test`; `model_input.parquet` → 82. (Measured on the
+  built artefacts 2026-08-24. The design-time projection was 64/76; the extra
+  columns arrived with features added after this spec was written.)
+- `featured.parquet` drops the 19,304 fabricated rows to **1,502,522**
+  (measured on the built artefact 2026-08-24; the design-time projection was
+  ≈1,503,564). The 1,042-row gap is the predicted cascade: removing closed days
+  pushes a few pairs below `MIN_HISTORY_DAYS`, taking their remaining rows with
+  them.
 - The December test split is unchanged (55,046 rows) — no closure interval
   overlaps December 2025.
 

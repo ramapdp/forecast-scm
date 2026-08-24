@@ -22,9 +22,15 @@ import pandas as pd
 from xgboost import XGBRegressor
 from xgboost.core import XGBoostError
 
-from . import model_common, modeling_prep, purging, walk_forward
+from . import evaluation, model_common, modeling_prep, purging, walk_forward
 
+# The service level the business ships at (B-9). Kept as a scalar beside the
+# grid because it is a promise to outlets, not an evaluation choice.
 QUANTILE = 0.9
+
+# The evaluation grid, taken from evaluation.py rather than restated, so a
+# Tahap A -> Tahap B switch cannot leave this module fitting the old points.
+QUANTILES = evaluation.QUANTILE_SET_A
 
 # The last 30 days of each fold's training window, held out to choose the
 # round count. Long enough to cover a full delivery cycle and every weekday.
@@ -170,13 +176,21 @@ def build_estimator(
     n_estimators: int,
     enable_categorical: bool = False,
     early_stopping_rounds: Optional[int] = None,
-    quantile: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
 ) -> XGBRegressor:
-    """A regressor whose training objective is the metric it is judged on."""
+    """A regressor whose training objective is the metric it is judged on.
+
+    `quantile_alpha` takes the whole grid rather than one point. Every
+    quantile is then fitted inside one booster against the same loss K1
+    averages, so training objective and selection criterion stay the same
+    function — the property a squared-error model asked for a high quantile
+    afterwards does not have, and the one that would be lost by fitting
+    nineteen separate single-quantile boosters.
+    """
     kwargs = {key: params[key] for key in ESTIMATOR_KEYS if key in params}
     return XGBRegressor(
         objective="reg:quantileerror",
-        quantile_alpha=quantile,
+        quantile_alpha=np.asarray(quantiles, dtype=float),
         tree_method="hist",
         n_estimators=n_estimators,
         enable_categorical=enable_categorical,
@@ -191,10 +205,20 @@ def _target(frame: pd.DataFrame, params: dict) -> np.ndarray:
     return np.log1p(values) if params["log_target"] else values
 
 
+def _as_matrix(prediction, n_rows: int, n_quantiles: int) -> np.ndarray:
+    """XGBoost drops the second axis on a one-point grid; this puts it back.
+
+    Tahap B can hand out a grid of one (evaluation.quantile_set_b() dedupes),
+    and every consumer downstream indexes columns. A silently 1-D return there
+    would fail far from its cause.
+    """
+    return np.asarray(prediction, dtype=float).reshape(n_rows, n_quantiles)
+
+
 def make_fit_predict(
     params: Optional[dict] = None,
     feature_cols: Optional[list] = None,
-    quantile: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
     tail_days: int = ES_TAIL_DAYS,
     early_stopping_rounds: int = EARLY_STOPPING_ROUNDS,
     max_rounds: int = MAX_ROUNDS,
@@ -216,9 +240,18 @@ def make_fit_predict(
     Round counts are recorded on the returned callable rather than returned,
     because `walk_forward` accepts predictions and nothing else — and the
     spread of round counts across folds is worth reporting.
+
+    Early stopping now watches the mean quantile loss across the whole grid
+    rather than the loss at 0.9. One round count still serves every point,
+    which is a real constraint: a booster cannot stop at round 300 for τ=0.05
+    and round 700 for τ=0.95. The alternative — nineteen independently stopped
+    boosters — buys per-point round counts at the price of nineteen fits and a
+    guaranteed loss of the shared structure, and this project pays for the
+    shared structure.
     """
     params = {**DEFAULT_PARAMS, **(params or {})}
     feature_cols = feature_cols or modeling_prep.FEATURE_COLS
+    quantiles = tuple(quantiles)
 
     def fit_predict(train: pd.DataFrame, valid: pd.DataFrame) -> np.ndarray:
         model_common.assert_no_nan(train, feature_cols)
@@ -229,7 +262,7 @@ def make_fit_predict(
                                      params["encoding"], idx_cols=idx_cols)
         probe = build_estimator(params, max_rounds, enable_categorical=enable,
                                 early_stopping_rounds=early_stopping_rounds,
-                                quantile=quantile)
+                                quantiles=quantiles)
         probe.fit(fit_X, _target(fit_rows, params),
                   eval_set=[(es_X, _target(es_rows, params))], verbose=False)
         best_iteration = int(probe.best_iteration) + 1
@@ -238,14 +271,17 @@ def make_fit_predict(
         train_X, valid_X, enable = encode(train[feature_cols], valid[feature_cols],
                                           params["encoding"], idx_cols=idx_cols)
         model = build_estimator(params, best_iteration, enable_categorical=enable,
-                                quantile=quantile)
+                                quantiles=quantiles)
         model.fit(train_X, _target(train, params), verbose=False)
 
-        prediction = model.predict(valid_X)
+        prediction = _as_matrix(model.predict(valid_X), len(valid_X),
+                                len(quantiles))
         if params["log_target"]:
             prediction = modeling_prep.inverse_log_target(prediction)
-        # A negative shipment quantity is not a thing.
-        return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
+        # A negative shipment quantity is not a thing. No sort: crossing is
+        # measured by evaluation.crossing_rate(), and sorting here would drive
+        # that measurement to zero without fixing anything.
+        return np.clip(prediction, 0.0, None)
 
     fit_predict.best_iterations = []
     return fit_predict
@@ -262,6 +298,7 @@ def fit_final(
     df: pd.DataFrame,
     params: dict,
     feature_cols: Optional[list] = None,
+    quantiles: tuple = QUANTILES,
     tail_days: int = ES_TAIL_DAYS,
     early_stopping_rounds: int = EARLY_STOPPING_ROUNDS,
     max_rounds: int = MAX_ROUNDS,
@@ -284,6 +321,7 @@ def fit_final(
     """
     params = {**DEFAULT_PARAMS, **params}
     feature_cols = feature_cols or modeling_prep.FEATURE_COLS
+    quantiles = tuple(quantiles)
 
     frame = walk_forward.eligible_rows(df, date_col=date_col, test_start=test_start)
     frame = frame[purging.lookahead_safe_mask(frame, test_start, date_col=date_col)]
@@ -294,14 +332,16 @@ def fit_final(
     fit_X, es_X, enable = encode(fit_rows[feature_cols], es_rows[feature_cols],
                                  params["encoding"], idx_cols=idx_cols)
     probe = build_estimator(params, max_rounds, enable_categorical=enable,
-                            early_stopping_rounds=early_stopping_rounds)
+                            early_stopping_rounds=early_stopping_rounds,
+                            quantiles=quantiles)
     probe.fit(fit_X, _target(fit_rows, params),
               eval_set=[(es_X, _target(es_rows, params))], verbose=False)
     best_iteration = int(probe.best_iteration) + 1
 
     train_X, _, enable = encode(frame[feature_cols], frame[feature_cols],
                                 params["encoding"], idx_cols=idx_cols)
-    model = build_estimator(params, best_iteration, enable_categorical=enable)
+    model = build_estimator(params, best_iteration, enable_categorical=enable,
+                            quantiles=quantiles)
     model.fit(train_X, _target(frame, params), verbose=False)
 
     return {
@@ -314,21 +354,27 @@ def fit_final(
         "encoding": params["encoding"],
         "log_target": params["log_target"],
         "best_iteration": best_iteration,
-        "quantile": QUANTILE,
+        "quantiles": quantiles,
         "n_train": int(len(frame)),
     }
 
 
 def predict_bundle(bundle: dict, frame: pd.DataFrame) -> np.ndarray:
-    """Predict with a fitted bundle, forcing the recorded column order."""
+    """Predict with a fitted bundle, forcing the recorded column order.
+
+    The grid comes from the bundle rather than this module's constant: the
+    booster's output columns are fixed at fit time, and reading them against a
+    grid that has since moved would relabel every column silently.
+    """
     features, _ = apply_encoding(frame[bundle["feature_cols"]],
                                  bundle["encoding"], bundle["columns"],
                                  bundle["categories"],
                                  idx_cols=bundle["idx_cols"])
-    prediction = bundle["model"].predict(features)
+    prediction = _as_matrix(bundle["model"].predict(features), len(features),
+                            len(bundle["quantiles"]))
     if bundle["log_target"]:
         prediction = modeling_prep.inverse_log_target(prediction)
-    return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
+    return np.clip(prediction, 0.0, None)
 
 
 def save_bundle(bundle: dict, path: str = MODEL_FILE) -> None:
@@ -377,7 +423,7 @@ def run_search(
     df: pd.DataFrame,
     candidates: list,
     folds: tuple = SEARCH_FOLDS,
-    alpha: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
     model_name: str = "xgboost",
     feature_cols: Optional[list] = None,
     verbose: bool = True,
@@ -392,7 +438,7 @@ def run_search(
     """
     return model_common.run_search(
         df, candidates, make_fit_predict=make_fit_predict,
-        search_space=SEARCH_SPACE, folds=folds, alpha=alpha,
+        search_space=SEARCH_SPACE, folds=folds, quantiles=quantiles,
         model_name=model_name, feature_cols=feature_cols, verbose=verbose,
         checkpoint_path=checkpoint_path, resume=resume,
         catch=(MemoryError, ValueError, XGBoostError),

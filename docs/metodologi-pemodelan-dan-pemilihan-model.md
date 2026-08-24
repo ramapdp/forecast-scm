@@ -943,6 +943,17 @@ pesimistis, bukan yang terukur di satu konfigurasi.
 Baris **kandidat** dan **ruang pencarian** adalah asimetri anggaran yang harus
 disebut di setiap pembahasan hasil: perbandingannya belum dinetralkan.
 
+> **Dinetralkan pada run multi-kuantil (keputusan pemilik proyek, 2026-08-24).**
+> Tabel di atas mendeskripsikan run kuantil-0,9 tunggal dan dipertahankan apa
+> adanya sampai butir 0d menuliskannya ulang dari angka baru. Untuk run
+> multi-kuantil, ketiga baris yang menjadi sumber asimetri berubah: kandidat
+> LSTM 12 → **30** (setara XGBoost), ruang pencarian LSTM 48 → **144** (dua
+> dimensi kapasitas dikembalikan), dan LSTM mendapat **pengulangan 3 seed** pada
+> konfigurasi terbaiknya sehingga baris "bergantung seed acak" tidak lagi
+> berdiri tanpa angka. Anggaran RF (18) dan XGBoost (30) tidak berubah. Alasan
+> dan konsekuensinya di §21 dan di §2.2
+> `docs/superpowers/specs/2026-08-19-lstm-modeling-design.md`.
+
 ---
 
 # Bagian III — Strategi Komparasi dan Pemilihan Model
@@ -1498,6 +1509,16 @@ Bagian ini ada supaya klaim di laporan tidak melampaui apa yang ditopang data.
   dataset.
 - ❌ "LSTM lebih buruk dari XGBoost." Tanpa pengulangan seed, "sedikit lebih
   buruk" tidak bisa dipisahkan dari "dapat seed yang kurang beruntung".
+
+> **Dua butir di atas berubah pada run multi-kuantil (2026-08-24).** Keduanya
+> ditulis untuk run kuantil-0,9 tunggal dan tetap berlaku untuk angka-angka run
+> itu. Untuk run multi-kuantil, penyetaraan anggaran (LSTM 30 kandidat, ruang
+> 144, 3 seed pada pemenang — §21) mencabut tiga dari empat alasan di butir
+> pertama dan seluruh alasan di butir kedua. Yang **tetap** berlaku dan tidak
+> boleh hilang saat §20 ditulis ulang: satu dataset, satu domain, satu periode.
+> Penyetaraan anggaran membuat "LSTM kalah karena arsitekturnya" menjadi klaim
+> yang bisa dipertahankan pada dataset ini — bukan menjadi klaim tentang
+> arsitektur LSTM secara umum.
 - ❌ Klaim apa pun berbasis MAE terhadap baseline (§15.3).
 - ❌ Klaim yang mengandaikan sumbu waktu pemesanan (`docs/batasan-penelitian.md`
   B-1, B-2, B-3).
@@ -1529,8 +1550,8 @@ depan, dan butir 1 tidak boleh dijalankan sebelum keempatnya selesai.
 | # | Pekerjaan | Status |
 |---|---|---|
 | **0a** | **Revisi spec RF/XGB/LSTM + §15/§17/§19/§21 ke kriteria multi-kuantil** | ✅ selesai 2026-08-24 |
-| **0b** | **Implementasi multi-kuantil di `evaluation.py`, `walk_forward.py`, `model_common.py`, `model_xgboost.py`, `model_lstm.py`, `model_random_forest.py` + ketiga notebook** | ⬜ belum dimulai — kode saat ini masih `alpha: float` skalar dari ujung ke ujung |
-| **0c** | **Menjalankan ulang ketiga notebook** — XGBoost dan LSTM dengan pencarian hyperparameter penuh; Random Forest hanya walk-forward + fit final (pencarian dipakai ulang), tetapi tetap harus di-fit ulang karena bundle-nya basi akibat reclass WIP-2 | ⬜ setelah #0b — komputasi berat, berjam-jam |
+| **0b** | **Implementasi multi-kuantil di `evaluation.py`, `walk_forward.py`, `model_common.py`, `model_xgboost.py`, `model_lstm.py`, `model_random_forest.py` + ketiga notebook** | ✅ selesai 2026-08-24 — kontrak `fit_predict` kini `(n, len(QUANTILE_SET))`, 739 tes lolos, notebook diubah tetapi **belum dijalankan** |
+| **0c** | **Menjalankan ulang ketiga notebook** — ketiganya dengan pencarian hyperparameter penuh pada data pasca-reclass: Random Forest (18 kandidat), XGBoost (30 kandidat), dan LSTM (**30 kandidat, ruang 144, + 3 seed pada pemenang**). Pencarian RF semula hendak dipakai ulang; keputusan itu dibalik 2026-08-24 karena `rf_best_params.json` dipilih di atas data pra-reclass WIP-2 — kebasian yang sama yang sudah dipakai sebagai alasan membuang bundle-nya | ⬜ setelah #0b — komputasi berat, berjam-jam, menunggu izin terpisah. Prosedurnya (termasuk langkah 0 yang sengaja gagal) di `2026-08-22-model-comparison-refactor-migration.md` §"Prosedur Fase 3" |
 | **0d** | **Menulis ulang `docs/hasil-modeling-{rf,xgb,lstm}.md` dari nol, lalu §16 dan §18** | ⬜ setelah #0c |
 | 1 | Membekukan usulan §18 dalam sebuah commit | ⬜ menunggu #0d, lalu persetujuan |
 | 2 | Menjalankan protokol §19 — buka Desember sekali | ⬜ setelah #1 |
@@ -1540,6 +1561,38 @@ depan, dan butir 1 tidak boleh dijalankan sebelum keempatnya selesai.
 | 5 | **SHAP untuk pemenang saja** — menjawab "kenapa model meyakini ini" | ⬜ direncanakan di spec pemodelan |
 | 6 | Mengisi `tanggal_buka` Cikarang Pusat di `outlet_closures.csv` + memperbarui `RELOCATION_DATES` | ⬜ menunggu pemilik data |
 | 7 | Memperluas `calendar_features.py` ke 2026 sebelum data periode baru masuk | ⬜ |
+
+**Penyetaraan anggaran pencarian (keputusan pemilik proyek, 2026-08-24,
+sesudah T-7).** Butir 0b dan 0c dijalankan dengan anggaran pencarian LSTM yang
+dinaikkan: **30 kandidat** (dari 12, setara XGBoost), **ruang 144** (dua dimensi
+kapasitas — `num_layers` dan `hidden_size` — dikembalikan ke `SEARCH_SPACE`),
+dan **3 seed** pada konfigurasi terbaik. Anggaran RF (18) dan XGBoost (30) tidak
+berubah.
+
+Alasannya adalah validitas atribusi, bukan ongkos. Ketimpangan anggaran selama
+ini tercatat sebagai keterbatasan yang dibaca bersama hasil (§14, §20) —
+posisi yang bisa diterima ketika anggaran itu warisan run sebelumnya. Begitu
+**ketiga model dicari ulang penuh dari nol** di butir 0c, ekonominya berubah:
+ketimpangan itu tidak lagi diwarisi, melainkan dipilih ulang, dan mempertahankan
+LSTM di 12 draw berarti secara sadar memilih menghasilkan angka yang tidak dapat
+diatribusikan. Tanpa penyetaraan ini, kalau LSTM kalah di K1 kita tidak bisa
+membedakan apakah **arsitekturnya memang kurang cocok** atau **pencariannya yang
+paling dangkal** — dan itu persis pertanyaan inti penelitian ini. Dua dimensi
+kapasitas itu dipotong 2026-08-19 karena ongkos per epoch, bukan karena terbukti
+tidak menolong; §18 dan `hasil-modeling-lstm.md` mencatatnya sebagai pertanyaan
+yang tidak pernah ditanyakan, bukan pertanyaan yang sudah dijawab. Tiga seed
+menjawab keberatan yang berdiri sendiri: LSTM satu-satunya model yang
+inisialisasinya acak, sehingga variansnya selama ini hanya bisa **diduga** dari
+selisih antar fold — yang mencampur varians seed dengan varians data.
+
+Konsekuensi ongkos dinyatakan terbuka: ini menaikkan ongkos butir 0c secara
+signifikan, karena LSTM model termahal per fit dan ketiga perubahan mengalikan
+ongkosnya sekaligus — 2,5x kandidat, head 19 keluaran, dua fit tambahan untuk
+seed kedua dan ketiga, dan sebagian draw kini boleh mengambil `num_layers=2`
+atau `hidden_size=256` yang per epoch-nya jauh lebih mahal (259 s vs 104 s pada
+pengukuran 2026-08-19). Plafon 8 jam LSTM sudah ditinggalkan sebelum ini;
+keputusan ini memperbesar kelampauannya, dan wall clock sebenarnya dicatat di
+`docs/hasil-modeling-lstm.md` sebagai ongkos terukur.
 
 Butir 0a–0d adalah migrasi evaluasi multi-kuantil
 (`docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md`).

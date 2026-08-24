@@ -22,9 +22,17 @@ import numpy as np
 import pandas as pd
 from quantile_forest import RandomForestQuantileRegressor
 
-from . import model_common, modeling_prep, purging, walk_forward
+from . import evaluation, model_common, modeling_prep, purging, walk_forward
 
+# The service level the business ships at (B-9), read by the production
+# allocation layer. Deliberately *not* the same thing as QUANTILES below: one
+# is a commitment to outlets, the other is the grid the comparison scores on,
+# and naming them alike is how the two quietly become one number again.
 QUANTILE = 0.9
+
+# The evaluation grid, taken from evaluation.py rather than restated here so a
+# Tahap A -> Tahap B switch cannot leave this module scoring the old grid.
+QUANTILES = evaluation.QUANTILE_SET_A
 
 # Leaf storage above this is refused before the fit starts. Discovering the
 # limit through the OOM killer twenty minutes into a fit is the alternative.
@@ -98,7 +106,7 @@ def build_estimator(params: dict) -> RandomForestQuantileRegressor:
 def make_fit_predict(
     params: Optional[dict] = None,
     feature_cols: Optional[list] = None,
-    quantile: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
     memory_budget: int = MEMORY_BUDGET_BYTES,
 ) -> Callable[[pd.DataFrame, pd.DataFrame], np.ndarray]:
     """The callable walk_forward.run_fold() injects.
@@ -106,9 +114,16 @@ def make_fit_predict(
     Feature selection, one-hot expansion and the target transform all live in
     here rather than in the runner, because they are model choices — the very
     things the three-way comparison is supposed to expose.
+
+    Returns `(len(valid), len(quantiles))`. The whole grid comes out of a
+    single fit: the leaves already hold the training distribution, so every
+    extra point costs one more read of a distribution that has been stored
+    anyway — which is why this model needed no re-search when the criterion
+    became multi-quantile, and the other two did.
     """
     params = {**DEFAULT_PARAMS, **(params or {})}
     feature_cols = feature_cols or modeling_prep.FEATURE_COLS
+    quantiles = tuple(quantiles)
 
     def fit_predict(train: pd.DataFrame, valid: pd.DataFrame) -> np.ndarray:
         assert_no_nan(train, feature_cols)
@@ -131,11 +146,17 @@ def make_fit_predict(
 
         model = build_estimator(params)
         model.fit(train_X.to_numpy(dtype=np.float32), y_train)
-        prediction = model.predict(valid_X.to_numpy(dtype=np.float32), quantiles=quantile)
+        # One call rather than a loop: passing the whole grid traverses the
+        # leaves once, where nineteen calls would traverse them nineteen times
+        # for identical answers.
+        prediction = model.predict(valid_X.to_numpy(dtype=np.float32),
+                                   quantiles=list(quantiles))
+        prediction = np.asarray(prediction, dtype=float).reshape(len(valid_X),
+                                                                 len(quantiles))
         if params["log_target"]:
             prediction = modeling_prep.inverse_log_target(prediction)
         # A negative shipment quantity is not a thing.
-        return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
+        return np.clip(prediction, 0.0, None)
 
     return fit_predict
 
@@ -177,7 +198,7 @@ def run_search(
     df: pd.DataFrame,
     candidates: list,
     folds: tuple = SEARCH_FOLDS,
-    alpha: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
     model_name: str = "random_forest",
     feature_cols: Optional[list] = None,
     verbose: bool = True,
@@ -187,7 +208,7 @@ def run_search(
     """Score every Random Forest candidate on the search folds."""
     return model_common.run_search(
         df, candidates, make_fit_predict=make_fit_predict,
-        search_space=SEARCH_SPACE, folds=folds, alpha=alpha,
+        search_space=SEARCH_SPACE, folds=folds, quantiles=quantiles,
         model_name=model_name, feature_cols=feature_cols, verbose=verbose,
         checkpoint_path=checkpoint_path, resume=resume,
     )
@@ -209,6 +230,7 @@ def fit_final(
     params: dict,
     feature_cols: Optional[list] = None,
     n_estimators: int = FINAL_N_ESTIMATORS,
+    quantiles: tuple = QUANTILES,
     date_col: str = modeling_prep.DATE_COL,
     test_start: pd.Timestamp = modeling_prep.TEST_START,
 ) -> dict:
@@ -249,24 +271,32 @@ def fit_final(
         "params": params,
         "feature_cols": feature_cols,
         "columns": list(train_X.columns),
-        "quantile": QUANTILE,
+        "quantiles": tuple(quantiles),
         "n_train": int(len(frame)),
     }
 
 
 def predict_bundle(bundle: dict, frame: pd.DataFrame) -> np.ndarray:
-    """Predict with a fitted bundle, forcing the recorded column order."""
+    """Predict with a fitted bundle, forcing the recorded column order.
+
+    The grid comes from the bundle, not from this module's constant. A forest
+    reloaded after the Tahap A -> Tahap B switch has to answer at the points it
+    was reported on, not at whatever grid is current.
+    """
     params = bundle["params"]
+    quantiles = tuple(bundle["quantiles"])
     features = frame[bundle["feature_cols"]]
     if params["one_hot"]:
         features, _ = expand_one_hot(features, features)
     features = features.reindex(columns=bundle["columns"], fill_value=0)
     prediction = bundle["model"].predict(
-        features.to_numpy(dtype=np.float32), quantiles=bundle["quantile"]
+        features.to_numpy(dtype=np.float32), quantiles=list(quantiles)
     )
+    prediction = np.asarray(prediction, dtype=float).reshape(len(features),
+                                                             len(quantiles))
     if params["log_target"]:
         prediction = modeling_prep.inverse_log_target(prediction)
-    return np.clip(np.asarray(prediction, dtype=float), 0.0, None)
+    return np.clip(prediction, 0.0, None)
 
 
 def save_bundle(bundle: dict, path: str = MODEL_FILE) -> None:

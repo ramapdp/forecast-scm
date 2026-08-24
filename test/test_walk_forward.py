@@ -125,27 +125,54 @@ class TestPrepareFold(unittest.TestCase):
             walk_forward.prepare_fold(_panel(), 9)
 
 
+QUANTILES = (0.1, 0.5, 0.9)
+
+
+def _matrix(values, quantiles=QUANTILES):
+    """A point forecast widened into the (n, len(quantiles)) matrix the runner
+    now requires. Deliberately identical across quantiles: these fixtures test
+    the plumbing, and a flat matrix makes a mis-indexed column visible."""
+    return np.repeat(np.asarray(values, dtype=float)[:, None], len(quantiles), axis=1)
+
+
 def _perfect(train, valid):
     """A model that cheats. Used to assert the plumbing, not the modeling:
     a perfect prediction must score MAE 0, so any non-zero MAE means the
     runner mis-aligned predictions with labels.
     """
-    return valid["target_lead_time_cumulative"].to_numpy(dtype=float)
+    return _matrix(valid["target_lead_time_cumulative"].to_numpy(dtype=float))
 
 
 def _constant(value):
     def fit_predict(train, valid):
-        return np.full(len(valid), float(value))
+        return _matrix(np.full(len(valid), float(value)))
     return fit_predict
 
 
+def _spread(train, valid):
+    """A crude but ordered quantile model: low, middle and high. Its coverage
+    must climb with tau, which a flat fixture cannot show."""
+    actual = valid["target_lead_time_cumulative"].to_numpy(dtype=float)
+    return np.column_stack([actual - 2.0, actual, actual + 2.0])
+
+
+def _overall(results, model="rf"):
+    return results[(results["model"] == model) & results["group_col"].isna()]
+
+
 class TestRunFold(unittest.TestCase):
-    def test_a_perfect_model_scores_zero_error(self):
-        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
-        overall = results[(results["model"] == "rf") & results["group_col"].isna()]
-        self.assertEqual(len(overall), 1)
-        self.assertAlmostEqual(float(overall.iloc[0]["mae"]), 0.0)
-        self.assertAlmostEqual(float(overall.iloc[0]["pinball"]), 0.0)
+    def test_a_perfect_model_scores_zero_error_at_every_quantile(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                        quantiles=QUANTILES)
+        overall = _overall(results)
+        self.assertEqual(len(overall), len(QUANTILES))
+        self.assertAlmostEqual(float(overall["mae"].max()), 0.0)
+        self.assertAlmostEqual(float(overall["pinball"].max()), 0.0)
+
+    def test_one_row_per_quantile_carrying_its_own_tau(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                        quantiles=QUANTILES)
+        self.assertEqual(sorted(_overall(results)["quantile"]), list(QUANTILES))
 
     def test_predictions_are_aligned_row_by_row_not_just_in_count(self):
         """Reversing the prediction vector must change the score. If it does
@@ -154,78 +181,230 @@ class TestRunFold(unittest.TestCase):
         def reversed_model(train, valid):
             return _perfect(train, valid)[::-1]
 
-        straight = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
-        flipped = walk_forward.run_fold(_panel(), 1, reversed_model, model_name="rf")
-        straight_mae = float(straight[straight["group_col"].isna() & (straight["model"] == "rf")].iloc[0]["mae"])
-        flipped_mae = float(flipped[flipped["group_col"].isna() & (flipped["model"] == "rf")].iloc[0]["mae"])
-        self.assertAlmostEqual(straight_mae, 0.0)
-        self.assertGreater(flipped_mae, 0.0)
+        straight = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                         quantiles=QUANTILES)
+        flipped = walk_forward.run_fold(_panel(), 1, reversed_model,
+                                        model_name="rf", quantiles=QUANTILES)
+        self.assertAlmostEqual(float(_overall(straight)["mae"].max()), 0.0)
+        self.assertGreater(float(_overall(flipped)["mae"].max()), 0.0)
 
-    def test_every_naive_baseline_is_scored_too(self):
-        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+    def test_columns_are_not_transposed(self):
+        """The one failure a flat fixture cannot catch: reading the quantile
+        columns in the wrong order still yields the right shape."""
+        def descending(train, valid):
+            return _spread(train, valid)[:, ::-1]
+
+        results = walk_forward.run_fold(_panel(), 1, descending, model_name="rf",
+                                        quantiles=QUANTILES)
+        overall = _overall(results).set_index("quantile")
+        self.assertGreater(overall.loc[0.1, "coverage"],
+                           overall.loc[0.9, "coverage"])
+
+    def test_coverage_climbs_with_the_quantile(self):
+        results = walk_forward.run_fold(_panel(), 1, _spread, model_name="rf",
+                                        quantiles=QUANTILES)
+        coverage = _overall(results).sort_values("quantile")["coverage"].tolist()
+        self.assertEqual(coverage, sorted(coverage))
+        self.assertLess(coverage[0], coverage[-1])
+
+    def test_every_naive_baseline_is_scored_at_every_quantile(self):
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                        quantiles=QUANTILES)
         self.assertEqual(
             set(results["model"].unique()),
             {"rf", "naive_zero", "naive_lag_1", "naive_roll_mean_7"},
         )
+        for model in results["model"].unique():
+            self.assertEqual(len(_overall(results, model)), len(QUANTILES), model)
 
     def test_model_and_baselines_are_scored_on_identical_row_counts(self):
-        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                        quantiles=QUANTILES)
         overall = results[results["group_col"].isna()]
         self.assertEqual(overall["n"].nunique(), 1)
 
     def test_reports_each_group_column(self):
-        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                        quantiles=QUANTILES)
         self.assertEqual(
             set(results["group_col"].dropna().unique()),
             set(walk_forward.GROUP_COLS),
         )
 
     def test_group_row_counts_sum_to_the_overall_count(self):
-        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
-        rf = results[results["model"] == "rf"]
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                        quantiles=QUANTILES)
+        rf = results[(results["model"] == "rf") & (results["quantile"] == 0.9)]
         overall = int(rf[rf["group_col"].isna()].iloc[0]["n"])
         for group_col in walk_forward.GROUP_COLS:
             grouped = rf[rf["group_col"] == group_col]
             self.assertEqual(int(grouped["n"].sum()), overall, group_col)
 
     def test_carries_every_metric_column(self):
-        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf")
-        for column in ["n", "mae", "pinball", "coverage", "fill_rate",
-                       "shortfall_units", "overstock_units"]:
+        results = walk_forward.run_fold(_panel(), 1, _perfect, model_name="rf",
+                                        quantiles=QUANTILES)
+        for column in ["n", "quantile", "mae", "pinball", "coverage", "fill_rate",
+                       "shortfall_units", "overstock_units", "crossing_rate"]:
             self.assertIn(column, results.columns)
 
     def test_rejects_a_prediction_of_the_wrong_length(self):
         def short(train, valid):
-            return np.zeros(len(valid) - 1)
+            return _matrix(np.zeros(len(valid) - 1))
 
-        with self.assertRaisesRegex(ValueError, "panjang"):
-            walk_forward.run_fold(_panel(), 1, short)
+        with self.assertRaisesRegex(ValueError, "bentuk"):
+            walk_forward.run_fold(_panel(), 1, short, quantiles=QUANTILES)
+
+    def test_rejects_a_one_dimensional_prediction(self):
+        """G7. A point forecast broadcast across 19 quantiles would score
+        badly but not visibly wrongly — the shapes still line up."""
+        def flat(train, valid):
+            return np.zeros(len(valid))
+
+        with self.assertRaisesRegex(ValueError, "bentuk"):
+            walk_forward.run_fold(_panel(), 1, flat, quantiles=QUANTILES)
+
+    def test_rejects_a_prediction_with_the_wrong_quantile_count(self):
+        def two_columns(train, valid):
+            return np.zeros((len(valid), 2))
+
+        with self.assertRaisesRegex(ValueError, "bentuk"):
+            walk_forward.run_fold(_panel(), 1, two_columns, quantiles=QUANTILES)
+
+
+class TestCrossingRate(unittest.TestCase):
+    def test_monotone_predictions_report_no_crossing(self):
+        results = walk_forward.run_fold(_panel(), 1, _spread, model_name="rf",
+                                        quantiles=QUANTILES)
+        self.assertEqual(float(_overall(results)["crossing_rate"].max()), 0.0)
+
+    def test_inverted_predictions_are_reported_not_raised(self):
+        """A composite pinball head has no monotonicity guarantee, so crossing
+        is a measurement to write down — never a crash mid-search."""
+        def crossed(train, valid):
+            return _spread(train, valid)[:, ::-1]
+
+        results = walk_forward.run_fold(_panel(), 1, crossed, model_name="rf",
+                                        quantiles=QUANTILES)
+        self.assertEqual(float(_overall(results)["crossing_rate"].max()), 1.0)
+
+    def test_baselines_cannot_cross(self):
+        results = walk_forward.run_fold(_panel(), 1, _spread, model_name="rf",
+                                        quantiles=QUANTILES)
+        baseline = _overall(results, "naive_zero")
+        self.assertEqual(float(baseline["crossing_rate"].max()), 0.0)
 
 
 class TestRunWalkForward(unittest.TestCase):
     def test_covers_every_fold(self):
-        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf")
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf",
+                                                quantiles=QUANTILES)
         self.assertEqual(sorted(results["fold_id"].unique()), list(walk_forward.FOLDS))
 
     def test_a_huge_constant_overshoots_and_a_zero_undershoots(self):
-        high = walk_forward.run_walk_forward(_panel(), _constant(1000), model_name="rf")
-        low = walk_forward.run_walk_forward(_panel(), _constant(0), model_name="rf")
-        self.assertAlmostEqual(walk_forward.pooled_metric(high, "rf", "coverage"), 1.0)
-        self.assertLess(walk_forward.pooled_metric(low, "rf", "coverage"), 1.0)
+        high = walk_forward.run_walk_forward(_panel(), _constant(1000),
+                                             model_name="rf", quantiles=QUANTILES)
+        low = walk_forward.run_walk_forward(_panel(), _constant(0),
+                                            model_name="rf", quantiles=QUANTILES)
+        self.assertAlmostEqual(
+            walk_forward.pooled_metric(high, "rf", "coverage", quantile=0.9), 1.0)
+        self.assertLess(
+            walk_forward.pooled_metric(low, "rf", "coverage", quantile=0.9), 1.0)
 
     def test_pooled_metric_weights_folds_by_row_count(self):
-        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf")
-        self.assertAlmostEqual(walk_forward.pooled_metric(results, "rf", "pinball"), 0.0)
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf",
+                                                quantiles=QUANTILES)
+        self.assertAlmostEqual(
+            walk_forward.pooled_metric(results, "rf", "pinball", quantile=0.9), 0.0)
 
     def test_pooled_metric_can_be_restricted_to_the_search_folds(self):
-        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf")
-        value = walk_forward.pooled_metric(results, "rf", "pinball", folds=(3, 5))
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf",
+                                                quantiles=QUANTILES)
+        value = walk_forward.pooled_metric(results, "rf", "pinball", folds=(3, 5),
+                                           quantile=0.9)
         self.assertAlmostEqual(value, 0.0)
 
+    def test_pooled_metric_isolates_one_quantile(self):
+        """Without the filter this would silently average three quantiles'
+        coverage into a number that describes none of them."""
+        results = walk_forward.run_walk_forward(_panel(), _spread, model_name="rf",
+                                                quantiles=QUANTILES)
+        low = walk_forward.pooled_metric(results, "rf", "coverage", quantile=0.1)
+        high = walk_forward.pooled_metric(results, "rf", "coverage", quantile=0.9)
+        self.assertLess(low, high)
+
+    def test_pooled_metric_refuses_a_meaningless_cross_quantile_average(self):
+        """Coverage averaged over 0.1 and 0.9 describes neither, and would look
+        perfectly reasonable in a results table."""
+        results = walk_forward.run_walk_forward(_panel(), _spread, model_name="rf",
+                                                quantiles=QUANTILES)
+        with self.assertRaisesRegex(ValueError, "lintas kuantil"):
+            walk_forward.pooled_metric(results, "rf", "coverage")
+
+    def test_pinball_and_crossing_rate_may_be_averaged_across_the_grid(self):
+        results = walk_forward.run_walk_forward(_panel(), _spread, model_name="rf",
+                                                quantiles=QUANTILES)
+        self.assertFalse(np.isnan(walk_forward.pooled_metric(results, "rf", "pinball")))
+        self.assertFalse(
+            np.isnan(walk_forward.pooled_metric(results, "rf", "crossing_rate")))
+
     def test_is_deterministic_for_a_deterministic_model(self):
-        first = walk_forward.run_walk_forward(_panel(), _constant(5), model_name="rf")
-        second = walk_forward.run_walk_forward(_panel(), _constant(5), model_name="rf")
+        first = walk_forward.run_walk_forward(_panel(), _constant(5),
+                                              model_name="rf", quantiles=QUANTILES)
+        second = walk_forward.run_walk_forward(_panel(), _constant(5),
+                                               model_name="rf", quantiles=QUANTILES)
         pd.testing.assert_frame_equal(first, second)
+
+
+class TestPooledK1(unittest.TestCase):
+    def test_k1_is_the_mean_of_the_per_quantile_pooled_pinball(self):
+        results = walk_forward.run_walk_forward(_panel(), _spread, model_name="rf",
+                                                quantiles=QUANTILES)
+        per_quantile = [
+            walk_forward.pooled_metric(results, "rf", "pinball", quantile=tau)
+            for tau in QUANTILES
+        ]
+        self.assertAlmostEqual(walk_forward.pooled_k1(results, "rf"),
+                               sum(per_quantile) / len(per_quantile))
+
+    def test_a_perfect_model_has_k1_zero(self):
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf",
+                                                quantiles=QUANTILES)
+        self.assertAlmostEqual(walk_forward.pooled_k1(results, "rf"), 0.0)
+
+    def test_k1_can_be_restricted_to_a_subset_of_folds(self):
+        """A model that only misbehaves on fold 5 must look fine when fold 5
+        is excluded — otherwise the fold filter is not filtering."""
+        def only_bad_on_fold_5(train, valid):
+            inflated = 100.0 if int(valid["fold_id"].iloc[0]) == 5 else 0.0
+            return _matrix(np.full(len(valid), inflated))
+
+        results = walk_forward.run_walk_forward(_panel(), only_bad_on_fold_5,
+                                                model_name="rf", quantiles=QUANTILES)
+        self.assertGreater(walk_forward.pooled_k1(results, "rf", folds=(3, 5)),
+                           walk_forward.pooled_k1(results, "rf", folds=(3,)))
+
+    def test_the_baselines_get_a_k1_too(self):
+        """K1 is only meaningful against a floor measured the same way."""
+        results = walk_forward.run_walk_forward(_panel(), _perfect, model_name="rf",
+                                                quantiles=QUANTILES)
+        self.assertGreater(walk_forward.pooled_k1(results, "naive_zero"), 0.0)
+
+
+class TestCoverageByQuantile(unittest.TestCase):
+    def test_one_row_per_quantile_with_its_target(self):
+        results = walk_forward.run_walk_forward(_panel(), _spread, model_name="rf",
+                                                quantiles=QUANTILES)
+        table = walk_forward.coverage_by_quantile(results, "rf")
+        self.assertEqual(list(table["quantile"]), list(QUANTILES))
+        self.assertEqual(list(table["target"]), list(QUANTILES))
+
+    def test_gap_is_signed_so_the_direction_of_the_miss_survives(self):
+        """K2 asks whether a model misses the same way at every point. An
+        absolute gap would erase exactly that."""
+        results = walk_forward.run_walk_forward(_panel(), _constant(1000),
+                                                model_name="rf", quantiles=QUANTILES)
+        table = walk_forward.coverage_by_quantile(results, "rf")
+        self.assertTrue((table["gap"] > 0).all())
 
 
 if __name__ == "__main__":
