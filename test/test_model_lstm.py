@@ -588,5 +588,72 @@ class TestSearchWrappers(unittest.TestCase):
     def test_the_search_folds_match_the_other_two_models(self):
         self.assertEqual(model_lstm.SEARCH_FOLDS, (3, 5))
 
+class TestResolveDevice(unittest.TestCase):
+    """CUDA is checked the same way MPS already is.
+
+    The benchmark cell asks for every device in turn and skips the ones this
+    machine does not have, so an unavailable device has to announce itself as
+    a ValueError rather than surfacing later inside a training loop.
+    """
+
+    def test_cpu_is_always_available(self):
+        self.assertEqual(model_lstm.resolve_device("cpu").type, "cpu")
+
+    @unittest.skipIf(torch.cuda.is_available(), "mesin ini punya CUDA")
+    def test_cuda_is_refused_when_the_machine_has_none(self):
+        with self.assertRaises(ValueError) as caught:
+            model_lstm.resolve_device("cuda")
+        self.assertIn("CUDA", str(caught.exception))
+
+    @unittest.skipUnless(torch.cuda.is_available(), "mesin ini tidak punya CUDA")
+    def test_cuda_is_returned_when_the_machine_has_one(self):
+        self.assertEqual(model_lstm.resolve_device("cuda").type, "cuda")
+
+    @unittest.skipIf(torch.cuda.is_available(), "mesin ini punya CUDA")
+    def test_bind_panel_refuses_the_device_before_building_the_index(self):
+        """The index costs a sort of the whole panel. Paying it for a device
+        that cannot run is waste, and it puts the failure outside the try the
+        benchmark cell wraps bind_panel in.
+        """
+        panel = _fold_panel()
+        with self.assertRaises(ValueError) as caught:
+            model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
+                                  lookback=7, sizes=[(3, 2)],
+                                  device_name="cuda")
+        self.assertIn("CUDA", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRunSearchForwarding(unittest.TestCase):
+    """Notebook memanggil pembungkus per model, bukan model_common. Kalau
+    `only` berhenti di sini, pemecahan shard tidak pernah sampai ke mesinnya.
+
+    `bind_panel` ikut di-patch karena `run_search` memanggilnya di dalam daftar
+    argumennya sendiri — ia berjalan sungguhan sebelum `model_common.run_search`
+    sempat dipalsukan, dan panel kosong akan menggagalkannya di sana.
+    """
+
+    def test_only_and_provenance_reach_model_common(self):
+        from unittest import mock
+        with mock.patch.object(model_lstm, "bind_panel",
+                               return_value=lambda *a, **k: None), \
+             mock.patch.object(model_lstm.model_common, "run_search",
+                               return_value=pd.DataFrame()) as spy:
+            model_lstm.run_search(pd.DataFrame(), [{"a": 1}], only=[3, 4],
+                                  provenance={"device": "cuda:0"})
+        self.assertEqual(spy.call_args.kwargs["only"], [3, 4])
+        self.assertEqual(spy.call_args.kwargs["provenance"],
+                         {"device": "cuda:0"})
+
+    def test_the_defaults_stay_none(self):
+        from unittest import mock
+        with mock.patch.object(model_lstm, "bind_panel",
+                               return_value=lambda *a, **k: None), \
+             mock.patch.object(model_lstm.model_common, "run_search",
+                               return_value=pd.DataFrame()) as spy:
+            model_lstm.run_search(pd.DataFrame(), [{"a": 1}])
+        self.assertIsNone(spy.call_args.kwargs["only"])
+        self.assertIsNone(spy.call_args.kwargs["provenance"])

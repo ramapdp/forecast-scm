@@ -536,3 +536,25 @@ class TestBundleRecordsItsTargets(unittest.TestCase):
         self.assertEqual(bundle["train_target"],
                          "target_lead_time_cumulative_capped")
         self.assertEqual(bundle["eval_target"], "target_lead_time_cumulative")
+
+
+class TestRunSearchForwarding(unittest.TestCase):
+    """Notebook memanggil pembungkus per model, bukan model_common. Kalau
+    `only` berhenti di sini, pemecahan shard tidak pernah sampai ke mesinnya."""
+
+    def test_only_and_provenance_reach_model_common(self):
+        from unittest import mock
+        with mock.patch.object(rf.model_common, "run_search",
+                               return_value=pd.DataFrame()) as spy:
+            rf.run_search(pd.DataFrame(), [{"a": 1}], only=[3, 4],
+                          provenance={"device": "cpu"})
+        self.assertEqual(spy.call_args.kwargs["only"], [3, 4])
+        self.assertEqual(spy.call_args.kwargs["provenance"], {"device": "cpu"})
+
+    def test_the_defaults_stay_none(self):
+        from unittest import mock
+        with mock.patch.object(rf.model_common, "run_search",
+                               return_value=pd.DataFrame()) as spy:
+            rf.run_search(pd.DataFrame(), [{"a": 1}])
+        self.assertIsNone(spy.call_args.kwargs["only"])
+        self.assertIsNone(spy.call_args.kwargs["provenance"])

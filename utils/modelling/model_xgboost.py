@@ -14,8 +14,9 @@ that XGBoost is finally trained on the same population the Random Forest saw
 and the comparison stays like-for-like.
 """
 
+from functools import partial
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -69,6 +70,14 @@ SEARCH_SPACE = {
 
 ESTIMATOR_KEYS = ("max_depth", "learning_rate", "min_child_weight",
                   "subsample", "colsample_bytree", "reg_lambda", "random_state")
+
+# Where the boosting runs. CPU is the default because that is what every
+# number recorded so far was measured on; "cuda" is the escape hatch for the
+# 19-point grid, which builds nineteen trees per boosting round (T-14) and is
+# the most expensive stage of Fase 3. It is a plain string rather than a
+# validated enum on purpose: XGBoost accepts "cuda:1" and friends, and this
+# module has no business knowing the machine's topology.
+DEFAULT_DEVICE = "cpu"
 
 
 # Moved to model_common: the LSTM chooses its epoch count the same way.
@@ -177,6 +186,7 @@ def build_estimator(
     enable_categorical: bool = False,
     early_stopping_rounds: Optional[int] = None,
     quantiles: tuple = QUANTILES,
+    device: str = DEFAULT_DEVICE,
 ) -> XGBRegressor:
     """A regressor whose training objective is the metric it is judged on.
 
@@ -192,6 +202,7 @@ def build_estimator(
         objective="reg:quantileerror",
         quantile_alpha=np.asarray(quantiles, dtype=float),
         tree_method="hist",
+        device=device,
         n_estimators=n_estimators,
         enable_categorical=enable_categorical,
         early_stopping_rounds=early_stopping_rounds,
@@ -222,6 +233,7 @@ def make_fit_predict(
     early_stopping_rounds: int = EARLY_STOPPING_ROUNDS,
     max_rounds: int = MAX_ROUNDS,
     idx_cols: Optional[list] = None,
+    device: str = DEFAULT_DEVICE,
 ) -> Callable[[pd.DataFrame, pd.DataFrame], np.ndarray]:
     """The callable walk_forward.run_fold() injects.
 
@@ -261,7 +273,7 @@ def make_fit_predict(
                                      params["encoding"], idx_cols=idx_cols)
         probe = build_estimator(params, max_rounds, enable_categorical=enable,
                                 early_stopping_rounds=early_stopping_rounds,
-                                quantiles=quantiles)
+                                quantiles=quantiles, device=device)
         probe.fit(fit_X, _target(fit_rows, params),
                   eval_set=[(es_X, _target(es_rows, params))], verbose=False)
         best_iteration = int(probe.best_iteration) + 1
@@ -270,7 +282,7 @@ def make_fit_predict(
         train_X, valid_X, enable = encode(train[feature_cols], valid[feature_cols],
                                           params["encoding"], idx_cols=idx_cols)
         model = build_estimator(params, best_iteration, enable_categorical=enable,
-                                quantiles=quantiles)
+                                quantiles=quantiles, device=device)
         model.fit(train_X, _target(train, params), verbose=False)
 
         prediction = _as_matrix(model.predict(valid_X), len(valid_X),
@@ -302,6 +314,7 @@ def fit_final(
     early_stopping_rounds: int = EARLY_STOPPING_ROUNDS,
     max_rounds: int = MAX_ROUNDS,
     idx_cols: Optional[list] = None,
+    device: str = DEFAULT_DEVICE,
     date_col: str = modeling_prep.DATE_COL,
     test_start: pd.Timestamp = modeling_prep.TEST_START,
 ) -> dict:
@@ -332,7 +345,7 @@ def fit_final(
                                  params["encoding"], idx_cols=idx_cols)
     probe = build_estimator(params, max_rounds, enable_categorical=enable,
                             early_stopping_rounds=early_stopping_rounds,
-                            quantiles=quantiles)
+                            quantiles=quantiles, device=device)
     probe.fit(fit_X, _target(fit_rows, params),
               eval_set=[(es_X, _target(es_rows, params))], verbose=False)
     best_iteration = int(probe.best_iteration) + 1
@@ -340,7 +353,7 @@ def fit_final(
     train_X, _, enable = encode(frame[feature_cols], frame[feature_cols],
                                 params["encoding"], idx_cols=idx_cols)
     model = build_estimator(params, best_iteration, enable_categorical=enable,
-                            quantiles=quantiles)
+                            quantiles=quantiles, device=device)
     model.fit(train_X, _target(frame, params), verbose=False)
 
     return {
@@ -354,6 +367,10 @@ def fit_final(
         "log_target": params["log_target"],
         "best_iteration": best_iteration,
         "quantiles": quantiles,
+        # Provenance, not configuration. A bundle says which device produced
+        # it so a wall clock read months later is attributable, and so a
+        # winner chosen on one device is never silently refitted on another.
+        "device": device,
         **model_common.target_provenance(),
         "n_train": int(len(frame)),
     }
@@ -429,6 +446,9 @@ def run_search(
     verbose: bool = True,
     checkpoint_path: Optional[str] = None,
     resume: bool = True,
+    only: Optional[Iterable[int]] = None,
+    provenance: Optional[dict] = None,
+    device: str = DEFAULT_DEVICE,
 ) -> pd.DataFrame:
     """Score every XGBoost candidate on the search folds.
 
@@ -437,9 +457,14 @@ def run_search(
     like an over-budget forest, rather than ending a multi-hour run.
     """
     return model_common.run_search(
-        df, candidates, make_fit_predict=make_fit_predict,
+        df, candidates,
+        # `model_common.run_search` calls the factory with three keywords and
+        # no slot for a device, exactly as the LSTM has no slot for its panel.
+        # Binding it here keeps that signature the same for all three models.
+        make_fit_predict=partial(make_fit_predict, device=device),
         search_space=SEARCH_SPACE, folds=folds, quantiles=quantiles,
         model_name=model_name, feature_cols=feature_cols, verbose=verbose,
         checkpoint_path=checkpoint_path, resume=resume,
+        only=only, provenance=provenance,
         catch=(MemoryError, ValueError, XGBoostError),
     )

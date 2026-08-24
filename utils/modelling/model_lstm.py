@@ -11,7 +11,7 @@ in the head-to-head section rather than leaving a reader to discover it.
 
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -197,9 +197,17 @@ def resolve_device(name: str = "cpu") -> torch.device:
     MPS has no fused LSTM kernel and at these hidden sizes is often slower
     than CPU, so the benchmark measures both and records which one won rather
     than a default silently choosing.
+
+    CUDA is checked the same way. `torch.device("cuda")` on a machine without
+    one constructs happily and only fails later, inside a training loop, far
+    from the line that asked for it — so the benchmark cell would pay the
+    window index before finding out. Raising here is what lets that cell list
+    every device and skip the ones this machine does not have.
     """
     if name == "mps" and not torch.backends.mps.is_available():
         raise ValueError("MPS tidak tersedia di mesin ini")
+    if name.startswith("cuda") and not torch.cuda.is_available():
+        raise ValueError("CUDA tidak tersedia di mesin ini")
     return torch.device(name)
 
 
@@ -552,7 +560,10 @@ def bind_panel(
 
     The window index is built **once**. It costs a sort of 1.5M rows;
     rebuilding it per candidate would repeat that N x 2 times for nothing.
+    Which is also why the device is resolved *before* the index rather than at
+    the first fit: a device this machine does not have should cost nothing.
     """
+    resolve_device(device_name)
     index = sequence_windows.build_index(panel, feature_cols=feature_cols,
                                          lookback=lookback)
 
@@ -745,6 +756,8 @@ def run_search(
     verbose: bool = True,
     checkpoint_path: Optional[str] = None,
     resume: bool = True,
+    only: Optional[Iterable[int]] = None,
+    provenance: Optional[dict] = None,
     device_name: str = "cpu",
     lookback: int = modeling_prep.LOOKBACK,
     sizes: Optional[list] = None,
@@ -769,6 +782,8 @@ def run_search(
         verbose=verbose,
         checkpoint_path=checkpoint_path,
         resume=resume,
+        only=only,
+        provenance=provenance,
     )
 
 

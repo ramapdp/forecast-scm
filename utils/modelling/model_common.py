@@ -13,9 +13,10 @@ Random Forest's leaf-storage bound has no XGBoost analogue.
 
 import json
 import random
+import subprocess
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 import joblib
 import numpy as np
@@ -230,6 +231,35 @@ def summarise_candidate(results: pd.DataFrame, model_name: str, folds: tuple,
 CAPACITY_ATTRS = ("best_epochs", "best_iterations")
 
 
+def _selected(candidates: list, only: Optional[Iterable[int]]) -> set:
+    """Id kandidat yang menjadi tanggung jawab proses ini.
+
+    Alasan keberadaannya adalah pemecahan pekerjaan antar mesin. `run_search`
+    menomori kandidat lewat posisinya di `candidates`, jadi memotong daftar itu
+    di sisi pemanggil akan menomori ulang dan dua shard tidak akan pernah bisa
+    disatukan lewat id. `only` menjaga penomoran tetap absolut terhadap
+    `sample_search_space(seed=...)`, yang deterministik di mesin mana pun.
+
+    Seleksi di luar jangkauan atau kosong dilempar, bukan dijalankan sebagai
+    no-op: shard kosong selesai dalam sedetik dan menulis CSV kosong, yang dari
+    luar tidak dapat dibedakan dari shard yang berhasil. Lubangnya baru muncul
+    saat penggabungan, berjam-jam sesudahnya.
+    """
+    if only is None:
+        return set(range(len(candidates)))
+    selected = {int(value) for value in only}
+    out_of_range = sorted(value for value in selected
+                          if value < 0 or value >= len(candidates))
+    if out_of_range:
+        raise ValueError(
+            f"only memuat candidate_id di luar {len(candidates)} kandidat "
+            f"saat ini: {out_of_range}"
+        )
+    if not selected:
+        raise ValueError("only kosong — tidak ada kandidat untuk dijalankan")
+    return selected
+
+
 def run_search(
     df: pd.DataFrame,
     candidates: list,
@@ -242,6 +272,8 @@ def run_search(
     verbose: bool = True,
     checkpoint_path: Optional[str] = None,
     resume: bool = True,
+    only: Optional[Iterable[int]] = None,
+    provenance: Optional[dict] = None,
     catch: tuple = (MemoryError, ValueError),
 ) -> pd.DataFrame:
     """Score every candidate on the search folds only.
@@ -261,7 +293,19 @@ def run_search(
     stale-checkpoint guard is the price: resuming across a changed search space
     or seed would blend candidates from two different experiments and hand back
     a winner that was never actually evaluated.
+
+    `only` memecah satu pencarian ke beberapa mesin: tiap mesin menjalankan
+    subset candidate_id-nya sendiri sementara penomorannya tetap absolut,
+    sehingga hasilnya dapat disatukan oleh `merge_shards()`.
     """
+    selected = _selected(candidates, only)
+    provenance = provenance or {}
+    collisions = sorted({"candidate_id", *search_space} & set(provenance))
+    if collisions:
+        raise ValueError(
+            f"kunci provenance bertabrakan dengan kolom pencarian: "
+            f"{collisions}"
+        )
     frame = walk_forward.eligible_rows(df)
     rows = []
     completed = set()
@@ -276,10 +320,11 @@ def run_search(
                   flush=True)
 
     for candidate_id, candidate in enumerate(candidates):
-        if candidate_id in completed:
+        if candidate_id not in selected or candidate_id in completed:
             continue
         record = {"candidate_id": candidate_id,
-                  **{key: candidate[key] for key in sorted(search_space)}}
+                  **{key: candidate[key] for key in sorted(search_space)},
+                  **provenance}
         fit_predict, message = None, None
         started = time.perf_counter()
         try:
@@ -344,6 +389,31 @@ def _ordered(rows: list) -> pd.DataFrame:
             .reset_index(drop=True))
 
 
+def current_commit(default: str = "unknown",
+                   cwd: Optional[str] = None) -> str:
+    """Hash git pendek dari pohon kerja yang menjalankan proses ini.
+
+    Ditulis ke tiap baris shard karena sebuah baris shard adalah bukti: angka
+    yang tidak dapat ditelusuri ke versi kode yang melahirkannya tidak
+    reprodusibel, dan mesin cloud yang menjalankan shard ini sifatnya
+    sementara — ia tidak akan ada lagi saat angkanya dibaca.
+
+    Mengembalikan `default` alih-alih melempar ketika git tidak tersedia sama
+    sekali: kegagalan mencatat asal-usul tidak boleh menggagalkan pencarian
+    delapan jam yang selain itu baik-baik saja. Yang hilang tercatat sebagai
+    nilai `default` yang kasat mata, bukan sebagai sel kosong.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=True,
+            cwd=cwd or str(Path(__file__).resolve().parents[2]),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return default
+    return completed.stdout.strip() or default
+
+
 # A column no single-quantile checkpoint can have. Its absence is how a
 # pre-2026-08-24 file is recognised.
 CHECKPOINT_SCHEMA_COL = "headline_quantile"
@@ -387,6 +457,56 @@ def _assert_checkpoint_matches(
                     f"kandidat {candidate_id} punya {key}={actual}, "
                     f"seharusnya {expected}"
                 )
+
+
+def merge_shards(paths: list, candidates: list, search_space: dict) -> pd.DataFrame:
+    """Satu frame pencarian dari beberapa CSV shard, diverifikasi bukan dipercaya.
+
+    Empat pemeriksaan, dan tiap satunya membalas satu cara pemecahan pekerjaan
+    bisa gagal tanpa suara:
+
+    1. `candidate_id` ganda — dua mesin diberi rentang yang tumpang tindih,
+       sehingga satu kandidat dinilai dua kali dan `select_best()` memilih di
+       antara baris kembar.
+    2. Cakupan berlubang — satu shard tidak pernah selesai, dan yang dilaporkan
+       sebagai "pencarian 30 kandidat" sebenarnya 22.
+    3. Parameter yang tidak cocok dengan id yang diklaimnya — shard tertukar,
+       atau lahir dari `seed` / ruang pencarian yang berbeda.
+    4. Skema kuantil tunggal — CSV pra-2026-08-24 yang angkanya pinball@0,9,
+       bukan K1.
+
+    Pemeriksaan 3 dan 4 tidak ditulis ulang di sini: keduanya sudah menjadi
+    `_assert_checkpoint_matches()`, dan dua definisi "cocok" yang hidup
+    berdampingan pasti akan berbeda diam-diam suatu hari.
+
+    Kolom di luar `search_space` — `device`, hash commit, metrik — dibawa apa
+    adanya; ia justru yang membuat baris hasil dapat ditelusuri ke mesinnya.
+    """
+    if not paths:
+        raise ValueError("tidak ada shard untuk digabungkan")
+
+    merged = pd.concat([pd.read_csv(path) for path in paths],
+                       ignore_index=True)
+    ids = [int(value) for value in merged["candidate_id"]]
+
+    duplicates = sorted({value for value in ids if ids.count(value) > 1})
+    if duplicates:
+        raise ValueError(
+            f"candidate_id ganda di gabungan shard: {duplicates} — dua mesin "
+            f"diberi rentang yang tumpang tindih"
+        )
+
+    missing = sorted(set(range(len(candidates))) - set(ids))
+    if missing:
+        raise ValueError(
+            f"gabungan shard tidak menutup seluruh {len(candidates)} kandidat: "
+            f"{missing} hilang — satu shard belum selesai atau tidak ikut "
+            f"digabungkan"
+        )
+
+    _assert_checkpoint_matches(merged, candidates, search_space,
+                               path="gabungan shard")
+    return _ordered(merged.to_dict("records"))
 
 
 def select_best(search_results: pd.DataFrame, candidates: list) -> dict:
