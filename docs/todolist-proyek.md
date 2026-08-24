@@ -13,8 +13,8 @@ ditutup tidak diulang di sini — sudah tercatat di
 `docs/metodologi-preprocessing.md`, `docs/dokumentasi-preprocessing-id.md`, dan
 riwayat git berkas ini.
 
-**Terakhir diverifikasi: 2026-08-24** — 752 tes lolos
-(`.venv/bin/python3 -m unittest discover -p "test_*.py"` → `Ran 752 tests … OK`),
+**Terakhir diverifikasi: 2026-08-24** — 816 tes lolos
+(`.venv/bin/python3 -m unittest discover -p "test_*.py"` → `Ran 816 tests … OK`),
 `QUANTILE_SET_A` (19 titik) sudah terpasang di `utils/modelling/evaluation.py`,
 `walk_forward.py`, `model_common.py`, dan ketiga adapter model.
 
@@ -311,6 +311,16 @@ Anggaran berlaku: **RF 18, XGBoost 30, LSTM 30 kandidat** (ruang 144 + 3 seed
 pada pemenang). Perkiraan ongkos: **~157–172 jam ≈ 6,5–7,2 hari komputasi
 nonstop**, rinciannya per model per tahap di §"Perkiraan ongkos Fase 3"
 `2026-08-22-model-comparison-refactor-migration.md`.
+
+**Mekanisme eksekusi terdistribusi sudah terpasang (2026-08-24).** Pencarian
+dapat dipecah antar mesin lewat `model_common.run_search(..., only=[...],
+provenance={...})` dan disatukan kembali oleh `model_common.merge_shards()`,
+yang memakai ulang guard `_assert_checkpoint_matches()` sehingga shard yang
+tertukar, berlubang, atau berasal dari run kuantil tunggal tertolak. Rencana
+mesin per tahap, probe paritas device yang mengesahkan pemecahan itu, dan
+alasan walk-forward tetap di Mac ada di
+`docs/superpowers/specs/2026-08-24-distributed-gpu-training-design.md`.
+Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
 
 - [ ] **Langkah 0 — biarkan guard checkpoint berbunyi.** Jalankan sel pencarian
   XGBoost dengan ketiga CSV lama **masih di tempatnya**; ia harus berhenti
