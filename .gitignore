@@ -4,7 +4,9 @@ __pycache__/
 .worktrees/
 .claude/settings.local.json
 .superpowers/
-dataset/
+dataset/csv/
+dataset/excel/
+dataset/model_ready/
 models/
 # Four hand-maintained config files under dataset/ are deliberately tracked
 # (force-added): event_driven_items.csv, outlet_mapping.csv,

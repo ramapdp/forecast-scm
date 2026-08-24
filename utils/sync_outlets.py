@@ -4,7 +4,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SOURCE_FILE = str(BASE_DIR / "outlets.json")
+SOURCE_FILE = str(BASE_DIR / "dataset/outlets.json")
 OUTPUT_FILE = str(BASE_DIR / "dataset/outlets.csv")
 
 FIELDNAMES = ["Nama Outlet", "Alamat", "Kecamatan", "Kota", "has_shopee", "has_gofood", "has_grabfood"]
