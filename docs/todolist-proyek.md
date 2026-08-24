@@ -322,13 +322,23 @@ alasan walk-forward tetap di Mac ada di
 `docs/superpowers/specs/2026-08-24-distributed-gpu-training-design.md`.
 Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
 
-- [ ] **Langkah 0 — biarkan guard checkpoint berbunyi.** Jalankan sel pencarian
+- [x] **Langkah 0 — biarkan guard checkpoint berbunyi.** Jalankan sel pencarian
   XGBoost dengan ketiga CSV lama **masih di tempatnya**; ia harus berhenti
   dalam hitungan detik dengan `ValueError` yang menyebut "berasal dari run
   kuantil tunggal". Kalau **tidak** berbunyi, hentikan Fase 3 — berarti
   guard-nya tidak bekerja dan setiap angka sesudahnya tidak dapat dipercaya.
   (Diverifikasi 2026-08-24: ketiga CSV masih ada dan memang belum punya kolom
   `headline_quantile`, jadi kondisi ujinya masih utuh.)
+  **DIJALANKAN 2026-08-24 — guard berbunyi.** XGBoost berhenti setelah **3,2
+  detik** dan Random Forest setelah **2,8 detik**, keduanya dengan
+  `ValueError: … berasal dari run kuantil tunggal (tidak ada kolom
+  'headline_quantile')`, sebelum satu pohon pun dibangun; hash
+  `xgb_search_results.csv` sebelum dan sesudah identik, jadi guard menolak
+  tanpa menulis apa pun. Jalur LSTM tidak diuji dengan cara yang sama karena
+  `run_search`-nya memanggil `bind_panel()` di dalam daftar argumennya,
+  sehingga window index 1,5 juta baris dibangun sebelum guard terbaca —
+  ongkosnya menit, bukan detik; guard-nya kode yang sama dan
+  `lstm_search_results.csv` sama-sama tidak punya kolom itu.
 - [ ] Baru hapus `rf_search_results.csv`, `xgb_search_results.csv`,
   `lstm_search_results.csv`, **dan `rf_best_params.json`** (berasal dari run
   2026-08-18 di atas data pra-reclass).
