@@ -18,9 +18,10 @@ mekanismenya; ia bukan izin untuk mulai.
 Fase 3 diperkirakan **~157–172 jam ≈ 6,5–7,2 hari komputasi nonstop** di CPU
 Mac (§"Perkiraan ongkos Fase 3",
 `2026-08-22-model-comparison-refactor-migration.md`). Spec ini memangkasnya
-menjadi ~2–4 hari dengan menjalankan ketiga model serentak di GPU gratis
-Kaggle dan Colab, **tanpa** menukar satu pun properti metodologis untuk
-kecepatan itu.
+menjadi **~3–4 hari** (atau ~2–3 hari dengan Colab Pro) dengan menjalankan
+pencarian ketiga model serentak di GPU gratis Kaggle dan Colab, lalu
+mengembalikan walk-forward dan fit final ke Mac — **tanpa** menukar satu pun
+properti metodologis untuk kecepatan itu.
 
 Aturan yang mengikat seluruh dokumen: setiap kali kecepatan bertabrakan dengan
 keterbandingan angka, yang mengalah adalah kecepatan. Itu posisi yang sudah
@@ -75,26 +76,51 @@ maka tie-breaker itu membandingkan **hardware, bukan model**. Lubang itu tidak
 bisa ditambal sesudah run tanpa mengulang seluruhnya.
 
 Ongkos aturan ini kecil: walk-forward + fit final ketiga model berjumlah
-~8–20 jam, lawan ~136 jam pencarian. Ia murah **asal direncanakan sejak
+~9,8–25,1 jam, lawan ~136 jam pencarian. Ia murah **asal direncanakan sejak
 awal**.
+
+**Mesin itu adalah Mac lokal** (keputusan 2026-08-24, pemilik proyek), bukan
+sesi cloud, karena tiga hal yang berdiri sendiri-sendiri:
+
+1. **`run_walk_forward()` tidak punya checkpoint.** Ia satu list comprehension
+   atas lima fold (`walk_forward.py:216-222`) — tidak seperti pencarian, yang
+   menulis checkpoint setiap kandidat selesai. Sesi Kaggle yang terpotong di
+   jam ke-12 di tengah walk-forward kehilangan seluruhnya, tanpa resume. Di
+   ujung pesimistis, LSTM (WF 15,5 jam + final 3,6 jam = **19,1 jam**) memang
+   tidak muat dalam satu sesi 12 jam.
+2. **Kuota GPU adalah sumber daya paling langka di rencana ini**, dan
+   walk-forward tidak menuntut GPU untuk alasan metodologis apa pun.
+   Menjalankannya lokal mengembalikan 8–20 jam ke anggaran pencarian Kaggle —
+   satu-satunya tahap yang benar-benar dibatasi kuota.
+3. **Kontinuitas dengan angka yang sudah tercatat.** Seluruh wall time di
+   ketiga `hasil-modeling-*.md` (run 2026-08-18/19/20) diukur di Mac ini, jadi
+   angka K3 yang baru sebanding dengan yang lama alih-alih memulai basis
+   pengukuran ketiga.
 
 ### 2. Alokasi per mesin
 
 | Mesin | Beban | Estimasi wall-clock | Kuota terpakai |
 |---|---|---|---|
-| **Mac lokal** | RF penuh (pencarian + WF + final); lalu jadi CPU-fallback untuk kandidat yang OOM di GPU (Bagian 7.1) | ~4,8 jam | — |
+| **Mac lokal** (tahap 1) | Pencarian RF 18 kandidat; lalu jadi CPU-fallback untuk kandidat XGBoost yang OOM di GPU (Bagian 7.1) | ~3,9 jam | — |
 | **Kaggle T4×2**, headless *Save & Run All (commit)* | XGBoost: 30 kandidat → 2 proses × 15, `cuda:0` dan `cuda:1` | 64,6 j ÷ ~6× ÷ 2 GPU ≈ **5–6 jam**, muat dalam satu commit 12 jam | ~6 jam |
 | **Colab T4** (ditunggui) | LSTM: 30 kandidat + pengulangan 3 seed | 71,5 j ÷ ~5× ≈ **14 jam** → 3–4 sesi | — |
-| **Satu mesin — usulan: Kaggle T4×2** | Walk-forward 5 fold + fit final **ketiga model** (RF tetap CPU di mesin itu). Pilihan mesinnya masih terbuka — lihat Pertanyaan terbuka 1 | ~8–20 jam → 1–2 commit | ~8–20 jam |
+| **Mac lokal** (tahap 2, sesudah semua pencarian selesai) | Walk-forward 5 fold + fit final **ketiga model**, di satu mesin (Bagian 1) | RF 0,9 j + XGB 5,1 j + LSTM 3,8–19,1 j = **~9,8–25,1 jam**, 1–2 run semalam | — |
 
 Pengganda `~6×` dan `~5×` adalah **estimasi, bukan ukuran**. Probe (3c)
 menggantikannya dengan angka nyata, dan seluruh tabel ini dihitung ulang dari
 situ sebelum satu jam pun dikomitkan.
 
+Total kuota Kaggle: **~6 jam dari 30 per minggu** — longgar, karena
+walk-forward dan RF dua-duanya lokal. Kelonggaran itu bukan sisa yang
+menganggur: ia bantalan untuk kandidat yang harus diulang (Bagian 7.1), untuk
+probe yang gagal, dan untuk pengganda GPU yang ternyata lebih kecil dari
+estimasi.
+
 RF sengaja **tidak** dikirim ke cloud: GPU tidak mempercepatnya sama sekali,
 jadi memindahkannya hanya membakar kuota yang langka untuk pekerjaan yang
 tidak diuntungkan. Efek sampingnya bagus — Mac tetap bebas sebagai jalur CPU
-untuk kandidat yang gagal di GPU.
+untuk kandidat yang gagal di GPU, dan tetap menjadi mesin yang menjalankan
+tahap 2.
 
 ### 3. Tahap 0 — lima probe sebelum satu jam pun dikomitkan (~1–2 jam)
 
@@ -103,8 +129,20 @@ untuk kandidat yang gagal di GPU.
 | a | **Guard checkpoint kuantil-tunggal.** Langkah 0 yang sudah tertulis di todolist butir 0c: jalankan sel pencarian XGBoost dengan ketiga CSV lama **masih di tempatnya**; harus berhenti dalam hitungan detik dengan `ValueError` yang menyebut "berasal dari run kuantil tunggal". | **Hentikan Fase 3.** Guard-nya tidak bekerja dan setiap angka sesudahnya tidak dapat dipercaya. |
 | b | **Smoke test CUDA XGBoost.** `reg:quantileerror` dengan 19 `quantile_alpha` di `device="cuda"`, xgboost 2.1.4, satu fold kecil. | Kalau library menolak multi-kuantil di GPU, seluruh rencana XGBoost berubah. Harus ketahuan di menit ke-10, bukan jam ke-8. |
 | c | **Pengganda kecepatan terukur.** 1 kandidat × 1 fold di tiap mesin, dibandingkan angka lokal. | Mengganti tebakan "GPU ~6×" dengan angka, dan menentukan pembagian shard yang proporsional. |
-| d | **Probe paritas device.** `candidate_id 0` dijalankan penuh (2 fold, `SEARCH_FOLDS = (3, 5)`) di **setiap** mesin yang dipakai; selisih K1-nya masuk `docs/hasil-modeling-*.md` sebagai angka. | Selisih ≥ ambang seleksi **2%** → pemecahan dalam satu model dibatalkan; jatuh ke satu-model-satu-platform. |
+| d | **Probe paritas device.** `candidate_id 0` dijalankan penuh (2 fold, `SEARCH_FOLDS = (3, 5)`) di **setiap** mesin yang dipakai — **CPU Mac lokal termasuk** (lihat di bawah); selisih K1-nya masuk `docs/hasil-modeling-*.md` sebagai angka. | Selisih ≥ ambang seleksi **2%** → pemecahan dalam satu model dibatalkan; jatuh ke satu-model-satu-platform. |
 | e | **Versi paket dipin dan dicatat per mesin**: `xgboost==2.1.4`, `torch==2.8.0`, `numpy==2.0.2`, `pandas==2.3.3`, `quantile-forest==1.4.2`, `scikit-learn==1.6.1`. | Probe (d) tidak sah kalau versinya berbeda: yang terukur jadi selisih library, bukan selisih hardware. |
+
+**CPU lokal wajib ikut probe (d), dan itu bukan formalitas.** Karena
+walk-forward dan fit final berjalan di Mac (Bagian 1), rencana ini menciptakan
+satu penyerahan device: kandidat **diperingkat di GPU**, pemenangnya
+**di-refit di CPU**. Komentar konstanta `DEFAULT_DEVICE` di `model_xgboost.py`
+ditulis persis untuk situasi ini — *"a winner chosen on one device is never
+silently refitted on another"*. Ia tidak melarang penyerahan itu; ia menuntut
+penyerahan itu terlihat dan terukur. Yang harus dibuktikan: peringkat kandidat
+yang lahir di GPU masih berlaku di CPU tempat pemenangnya dilatih. Kalau
+selisih K1 GPU↔CPU jauh di bawah 2% **dan** jauh di bawah jarak antar
+kandidat, peringkat itu stabil dan penyerahannya sah — tercatat sebagai angka,
+bukan sebagai asumsi.
 
 Probe (c) juga yang menjawab apakah plafon **30 GPU-jam/minggu** Kaggle cukup.
 Kalau pengganda XGBoost ternyata hanya ~2×, 64,6 jam turun ke ~32 jam dan
@@ -197,8 +235,11 @@ atau tetap di MPS/CPU lokal.
 
 ### 7.3. Plafon 30 GPU-jam/minggu Kaggle
 
-Lihat Bagian 3. Alokasi Bagian 2 memakai ~15–26 jam dari 30 — muat, tapi
-**tidak longgar**.
+Lihat Bagian 3. Sesudah walk-forward dipindahkan ke Mac (Bagian 1), alokasi
+Bagian 2 hanya memakai **~6 jam dari 30** — longgar. Risiko ini karenanya
+turun dari pengikat jadwal menjadi bantalan: ia baru menggigit kalau probe
+(3c) menunjukkan pengganda GPU jauh di bawah estimasi ~6×, mis. ~2×, yang
+membuat pencarian XGBoost sendiri menjadi ~32 jam dan melewati plafon.
 
 ## Colab Pro: layak, tetapi dibeli **sesudah** Tahap 0
 
@@ -213,8 +254,10 @@ paling butuh ditunggui. Pro menyerang tepat di situ, di dua sumbu:
 | **Runtime high-RAM, ~8 vCPU** | Menyerang risiko 6.2 langsung. Kalau LSTM ternyata *CPU-bound*, inilah yang menolong, bukan GPU-nya. |
 | ~100 compute unit/bulan | ≈ 30–50 jam GPU; praktis melipatgandakan anggaran cloud di luar kuota Kaggle. |
 
-Dengan Pro, estimasi ujung-ke-ujung turun dari ~3–4 hari ke **~2 hari** dan
-babysitting hampir hilang.
+Dengan Pro, estimasi ujung-ke-ujung turun dari ~3–4 hari ke **~2–3 hari** dan
+babysitting hampir hilang. Perlu jujur soal batasnya: sesudah walk-forward
+pindah ke Mac, tahap 2 (~9,8–25,1 jam) berdiri di jalur kritis dan **tidak
+tersentuh Pro sama sekali** — Pro hanya memendekkan tahap pencarian.
 
 **Keputusan: tunggu Tahap 0.** Probe (3c) berongkos ~1 jam dan menjawab
 pertanyaan yang menentukan nilai Pro: LSTM terbatas GPU atau terbatas CPU
@@ -263,15 +306,16 @@ Ditulis TDD, merah lebih dulu, sejalan dengan 752 tes yang sudah ada.
 
 ## Pertanyaan terbuka
 
-1. **Mesin mana yang menjalankan walk-forward + fit final ketiga model.**
-   Bagian 1 mewajibkan satu mesin; Bagian 2 mengusulkan Kaggle T4×2. Tetapi RF
-   di Kaggle (4 vCPU) kemungkinan lebih lambat daripada di Mac, dan itu
-   memperbesar angka wall time RF yang dibaca K3. Dua pembacaan yang
-   sama-sama masuk akal: (a) satu mesin untuk semua, RF ikut menanggung 4 vCPU
-   — keterbandingan sempurna, angka RF pesimistis; (b) K3 dibaca sebagai
-   *profil ongkos per kelas hardware yang wajar untuk model itu*, sehingga RF
-   sah diukur di CPU dan kedua model GPU di GPU yang sama. Dipilih sebelum
-   walk-forward dimulai, dan alasannya ditulis di dokumen hasil.
+1. ~~**Mesin mana yang menjalankan walk-forward + fit final ketiga model.**~~
+   **DITUTUP 2026-08-24 (pemilik proyek): Mac lokal.** Alasannya di Bagian 1.
+   Yang perlu dicatat: pilihan ini **membubarkan** dilema yang tertulis di
+   sini semula, bukan memilih salah satu sisinya. Dua pembacaan K3 yang
+   bersaing — (a) satu mesin untuk semua, dengan RF ikut menanggung 4 vCPU
+   Kaggle, versus (b) K3 sebagai profil ongkos per kelas hardware yang wajar
+   untuk tiap model — hanya bertabrakan selama "satu mesin" diartikan kotak
+   cloud. Di Mac, ketiga model diukur di satu mesin **dan** RF mendapat CPU
+   yang wajar untuknya. Yang dibayar sebagai gantinya adalah penyerahan device
+   GPU→CPU, dan itu ditutup oleh perluasan probe (3d).
 2. **Apakah pemecahan XGBoost tetap dijalankan kalau probe (3c) menunjukkan
    satu sesi Kaggle sudah cukup.** Kalau 30 kandidat muat dalam satu commit 12
    jam di T4×2, pemecahan lintas-platform tidak lagi diperlukan untuk XGBoost
