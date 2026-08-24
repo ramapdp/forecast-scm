@@ -459,6 +459,56 @@ def _assert_checkpoint_matches(
                 )
 
 
+def merge_shards(paths: list, candidates: list, search_space: dict) -> pd.DataFrame:
+    """Satu frame pencarian dari beberapa CSV shard, diverifikasi bukan dipercaya.
+
+    Empat pemeriksaan, dan tiap satunya membalas satu cara pemecahan pekerjaan
+    bisa gagal tanpa suara:
+
+    1. `candidate_id` ganda — dua mesin diberi rentang yang tumpang tindih,
+       sehingga satu kandidat dinilai dua kali dan `select_best()` memilih di
+       antara baris kembar.
+    2. Cakupan berlubang — satu shard tidak pernah selesai, dan yang dilaporkan
+       sebagai "pencarian 30 kandidat" sebenarnya 22.
+    3. Parameter yang tidak cocok dengan id yang diklaimnya — shard tertukar,
+       atau lahir dari `seed` / ruang pencarian yang berbeda.
+    4. Skema kuantil tunggal — CSV pra-2026-08-24 yang angkanya pinball@0,9,
+       bukan K1.
+
+    Pemeriksaan 3 dan 4 tidak ditulis ulang di sini: keduanya sudah menjadi
+    `_assert_checkpoint_matches()`, dan dua definisi "cocok" yang hidup
+    berdampingan pasti akan berbeda diam-diam suatu hari.
+
+    Kolom di luar `search_space` — `device`, hash commit, metrik — dibawa apa
+    adanya; ia justru yang membuat baris hasil dapat ditelusuri ke mesinnya.
+    """
+    if not paths:
+        raise ValueError("tidak ada shard untuk digabungkan")
+
+    merged = pd.concat([pd.read_csv(path) for path in paths],
+                       ignore_index=True)
+    ids = [int(value) for value in merged["candidate_id"]]
+
+    duplicates = sorted({value for value in ids if ids.count(value) > 1})
+    if duplicates:
+        raise ValueError(
+            f"candidate_id ganda di gabungan shard: {duplicates} — dua mesin "
+            f"diberi rentang yang tumpang tindih"
+        )
+
+    missing = sorted(set(range(len(candidates))) - set(ids))
+    if missing:
+        raise ValueError(
+            f"gabungan shard tidak menutup seluruh {len(candidates)} kandidat: "
+            f"{missing} hilang — satu shard belum selesai atau tidak ikut "
+            f"digabungkan"
+        )
+
+    _assert_checkpoint_matches(merged, candidates, search_space,
+                               path="gabungan shard")
+    return _ordered(merged.to_dict("records"))
+
+
 def select_best(search_results: pd.DataFrame, candidates: list) -> dict:
     """Pilih kandidat terbaik berdasarkan skor K1 terendah lintas fold.
 

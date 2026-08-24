@@ -586,3 +586,98 @@ class TestCurrentCommit(unittest.TestCase):
                 model_common.current_commit(default="tidak-diketahui",
                                             cwd=folder),
                 "tidak-diketahui")
+
+
+class TestMergeShards(unittest.TestCase):
+    """Penggabungan harus membuktikan dirinya sendiri: sebuah shard yang
+    tertukar antar mesin atau lahir dari ruang pencarian lain tidak boleh
+    lolos jadi baris yang tampak wajar di CSV gabungan."""
+
+    def _candidates(self):
+        return [{**DEFAULTS, "alpha": a} for a in (1, 2, 3)]
+
+    def _shard(self, folder, name, only):
+        path = str(Path(folder) / name)
+        model_common.run_search(
+            _panel(), self._candidates(), make_fit_predict=_mean_fit_predict,
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES,
+            model_name="toy", feature_cols=FEATURES, verbose=False,
+            only=only, checkpoint_path=path)
+        return path
+
+    def _whole(self):
+        return model_common.run_search(
+            _panel(), self._candidates(), make_fit_predict=_mean_fit_predict,
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES,
+            model_name="toy", feature_cols=FEATURES, verbose=False)
+
+    def test_two_shards_reproduce_the_whole_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            paths = [self._shard(folder, "a.csv", [0]),
+                     self._shard(folder, "b.csv", [1, 2])]
+            merged = model_common.merge_shards(paths, self._candidates(), SPACE)
+            whole = self._whole()
+            self.assertEqual(list(merged["candidate_id"]),
+                             list(whole["candidate_id"]))
+            self.assertEqual(list(merged["alpha"]), list(whole["alpha"]))
+            for left, right in zip(merged["pinball"], whole["pinball"]):
+                self.assertAlmostEqual(float(left), float(right))
+
+    def test_the_merged_frame_is_ordered_by_candidate_id(self):
+        with tempfile.TemporaryDirectory() as folder:
+            paths = [self._shard(folder, "b.csv", [2]),
+                     self._shard(folder, "a.csv", [0, 1])]
+            merged = model_common.merge_shards(paths, self._candidates(), SPACE)
+            self.assertEqual(list(merged["candidate_id"]), [0, 1, 2])
+
+    def test_a_duplicate_candidate_id_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            paths = [self._shard(folder, "a.csv", [0, 1]),
+                     self._shard(folder, "b.csv", [1, 2])]
+            with self.assertRaisesRegex(ValueError, "ganda"):
+                model_common.merge_shards(paths, self._candidates(), SPACE)
+
+    def test_a_hole_in_the_coverage_is_refused(self):
+        """Satu shard yang gagal diam-diam adalah pencarian yang menyusut."""
+        with tempfile.TemporaryDirectory() as folder:
+            paths = [self._shard(folder, "a.csv", [0, 2])]
+            with self.assertRaisesRegex(ValueError, r"tidak menutup.*\[1\]"):
+                model_common.merge_shards(paths, self._candidates(), SPACE)
+
+    def test_a_shard_from_a_different_space_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            paths = [self._shard(folder, "a.csv", [0]),
+                     self._shard(folder, "b.csv", [1, 2])]
+            tampered = pd.read_csv(paths[0])
+            tampered.loc[0, "alpha"] = 99
+            tampered.to_csv(paths[0], index=False)
+            with self.assertRaisesRegex(ValueError, "ruang pencarian"):
+                model_common.merge_shards(paths, self._candidates(), SPACE)
+
+    def test_a_single_quantile_shard_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "old.csv")
+            pd.DataFrame([{"candidate_id": 0, "alpha": 1, "beta": "x",
+                           "pinball": 0.5}]).to_csv(path, index=False)
+            with self.assertRaisesRegex(ValueError, "kuantil tunggal"):
+                model_common.merge_shards([path], [self._candidates()[0]], SPACE)
+
+    def test_no_shards_at_all_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "tidak ada shard"):
+            model_common.merge_shards([], self._candidates(), SPACE)
+
+    def test_provenance_columns_survive_the_merge(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path_a = str(Path(folder) / "a.csv")
+            path_b = str(Path(folder) / "b.csv")
+            for path, only, device in ((path_a, [0], "cuda:0"),
+                                       (path_b, [1, 2], "cpu")):
+                model_common.run_search(
+                    _panel(), self._candidates(),
+                    make_fit_predict=_mean_fit_predict, search_space=SPACE,
+                    folds=(1,), quantiles=QUANTILES, model_name="toy",
+                    feature_cols=FEATURES, verbose=False, only=only,
+                    provenance={"device": device}, checkpoint_path=path)
+            merged = model_common.merge_shards([path_a, path_b],
+                                               self._candidates(), SPACE)
+            self.assertEqual(list(merged["device"]), ["cuda:0", "cpu", "cpu"])
