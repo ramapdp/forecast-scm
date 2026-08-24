@@ -326,6 +326,17 @@ tertukar, berlubang, atau berasal dari run kuantil tunggal tertolak. Rencana
 mesin per tahap, probe paritas device yang mengesahkan pemecahan itu, dan
 alasan walk-forward tetap di Mac ada di
 `docs/superpowers/specs/2026-08-24-distributed-gpu-training-design.md`.
+
+Ketiga notebook sudah ikut di-wire lewat `utils/modelling/run_config.py`:
+`FORECAST_SHARD`, `FORECAST_DEVICE`, `FORECAST_MODEL_INPUT`, dan
+`FORECAST_CHECKPOINT_DIR` dibaca di sel pertama, sehingga satu notebook yang
+sama jalan di Mac, Kaggle, dan Colab tanpa diedit per mesin. **Tanpa satu pun
+env var, ketiganya berperilaku persis seperti sebelumnya** — diverifikasi
+dengan menjalankan sel pertama masing-masing: nama berkas keluarannya identik.
+Sel yang memanggil `select_best()` diberi guard `assert SHARD is None`, karena
+memilih pemenang dari sebagian kandidat menghasilkan angka yang tampak
+sepenuhnya wajar.
+
 Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
 
 - [x] **Langkah 0 — biarkan guard checkpoint berbunyi.** Jalankan sel pencarian
