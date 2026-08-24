@@ -3,7 +3,8 @@ import unittest
 import numpy as np
 import torch
 
-from utils import model_common, model_lstm, modeling_prep, sequence_windows, walk_forward
+from utils import (evaluation, model_common, model_lstm, modeling_prep,
+                   sequence_windows, walk_forward)
 
 
 class TestPinballLoss(unittest.TestCase):
@@ -12,15 +13,39 @@ class TestPinballLoss(unittest.TestCase):
         0.1 per unit — the asymmetry the whole project is built on.
         """
         target = torch.tensor([10.0])
-        under = model_lstm.pinball_loss(torch.tensor([9.0]), target, 0.9)
-        over = model_lstm.pinball_loss(torch.tensor([11.0]), target, 0.9)
+        under = model_lstm.pinball_loss(torch.tensor([[9.0]]), target, (0.9,))
+        over = model_lstm.pinball_loss(torch.tensor([[11.0]]), target, (0.9,))
         self.assertAlmostEqual(float(under), 0.9, places=5)
         self.assertAlmostEqual(float(over), 0.1, places=5)
 
     def test_a_perfect_prediction_costs_nothing(self):
-        loss = model_lstm.pinball_loss(torch.tensor([5.0, 7.0]),
-                                       torch.tensor([5.0, 7.0]), 0.9)
+        loss = model_lstm.pinball_loss(torch.tensor([[5.0], [7.0]]),
+                                       torch.tensor([5.0, 7.0]), (0.9,))
         self.assertAlmostEqual(float(loss), 0.0, places=6)
+
+    def test_the_loss_sums_across_the_grid_and_averages_across_rows(self):
+        """Summing over quantiles keeps each point's gradient at its own
+        scale, so the extremes are not drowned out by the middle of the grid.
+        Averaging over rows is what makes the number batch-size independent.
+        """
+        prediction = torch.tensor([[9.0, 9.0], [9.0, 9.0]])
+        target = torch.tensor([10.0, 10.0])
+        loss = model_lstm.pinball_loss(prediction, target, (0.1, 0.9))
+        self.assertAlmostEqual(float(loss), 0.1 + 0.9, places=5)
+
+    def test_it_is_k1_up_to_the_grid_size_constant(self):
+        """K1 is the *mean* across the grid, this loss is the *sum*. They
+        differ by len(quantiles) and by nothing else — which is what keeps the
+        training objective and the selection criterion the same function.
+        """
+        quantiles = (0.1, 0.5, 0.9)
+        prediction = torch.tensor([[8.0, 9.0, 11.0]])
+        target = torch.tensor([10.0])
+        loss = float(model_lstm.pinball_loss(prediction, target, quantiles))
+        per_point = [max(tau * (10.0 - p), (tau - 1.0) * (10.0 - p))
+                     for tau, p in zip(quantiles, [8.0, 9.0, 11.0])]
+        self.assertAlmostEqual(loss / len(quantiles),
+                               sum(per_point) / len(quantiles), places=5)
 
 
 class TestEmbeddingSizes(unittest.TestCase):
@@ -44,16 +69,33 @@ class TestEmbeddingSizes(unittest.TestCase):
 
 
 class TestQuantileLSTM(unittest.TestCase):
-    def _model(self, num_layers=2, dropout=0.2):
+    def _model(self, num_layers=2, dropout=0.2, n_quantiles=3):
         return model_lstm.QuantileLSTM(
             n_dynamic=4, sizes=[(5, 3), (3, 2)],
-            hidden_size=8, num_layers=num_layers, dropout=dropout)
+            hidden_size=8, num_layers=num_layers, dropout=dropout,
+            n_quantiles=n_quantiles)
 
-    def test_forward_returns_one_value_per_row(self):
+    def test_forward_returns_one_column_per_quantile_point(self):
         model = self._model()
         x = torch.randn(6, 28, 4)
         c = torch.zeros(6, 2, dtype=torch.long)
-        self.assertEqual(model(x, c).shape, (6,))
+        self.assertEqual(model(x, c).shape, (6, 3))
+
+    def test_the_head_width_follows_the_grid(self):
+        """One composite head, not len(grid) separate networks: every point
+        reads the same LSTM state, which is the whole reason a shared trunk is
+        cheaper than nineteen models."""
+        model = self._model(n_quantiles=19)
+        x = torch.randn(4, 28, 4)
+        c = torch.zeros(4, 2, dtype=torch.long)
+        self.assertEqual(model(x, c).shape, (4, 19))
+        self.assertEqual(model.head[-1].out_features, 19)
+
+    def test_the_default_grid_is_the_evaluation_grid(self):
+        self.assertEqual(tuple(model_lstm.QUANTILES), evaluation.QUANTILE_SET_A)
+
+    def test_the_service_level_constant_survives_as_a_scalar(self):
+        self.assertEqual(model_lstm.QUANTILE, 0.9)
 
     def test_a_single_layer_model_still_applies_dropout_in_the_head(self):
         """nn.LSTM ignores dropout when num_layers=1, so the flag would be
@@ -68,14 +110,16 @@ class TestQuantileLSTM(unittest.TestCase):
         model = self._model()
         x = torch.randn(2, 28, 4)
         c = torch.tensor([[4, 2], [0, 0]], dtype=torch.long)
-        self.assertEqual(model(x, c).shape, (2,))
+        self.assertEqual(model(x, c).shape, (2, 3))
 
 
 class TestBuildModel(unittest.TestCase):
     def test_the_same_seed_produces_identical_initial_weights(self):
         params = {**model_lstm.DEFAULT_PARAMS, "hidden_size": 8, "num_layers": 1}
-        a = model_lstm.build_model(params, n_dynamic=4, sizes=[(5, 3)], seed=42)
-        b = model_lstm.build_model(params, n_dynamic=4, sizes=[(5, 3)], seed=42)
+        a = model_lstm.build_model(params, n_dynamic=4, sizes=[(5, 3)], seed=42,
+                                   n_quantiles=3)
+        b = model_lstm.build_model(params, n_dynamic=4, sizes=[(5, 3)], seed=42,
+                                   n_quantiles=3)
         for left, right in zip(a.parameters(), b.parameters()):
             torch.testing.assert_close(left, right)
 
@@ -134,6 +178,12 @@ class TestScaleValues(unittest.TestCase):
         self.assertEqual(scaled.dtype, np.dtype("float32"))
 
 
+# A three-point stand-in for the 19-point grid. Short enough to keep the
+# suite fast, long enough that nothing can pass by treating the head as
+# single-output.
+GRID = (0.1, 0.5, 0.9)
+
+
 class TestTrainingLoop(unittest.TestCase):
     def _setup(self):
         panel, index = _tiny_index()
@@ -141,7 +191,8 @@ class TestTrainingLoop(unittest.TestCase):
         targets = panel["target_lead_time_cumulative"].to_numpy("float32")[ends]
         params = {**model_lstm.DEFAULT_PARAMS, "hidden_size": 8,
                   "num_layers": 1, "batch_size": 16}
-        model = model_lstm.build_model(params, n_dynamic=2, sizes=[(3, 2)], seed=42)
+        model = model_lstm.build_model(params, n_dynamic=2, sizes=[(3, 2)],
+                                       seed=42, n_quantiles=len(GRID))
         return index, ends, targets, params, model
 
     def test_one_epoch_returns_a_finite_mean_loss(self):
@@ -149,7 +200,7 @@ class TestTrainingLoop(unittest.TestCase):
         optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
         loss = model_lstm.run_epoch(
             model, optimizer, index["values"], index["cats"], ends, targets,
-            params, quantile=0.9,
+            params, quantiles=GRID,
             generator=torch.Generator().manual_seed(42),
             device=torch.device("cpu"), lookback=7)
         self.assertTrue(np.isfinite(loss))
@@ -162,24 +213,40 @@ class TestTrainingLoop(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             model_lstm.run_epoch(
                 model, optimizer, index["values"], index["cats"], ends, poisoned,
-                params, quantile=0.9,
+                params, quantiles=GRID,
                 generator=torch.Generator().manual_seed(42),
                 device=torch.device("cpu"), lookback=7)
         self.assertIn("NaN", str(caught.exception))
 
-    def test_predict_returns_one_value_per_end(self):
+    def test_predict_returns_one_column_per_quantile_point(self):
         index, ends, _, params, model = self._setup()
         prediction = model_lstm.predict(
             model, index["values"], index["cats"], ends,
             device=torch.device("cpu"), lookback=7, batch_size=16)
-        self.assertEqual(prediction.shape, (len(ends),))
+        self.assertEqual(prediction.shape, (len(ends), len(GRID)))
+
+    def test_predict_leaves_the_head_output_unsorted(self):
+        """Nothing in the loss forces the outputs to be monotone in tau, and
+        a post-hoc sort here would drive `crossing_rate` to zero by hiding the
+        miscalibration it exists to expose. So a head that crosses must come
+        back crossing.
+        """
+        index, ends, _, params, model = self._setup()
+        with torch.no_grad():
+            model.head[-1].weight.zero_()
+            model.head[-1].bias.copy_(torch.tensor([3.0, 2.0, 1.0]))
+        prediction = model_lstm.predict(
+            model, index["values"], index["cats"], ends,
+            device=torch.device("cpu"), lookback=7, batch_size=16)
+        np.testing.assert_allclose(prediction[0], [3.0, 2.0, 1.0], atol=1e-5)
+        self.assertEqual(evaluation.crossing_rate(prediction, GRID), 1.0)
 
     def test_early_stopping_reports_an_epoch_within_the_cap(self):
         index, ends, targets, params, model = self._setup()
         fit_ends, es_ends = ends[:50], ends[50:]
         fitted, best_epoch = model_lstm.fit_with_early_stopping(
             params, index, fit_ends, targets[:50], es_ends, targets[50:],
-            quantile=0.9, sizes=[(3, 2)], device=torch.device("cpu"),
+            quantiles=GRID, sizes=[(3, 2)], device=torch.device("cpu"),
             max_epochs=6, patience=2, lookback=7)
         self.assertGreaterEqual(best_epoch, 1)
         self.assertLessEqual(best_epoch, 6)
@@ -188,7 +255,7 @@ class TestTrainingLoop(unittest.TestCase):
     def test_fit_epochs_runs_exactly_the_requested_number_of_epochs(self):
         index, ends, targets, params, model = self._setup()
         fitted = model_lstm.fit_epochs(
-            params, index, ends, targets, epochs=3, quantile=0.9,
+            params, index, ends, targets, epochs=3, quantiles=GRID,
             sizes=[(3, 2)], device=torch.device("cpu"), lookback=7)
         self.assertEqual(fitted.epochs_run, 3)
 
@@ -197,7 +264,7 @@ class TestTrainingLoop(unittest.TestCase):
         outputs = []
         for _ in range(2):
             fitted = model_lstm.fit_epochs(
-                params, index, ends, targets, epochs=2, quantile=0.9,
+                params, index, ends, targets, epochs=2, quantiles=GRID,
                 sizes=[(3, 2)], device=torch.device("cpu"), lookback=7)
             outputs.append(model_lstm.predict(
                 fitted, index["values"], index["cats"], ends,
@@ -222,6 +289,11 @@ def _fold_panel(n_days=200, n_pairs=2, seed=7):
             "feat_b": rng.normal(size=n_days),
             "cat_idx": rng.integers(0, 3, size=n_days),
             "lead_time_days": 3.0,
+            # The naive baselines run_fold recomputes read these two; without
+            # them the fixture could reach make_fit_predict but never run_fold,
+            # which is the gap T-12 found in the first place.
+            "lag_1": np.abs(feat),
+            "roll_mean_7": np.abs(feat) / 2.0,
             "demand_segment": "smooth",
             "is_delivery_day": True,
             "target_lead_time_cumulative": np.abs(feat * 5 + 10),
@@ -248,15 +320,15 @@ class TestFitPredict(unittest.TestCase):
         # sizes is passed explicitly: the fixture's `cat_idx` has no entry in
         # the real category_mapping.json that embedding_sizes() would read.
         return model_lstm.make_fit_predict(
-            SMALL, index=index, quantile=0.9, tail_days=30,
+            SMALL, index=index, quantiles=GRID, tail_days=30,
             sizes=[(3, 2)],
             max_epochs=kwargs.pop("max_epochs", 3),
             patience=kwargs.pop("patience", 2), **kwargs)
 
-    def test_it_returns_one_prediction_per_validation_row(self):
+    def test_it_returns_one_column_per_quantile_point(self):
         _, index, train, valid = self._index_and_split()
         prediction = self._fit_predict(index)(train, valid)
-        self.assertEqual(prediction.shape, (len(valid),))
+        self.assertEqual(prediction.shape, (len(valid), len(GRID)))
 
     def test_predictions_are_never_negative(self):
         _, index, train, valid = self._index_and_split()
@@ -300,7 +372,7 @@ class TestFitPredict(unittest.TestCase):
     def test_log_target_round_trips_to_the_original_scale(self):
         _, index, train, valid = self._index_and_split()
         logged = model_lstm.make_fit_predict(
-            {**SMALL, "log_target": True}, index=index, quantile=0.9,
+            {**SMALL, "log_target": True}, index=index, quantiles=GRID,
             sizes=[(3, 2)], max_epochs=2, patience=2)(train, valid)
         self.assertTrue(np.isfinite(logged).all())
         self.assertTrue((logged >= 0).all())
@@ -311,15 +383,15 @@ class TestBindPanel(unittest.TestCase):
         panel = _fold_panel()
         make = model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
                                      lookback=7, sizes=[(3, 2)])
-        fit_predict = make(SMALL, feature_cols=FOLD_FEATURES, quantile=0.9)
+        fit_predict = make(SMALL, feature_cols=FOLD_FEATURES, quantiles=GRID)
         self.assertTrue(callable(fit_predict))
 
     def test_the_index_is_built_once_and_reused(self):
         panel = _fold_panel()
         make = model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
                                      lookback=7, sizes=[(3, 2)])
-        first = make(SMALL, quantile=0.9)
-        second = make(SMALL, quantile=0.9)
+        first = make(SMALL, quantiles=GRID)
+        second = make(SMALL, quantiles=GRID)
         self.assertIs(first.index, second.index)
 
     def test_a_different_feature_list_raises(self):
@@ -327,7 +399,7 @@ class TestBindPanel(unittest.TestCase):
         make = model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
                                      lookback=7, sizes=[(3, 2)])
         with self.assertRaises(ValueError) as caught:
-            make(SMALL, feature_cols=["feat_a"], quantile=0.9)
+            make(SMALL, feature_cols=["feat_a"], quantiles=GRID)
         self.assertIn("berbeda dari yang dipakai membangun indeks",
                       str(caught.exception))
 
@@ -336,17 +408,23 @@ class TestFitFinalAndBundle(unittest.TestCase):
         panel = _fold_panel()
         bundle = model_lstm.fit_final(
             panel, SMALL, feature_cols=FOLD_FEATURES, lookback=7,
-            sizes=[(3, 2)], max_epochs=3, patience=2)
+            sizes=[(3, 2)], max_epochs=3, patience=2, quantiles=GRID)
         return panel, bundle
 
     def test_the_bundle_records_everything_needed_to_reload(self):
         _, bundle = self._bundle()
         for key in ("state_dict", "params", "feature_cols", "dynamic_cols",
                     "idx_cols", "embedding_sizes", "scaler", "log_target",
-                    "best_epoch", "quantile", "n_train", "lookback"):
+                    "best_epoch", "quantiles", "n_train", "lookback"):
             self.assertIn(key, bundle)
-        self.assertEqual(bundle["quantile"], 0.9)
         self.assertEqual(bundle["feature_cols"], FOLD_FEATURES)
+
+    def test_the_bundle_records_the_grid_in_head_order(self):
+        """The column order of the head is unrecoverable from `state_dict`
+        alone. Without the grid recorded beside it, a reloaded model's columns
+        are nineteen unlabelled numbers."""
+        _, bundle = self._bundle()
+        self.assertEqual(tuple(bundle["quantiles"]), GRID)
 
     def test_no_training_row_reaches_december(self):
         """fit_final takes its rows from walk_forward.eligible_rows(), which
@@ -363,7 +441,7 @@ class TestFitFinalAndBundle(unittest.TestCase):
         panel, bundle = self._bundle()
         frame = walk_forward.eligible_rows(panel, lookback=7).head(20)
         prediction = model_lstm.predict_bundle(bundle, panel, frame)
-        self.assertEqual(prediction.shape, (20,))
+        self.assertEqual(prediction.shape, (20, len(GRID)))
         self.assertTrue((prediction >= 0).all())
 
     def test_a_column_shuffled_frame_produces_identical_predictions(self):
@@ -377,6 +455,121 @@ class TestFitFinalAndBundle(unittest.TestCase):
         straight = model_lstm.predict_bundle(bundle, panel, frame)
         shuffled = model_lstm.predict_bundle(bundle, shuffled_panel, frame)
         np.testing.assert_allclose(straight, shuffled, rtol=1e-5)
+
+
+class TestWalkForwardIntegration(unittest.TestCase):
+    """The gap T-12 found: every other LSTM test calls `make_fit_predict`
+    directly and checks the array itself, so the suite stayed green through a
+    contract change it never exercised. RF and XGBoost both broke loudly
+    because their suites reach `run_fold`; this class gives the LSTM the same
+    exposure.
+    """
+
+    def _prepared(self):
+        panel = _fold_panel()
+        return panel, walk_forward.eligible_rows(panel, lookback=7)
+
+    def _fit_predict(self, panel):
+        make = model_lstm.bind_panel(panel, feature_cols=FOLD_FEATURES,
+                                     lookback=7, sizes=[(3, 2)], max_epochs=2,
+                                     patience=1, tail_days=30)
+        return make(SMALL, feature_cols=FOLD_FEATURES, quantiles=GRID)
+
+    def test_it_plugs_into_run_fold_unchanged(self):
+        panel, frame = self._prepared()
+        results = walk_forward.run_fold(
+            frame, 5, self._fit_predict(panel), model_name="lstm",
+            quantiles=GRID, prepared=True)
+        self.assertIn("lstm", set(results["model"]))
+        self.assertTrue(results["pinball"].notna().all())
+
+    def test_run_fold_scores_it_at_every_point_of_the_grid(self):
+        panel, frame = self._prepared()
+        results = walk_forward.run_fold(
+            frame, 5, self._fit_predict(panel), model_name="lstm",
+            quantiles=GRID, prepared=True)
+        pooled = results[(results["model"] == "lstm")
+                         & results["group_col"].isna()]
+        self.assertEqual(sorted(pooled["quantile"]), sorted(GRID))
+
+    def test_a_row_count_mismatch_is_caught_by_the_runner(self):
+        """`run_fold` owns the shape contract; this pins that the LSTM is
+        actually subject to it rather than sitting beside it."""
+        panel, frame = self._prepared()
+        fit_predict = self._fit_predict(panel)
+
+        def truncated(train, valid):
+            return fit_predict(train, valid)[:, :1]
+
+        with self.assertRaisesRegex(ValueError, "QUANTILE_SET"):
+            walk_forward.run_fold(frame, 5, truncated, model_name="lstm",
+                                  quantiles=GRID, prepared=True)
+
+
+class TestSeedRepeats(unittest.TestCase):
+    """The LSTM is the only model in the comparison whose weights start
+    random, so a small K1 gap between it and a tree model has never been
+    separable from seed noise. Repeating the winner across seeds is what turns
+    that variance from an inference into a measurement.
+    """
+
+    def _repeats(self, **kwargs):
+        panel = _fold_panel()
+        return model_lstm.run_seed_repeats(
+            panel, SMALL, seeds=(42, 43), folds=(5,), quantiles=GRID,
+            feature_cols=FOLD_FEATURES, lookback=7, sizes=[(3, 2)],
+            max_epochs=2, patience=1, verbose=False, **kwargs)
+
+    def test_one_row_per_seed(self):
+        frame = self._repeats()
+        self.assertEqual(list(frame["seed"]), [42, 43])
+
+    def test_it_reports_the_same_summary_columns_as_the_search(self):
+        """The seed-42 row has to be comparable, column for column, with the
+        winner's row in lstm_search_results.csv — the spec's own consistency
+        check depends on the two being the same shape."""
+        frame = self._repeats()
+        for column in model_common.SEARCH_METRICS:
+            self.assertIn(column, frame.columns)
+
+    def test_the_same_seed_reproduces_its_own_row(self):
+        """If seed 42 does not reproduce, the spread being reported is not
+        seed variance but undetected nondeterminism — a finding in itself."""
+        first = self._repeats()
+        second = self._repeats()
+        self.assertAlmostEqual(float(first.loc[0, "pinball"]),
+                               float(second.loc[0, "pinball"]), places=6)
+
+    def test_it_writes_the_artifact_when_asked(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "seed_repeats.csv")
+            self._repeats(output_path=path)
+            self.assertEqual(len(pd.read_csv(path)), 2)
+
+    def test_the_default_seeds_are_the_three_the_spec_names(self):
+        self.assertEqual(model_lstm.SEED_REPEATS, (42, 43, 44))
+
+
+class TestSearchSpace(unittest.TestCase):
+    def test_the_capacity_dimensions_are_back(self):
+        """Cut on 2026-08-19 for cost, not because depth or width had been
+        shown not to help. Restored 2026-08-24 so an LSTM loss can be read as
+        an architecture result rather than as a shallower search."""
+        self.assertEqual(model_lstm.SEARCH_SPACE["num_layers"], [1, 2])
+        self.assertEqual(model_lstm.SEARCH_SPACE["hidden_size"], [64, 128, 256])
+
+    def test_the_space_is_one_hundred_forty_four_points(self):
+        total = 1
+        for values in model_lstm.SEARCH_SPACE.values():
+            total *= len(values)
+        self.assertEqual(total, 144)
+
+    def test_the_candidate_budget_matches_xgboost(self):
+        """Equal draws is the whole point of the equalisation: 30 against 30
+        is what makes 'LSTM lost' attributable to the architecture."""
+        self.assertEqual(model_lstm.N_CANDIDATES, 30)
 
 
 class TestSearchWrappers(unittest.TestCase):

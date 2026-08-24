@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from utils import model_random_forest as rf
-from utils import modeling_prep, purging, walk_forward
+from utils import evaluation, modeling_prep, purging, walk_forward
 
 
 FEATURES = ["feat_a", "feat_b", "cat_idx"]
@@ -117,21 +117,43 @@ class TestMakeFitPredict(unittest.TestCase):
         return {"n_estimators": 20, "max_depth": 6, "min_samples_leaf": 5,
                 "max_samples_leaf": 20, "random_state": 0, **overrides}
 
-    def test_returns_one_prediction_per_validation_row(self):
+    def test_returns_one_column_per_quantile_point(self):
         train, valid = _frame(300, seed=1), _frame(80, seed=2)
         predict = rf.make_fit_predict(self._params(), feature_cols=FEATURES)
-        self.assertEqual(predict(train, valid).shape, (80,))
+        self.assertEqual(predict(train, valid).shape,
+                         (80, len(evaluation.QUANTILE_SET_A)))
+
+    def test_the_default_grid_is_the_evaluation_grid(self):
+        """A model whose default grid drifted from the evaluator's would be
+        scored against columns that mean something else."""
+        self.assertEqual(tuple(rf.QUANTILES), evaluation.QUANTILE_SET_A)
+
+    def test_the_service_level_constant_survives_as_a_scalar(self):
+        """B-9 ships at one quantile; the grid is how the model is *scored*.
+        Collapsing the two names would lose the distinction."""
+        self.assertEqual(rf.QUANTILE, 0.9)
 
     def test_predictions_are_never_negative(self):
         train, valid = _frame(300, seed=1), _frame(80, seed=2)
         predict = rf.make_fit_predict(self._params(), feature_cols=FEATURES)
         self.assertTrue((predict(train, valid) >= 0).all())
 
-    def test_the_high_quantile_sits_above_the_low_one(self):
+    def test_the_columns_follow_the_requested_order(self):
         train, valid = _frame(300, seed=1), _frame(80, seed=2)
-        low = rf.make_fit_predict(self._params(), feature_cols=FEATURES, quantile=0.1)
-        high = rf.make_fit_predict(self._params(), feature_cols=FEATURES, quantile=0.9)
-        self.assertTrue((high(train, valid) >= low(train, valid)).all())
+        predict = rf.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                      quantiles=(0.1, 0.9))
+        prediction = predict(train, valid)
+        self.assertEqual(prediction.shape, (80, 2))
+        self.assertTrue((prediction[:, 1] >= prediction[:, 0]).all())
+
+    def test_no_row_crosses_anywhere_on_the_grid(self):
+        """Every point is a percentile of one and the same empirical leaf
+        distribution, so crossing is structurally impossible here — which is
+        exactly what makes the forest the cheapest of the three under the
+        multi-quantile criterion."""
+        train, valid = _frame(300, seed=1), _frame(80, seed=2)
+        predict = rf.make_fit_predict(self._params(), feature_cols=FEATURES)
+        self.assertEqual(evaluation.crossing_rate(predict(train, valid)), 0.0)
 
     def test_log_target_returns_predictions_on_the_original_scale(self):
         """Quantiles are equivariant under log1p, so inverting must land back
@@ -145,7 +167,8 @@ class TestMakeFitPredict(unittest.TestCase):
     def test_one_hot_runs_end_to_end(self):
         train, valid = _frame(300, seed=1), _frame(80, seed=2)
         predict = rf.make_fit_predict(self._params(one_hot=True), feature_cols=FEATURES)
-        self.assertEqual(predict(train, valid).shape, (80,))
+        self.assertEqual(predict(train, valid).shape,
+                         (80, len(evaluation.QUANTILE_SET_A)))
 
     def test_the_same_seed_gives_the_same_predictions(self):
         train, valid = _frame(300, seed=1), _frame(80, seed=2)
@@ -261,9 +284,17 @@ class TestFitFinal(unittest.TestCase):
     def test_bundle_records_what_prediction_needs(self):
         bundle = rf.fit_final(_dated_frame(), self._params(),
                               feature_cols=FEATURES, n_estimators=20)
-        for key in ("model", "params", "feature_cols", "columns", "quantile", "n_train"):
+        for key in ("model", "params", "feature_cols", "columns", "quantiles",
+                    "n_train"):
             self.assertIn(key, bundle)
         self.assertEqual(bundle["feature_cols"], FEATURES)
+
+    def test_the_bundle_records_the_whole_grid_not_one_point(self):
+        """The forest serves every point of the grid from one fit; a bundle
+        that recorded 0.9 alone could not reproduce the reported numbers."""
+        bundle = rf.fit_final(_dated_frame(), self._params(),
+                              feature_cols=FEATURES, n_estimators=20)
+        self.assertEqual(tuple(bundle["quantiles"]), rf.QUANTILES)
 
     def test_training_stops_before_december(self):
         frame = _dated_frame(n=400)
@@ -309,7 +340,8 @@ class TestFitFinal(unittest.TestCase):
     def test_predict_bundle_returns_one_value_per_row(self):
         frame = _dated_frame()
         bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES, n_estimators=20)
-        self.assertEqual(rf.predict_bundle(bundle, frame.head(25)).shape, (25,))
+        self.assertEqual(rf.predict_bundle(bundle, frame.head(25)).shape,
+                         (25, len(evaluation.QUANTILE_SET_A)))
 
     def test_predict_bundle_is_non_negative(self):
         frame = _dated_frame()
@@ -321,7 +353,8 @@ class TestFitFinal(unittest.TestCase):
         params = {**self._params(), "one_hot": True}
         bundle = rf.fit_final(frame, params, feature_cols=FEATURES, n_estimators=20)
         shuffled = frame.head(25)[list(reversed(FEATURES)) + ["Tanggal", "lead_time_days"]]
-        self.assertEqual(rf.predict_bundle(bundle, shuffled).shape, (25,))
+        self.assertEqual(rf.predict_bundle(bundle, shuffled).shape,
+                         (25, len(evaluation.QUANTILE_SET_A)))
 
     def test_a_saved_bundle_predicts_identically_after_loading(self):
         frame = _dated_frame()

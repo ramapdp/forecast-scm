@@ -9,16 +9,25 @@ information reaching the model is not, and docs/hasil-modeling-lstm.md says so
 in the head-to-head section rather than leaving a reader to discover it.
 """
 
+import time
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 
-from . import model_common, modeling_prep, purging, sequence_windows, walk_forward
+from . import (evaluation, model_common, modeling_prep, purging,
+               sequence_windows, walk_forward)
 
+# The service level the business ships at (B-9). Kept as a scalar beside the
+# grid: one is a promise to outlets, the other is the head's output layout.
 QUANTILE = 0.9
+
+# The evaluation grid, taken from evaluation.py rather than restated, so the
+# head cannot end up with an output layer that disagrees with the evaluator.
+QUANTILES = evaluation.QUANTILE_SET_A
 
 # Same purged tail as XGBoost: the epoch count is a capacity decision, and the
 # validation fold is the one place it cannot be taken from.
@@ -42,38 +51,54 @@ DEFAULT_PARAMS = {
     "random_state": 42,
 }
 
-# Shrunk from {hidden 64/128/256} x {1, 2 layers} after the epoch cost was
-# measured on fold 5 (2026-08-19, CPU): a 2-layer hidden-128 epoch costs 259 s
-# against 104 s for its 1-layer twin, which alone puts `candidate_budget` under
-# its six-candidate floor. Depth is the dimension that was dropped rather than
-# width, because dropping it buys the most seconds per dimension removed;
-# hidden 256 went with it as the next most expensive draw. The consequence —
-# this search never asks whether a second layer would have helped — belongs in
-# the results document, not in a silently raised ceiling.
+# Restored to the full 144 points on 2026-08-24. `hidden_size=256` and
+# `num_layers=2` were cut on 2026-08-19 because a 2-layer hidden-128 epoch
+# costs 259 s against 104 s for its 1-layer twin — a cost decision, never a
+# finding that depth or width did not help. Under the budget equalisation
+# (spec §2.2) that cut stopped being affordable in a different currency: with
+# two capacity dimensions missing, an LSTM loss at K1 could always be answered
+# with "you never let it be bigger", and attribution is the output this
+# comparison exists to produce. The wall-clock consequence is recorded in
+# docs/hasil-modeling-lstm.md rather than absorbed by shrinking the space.
 SEARCH_SPACE = {
-    "hidden_size": [64, 128],
-    "num_layers": [1],
+    "hidden_size": [64, 128, 256],
+    "num_layers": [1, 2],
     "dropout": [0.0, 0.2, 0.3],
     "learning_rate": [3e-4, 1e-3],
     "batch_size": [1024, 2048],
     "log_target": [False, True],
 }
 
+# Equal to XGBoost's draw count, and pinned rather than derived from
+# `candidate_budget()` — see spec §2.2. Thirty against thirty is what makes
+# "the LSTM lost" a statement about the architecture instead of about the
+# search depth.
+N_CANDIDATES = 30
+
 
 def pinball_loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
-    quantile: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
 ) -> torch.Tensor:
     """The training objective *is* the selection criterion.
 
-    The same property `reg:quantileerror` gave XGBoost: what is optimised
-    during training and what is scored during evaluation are one function, so
-    a model cannot win the fit and lose the metric.
+    `prediction` is `(batch, len(quantiles))`, `target` is `(batch,)` and
+    broadcasts across the grid. The sum runs over quantiles and the mean over
+    rows: summing keeps each point's gradient at its own scale, so the extreme
+    quantiles are not drowned out by the dense middle of the grid, while the
+    mean over rows keeps the number independent of batch size.
+
+    K1 is the *mean* over quantiles, so it and this loss differ by the constant
+    `len(quantiles)` and by nothing else — which preserves the property
+    `reg:quantileerror` gives XGBoost: a model cannot win the fit and lose the
+    metric.
     """
-    difference = target - prediction
-    return torch.maximum(quantile * difference,
-                         (quantile - 1.0) * difference).mean()
+    alphas = torch.as_tensor(quantiles, dtype=prediction.dtype,
+                             device=prediction.device).view(1, -1)
+    difference = target.view(-1, 1) - prediction
+    return torch.maximum(alphas * difference,
+                         (alphas - 1.0) * difference).sum(dim=1).mean()
 
 
 def embedding_sizes(
@@ -113,6 +138,7 @@ class QuantileLSTM(nn.Module):
         hidden_size: int = 128,
         num_layers: int = 2,
         dropout: float = 0.2,
+        n_quantiles: int = len(QUANTILES),
     ):
         super().__init__()
         self.embeddings = nn.ModuleList(
@@ -129,11 +155,16 @@ class QuantileLSTM(nn.Module):
             dropout=dropout if num_layers > 1 else 0.0,
         )
         width = hidden_size + sum(dim for _, dim in sizes)
+        # One output neuron per quantile, on a shared trunk: every point reads
+        # the same LSTM state and the same embeddings, which is what makes this
+        # cheaper than len(QUANTILE_SET) separate networks and what lets the
+        # quantiles inform each other. Nothing here forces the outputs to be
+        # monotone in tau — crossing is measured, not designed away.
         self.head = nn.Sequential(
             nn.Linear(width, hidden_size),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_size, 1),
+            nn.Linear(hidden_size, n_quantiles),
         )
 
     def forward(self, x_dynamic: torch.Tensor, x_cats: torch.Tensor) -> torch.Tensor:
@@ -141,10 +172,11 @@ class QuantileLSTM(nn.Module):
         last = output[:, -1, :]
         embedded = [layer(x_cats[:, position])
                     for position, layer in enumerate(self.embeddings)]
-        return self.head(torch.cat([last, *embedded], dim=1)).squeeze(1)
+        return self.head(torch.cat([last, *embedded], dim=1))
 
 
-def build_model(params: dict, n_dynamic: int, sizes: list, seed: int) -> QuantileLSTM:
+def build_model(params: dict, n_dynamic: int, sizes: list, seed: int,
+                n_quantiles: int = len(QUANTILES)) -> QuantileLSTM:
     """Seeded construction, so the two fits of the two-fit protocol start
     from identical weights and `best_epoch` means the same thing in both.
     """
@@ -155,6 +187,7 @@ def build_model(params: dict, n_dynamic: int, sizes: list, seed: int) -> Quantil
         hidden_size=params["hidden_size"],
         num_layers=params["num_layers"],
         dropout=params["dropout"],
+        n_quantiles=n_quantiles,
     )
 
 
@@ -233,7 +266,7 @@ def run_epoch(
     ends: np.ndarray,
     targets: np.ndarray,
     params: dict,
-    quantile: float,
+    quantiles: tuple,
     generator,
     device,
     lookback: int = modeling_prep.LOOKBACK,
@@ -250,7 +283,7 @@ def run_epoch(
         y = torch.from_numpy(targets[batch].astype("float32")).to(device)
 
         optimizer.zero_grad()
-        loss = pinball_loss(model(x_dynamic, x_cats), y, quantile)
+        loss = pinball_loss(model(x_dynamic, x_cats), y, quantiles)
         if not torch.isfinite(loss):
             # Fails this candidate through run_search's existing catch tuple.
             # RuntimeError is not raised here on purpose: PyTorch uses it for
@@ -278,10 +311,16 @@ def predict(
     lookback: int = modeling_prep.LOOKBACK,
     batch_size: int = 4096,
 ) -> np.ndarray:
-    """Predictions in `ends` order, so they line up with the caller's frame."""
+    """Predictions in `ends` order, one column per quantile point.
+
+    Returned exactly as the head produced them — no sort. A post-hoc sort
+    would drive `evaluation.crossing_rate()` to zero without making the
+    distribution any more coherent, which is hiding the measurement rather
+    than taking it.
+    """
     model.eval()
     if len(ends) == 0:
-        return np.empty(0, dtype="float32")
+        return np.empty((0, model.head[-1].out_features), dtype="float32")
     parts = []
     for start in range(0, len(ends), batch_size):
         chunk = ends[start:start + batch_size]
@@ -290,11 +329,21 @@ def predict(
     return np.concatenate(parts)
 
 
-def _evaluate(model, scaled, cats, ends, targets, quantile, device, lookback):
+def _evaluate(model, scaled, cats, ends, targets, quantiles, device, lookback):
+    """The early-stopping metric: mean pinball across the grid — K1's own
+    definition, so the epoch that wins here is the epoch that wins the
+    criterion the candidate is later ranked on.
+
+    The mean rather than the training loss's sum. They order epochs
+    identically (they differ by len(quantiles)), and reading the same number
+    the results tables carry is worth more than saving a multiplication.
+    """
     prediction = predict(model, scaled, cats, ends, device=device, lookback=lookback)
-    difference = targets.astype("float64") - prediction.astype("float64")
-    return float(np.maximum(quantile * difference,
-                            (quantile - 1.0) * difference).mean())
+    alphas = np.asarray(quantiles, dtype="float64").reshape(1, -1)
+    difference = (targets.astype("float64").reshape(-1, 1)
+                  - prediction.astype("float64"))
+    return float(np.maximum(alphas * difference,
+                            (alphas - 1.0) * difference).mean())
 
 
 def fit_with_early_stopping(
@@ -304,7 +353,7 @@ def fit_with_early_stopping(
     fit_targets: np.ndarray,
     es_ends: np.ndarray,
     es_targets: np.ndarray,
-    quantile: float,
+    quantiles: tuple,
     sizes: list,
     device,
     scaled: Optional[np.ndarray] = None,
@@ -321,7 +370,7 @@ def fit_with_early_stopping(
     """
     scaled = index["values"] if scaled is None else scaled
     model = build_model(params, len(index["dynamic_cols"]), sizes,
-                        params["random_state"])
+                        params["random_state"], n_quantiles=len(quantiles))
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
     generator = torch.Generator().manual_seed(params["random_state"])
@@ -329,9 +378,9 @@ def fit_with_early_stopping(
     best_score, best_epoch, since_improvement = float("inf"), 1, 0
     for epoch in range(1, max_epochs + 1):
         run_epoch(model, optimizer, scaled, index["cats"], fit_ends, fit_targets,
-                  params, quantile, generator, device, lookback)
+                  params, quantiles, generator, device, lookback)
         score = _evaluate(model, scaled, index["cats"], es_ends, es_targets,
-                          quantile, device, lookback)
+                          quantiles, device, lookback)
         if score < best_score:
             best_score, best_epoch, since_improvement = score, epoch, 0
         else:
@@ -348,7 +397,7 @@ def fit_epochs(
     ends: np.ndarray,
     targets: np.ndarray,
     epochs: int,
-    quantile: float,
+    quantiles: tuple,
     sizes: list,
     device,
     scaled: Optional[np.ndarray] = None,
@@ -363,14 +412,14 @@ def fit_epochs(
     """
     scaled = index["values"] if scaled is None else scaled
     model = build_model(params, len(index["dynamic_cols"]), sizes,
-                        params["random_state"])
+                        params["random_state"], n_quantiles=len(quantiles))
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
     generator = torch.Generator().manual_seed(params["random_state"])
 
     for _ in range(epochs):
         run_epoch(model, optimizer, scaled, index["cats"], ends, targets,
-                  params, quantile, generator, device, lookback)
+                  params, quantiles, generator, device, lookback)
     model.epochs_run = epochs
     return model
 
@@ -406,7 +455,7 @@ def make_fit_predict(
     params: Optional[dict] = None,
     index: Optional[dict] = None,
     feature_cols: Optional[list] = None,
-    quantile: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
     tail_days: int = ES_TAIL_DAYS,
     max_epochs: int = MAX_EPOCHS,
     patience: int = EARLY_STOPPING_EPOCHS,
@@ -429,6 +478,7 @@ def make_fit_predict(
     if index is None:
         raise ValueError("make_fit_predict butuh indeks dari bind_panel()")
     params = {**DEFAULT_PARAMS, **(params or {})}
+    quantiles = tuple(quantiles)
     device = resolve_device(device_name)
     # From category_mapping.json unless the caller supplies its own — tests do,
     # because a synthetic _idx fixture column has no entry in that file.
@@ -459,19 +509,20 @@ def make_fit_predict(
 
         _, best_epoch = fit_with_early_stopping(
             params, index, fit_ends, _target(fit_rows, params),
-            es_ends, _target(es_rows, params), quantile=quantile, sizes=sizes,
+            es_ends, _target(es_rows, params), quantiles=quantiles, sizes=sizes,
             device=device, scaled=scaled, max_epochs=max_epochs,
             patience=patience, lookback=lookback)
         fit_predict.best_epochs.append(int(best_epoch))
 
         model = fit_epochs(
             params, index, train_ends, _target(train, params), epochs=best_epoch,
-            quantile=quantile, sizes=sizes, device=device, scaled=scaled,
+            quantiles=quantiles, sizes=sizes, device=device, scaled=scaled,
             lookback=lookback)
 
         prediction = predict(model, scaled, index["cats"], valid_ends,
                              device=device, lookback=lookback)
-        prediction = np.asarray(prediction, dtype="float64")
+        prediction = np.asarray(prediction, dtype="float64").reshape(
+            len(valid_ends), len(quantiles))
         if params["log_target"]:
             prediction = modeling_prep.inverse_log_target(prediction)
         # A negative shipment quantity is not a thing.
@@ -495,7 +546,7 @@ def bind_panel(
     """Give `model_common.run_search()` a callable of the signature it expects.
 
     `run_search` calls `make_fit_predict(candidate, feature_cols=...,
-    quantile=...)`. There is no slot for the panel, and adding one would
+    quantiles=...)`. There is no slot for the panel, and adding one would
     change a signature the other two models already satisfy — so the panel is
     bound here instead.
 
@@ -505,12 +556,12 @@ def bind_panel(
     index = sequence_windows.build_index(panel, feature_cols=feature_cols,
                                          lookback=lookback)
 
-    def make(params=None, feature_cols=None, quantile: float = QUANTILE):
+    def make(params=None, feature_cols=None, quantiles: tuple = QUANTILES):
         if feature_cols is not None and list(feature_cols) != index["feature_cols"]:
             raise ValueError(
                 "feature_cols berbeda dari yang dipakai membangun indeks"
             )
-        return make_fit_predict(params, index=index, quantile=quantile,
+        return make_fit_predict(params, index=index, quantiles=quantiles,
                                 tail_days=tail_days, max_epochs=max_epochs,
                                 patience=patience, device_name=device_name,
                                 sizes=sizes)
@@ -524,6 +575,13 @@ MODEL_FILE = str(BASE_DIR / "models/lstm_q90.joblib")
 BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/lstm_best_params.json")
 SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/lstm_search_results.csv")
 RESULTS_FILE = str(BASE_DIR / "dataset/model_ready/lstm_walk_forward_results.csv")
+SEED_REPEATS_FILE = str(BASE_DIR / "dataset/model_ready/lstm_seed_repeats.csv")
+
+# The winner is re-run at each of these. 42 is included rather than assumed:
+# its row has to come back identical to the winner's row in the search CSV,
+# and a mismatch there is nondeterminism nobody has noticed yet — a finding of
+# its own, not a rounding difference to wave through.
+SEED_REPEATS = (42, 43, 44)
 
 
 def fit_final(
@@ -534,7 +592,7 @@ def fit_final(
     tail_days: int = ES_TAIL_DAYS,
     max_epochs: int = MAX_EPOCHS,
     patience: int = EARLY_STOPPING_EPOCHS,
-    quantile: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
     device_name: str = "cpu",
     sizes: Optional[list] = None,
     date_col: str = modeling_prep.DATE_COL,
@@ -551,6 +609,7 @@ def fit_final(
     are still legitimate history.
     """
     params = {**DEFAULT_PARAMS, **params}
+    quantiles = tuple(quantiles)
     index = sequence_windows.build_index(df, feature_cols=feature_cols,
                                          lookback=lookback, date_col=date_col)
     device = resolve_device(device_name)
@@ -574,11 +633,11 @@ def fit_final(
         params, index,
         sequence_windows.window_ends(index, fit_rows), _target(fit_rows, params),
         sequence_windows.window_ends(index, es_rows), _target(es_rows, params),
-        quantile=quantile, sizes=sizes, device=device, scaled=scaled,
+        quantiles=quantiles, sizes=sizes, device=device, scaled=scaled,
         max_epochs=max_epochs, patience=patience, lookback=lookback)
 
     model = fit_epochs(params, index, ends, _target(frame, params),
-                       epochs=best_epoch, quantile=quantile, sizes=sizes,
+                       epochs=best_epoch, quantiles=quantiles, sizes=sizes,
                        device=device, scaled=scaled, lookback=lookback)
 
     return {
@@ -592,7 +651,10 @@ def fit_final(
         "scaler": scaler,
         "log_target": params["log_target"],
         "best_epoch": int(best_epoch),
-        "quantile": quantile,
+        # The whole grid in head order, not a scalar. The column order of the
+        # head is unrecoverable from `state_dict` alone, so without this a
+        # reloaded model returns nineteen unlabelled numbers.
+        "quantiles": quantiles,
         "lookback": lookback,
         "n_train": int(len(frame)),
     }
@@ -609,8 +671,10 @@ def predict_bundle(bundle: dict, panel, frame) -> np.ndarray:
     index = sequence_windows.build_index(
         panel, feature_cols=bundle["feature_cols"], lookback=bundle["lookback"])
     device = resolve_device(bundle["params"].get("device", "cpu"))
+    quantiles = tuple(bundle["quantiles"])
     model = build_model(bundle["params"], len(bundle["dynamic_cols"]),
-                        bundle["embedding_sizes"], bundle["params"]["random_state"])
+                        bundle["embedding_sizes"], bundle["params"]["random_state"],
+                        n_quantiles=len(quantiles))
     model.load_state_dict(bundle["state_dict"])
     model.to(device)
 
@@ -620,7 +684,7 @@ def predict_bundle(bundle: dict, panel, frame) -> np.ndarray:
         predict(model, scaled, index["cats"], ends, device=device,
                 lookback=bundle["lookback"]),
         dtype="float64",
-    )
+    ).reshape(len(ends), len(quantiles))
     if bundle["log_target"]:
         prediction = modeling_prep.inverse_log_target(prediction)
     return np.clip(prediction, 0.0, None)
@@ -674,7 +738,7 @@ def run_search(
     df,
     candidates: list,
     folds: tuple = SEARCH_FOLDS,
-    alpha: float = QUANTILE,
+    quantiles: tuple = QUANTILES,
     model_name: str = "lstm",
     feature_cols: Optional[list] = None,
     verbose: bool = True,
@@ -698,10 +762,101 @@ def run_search(
                                     sizes=sizes),
         search_space=SEARCH_SPACE,
         folds=folds,
-        alpha=alpha,
+        quantiles=quantiles,
         model_name=model_name,
         feature_cols=feature_cols,
         verbose=verbose,
         checkpoint_path=checkpoint_path,
         resume=resume,
     )
+
+
+def run_seed_repeats(
+    df,
+    params: dict,
+    seeds: tuple = SEED_REPEATS,
+    folds: tuple = SEARCH_FOLDS,
+    quantiles: tuple = QUANTILES,
+    model_name: str = "lstm",
+    feature_cols: Optional[list] = None,
+    lookback: int = modeling_prep.LOOKBACK,
+    device_name: str = "cpu",
+    sizes: Optional[list] = None,
+    tail_days: int = ES_TAIL_DAYS,
+    max_epochs: int = MAX_EPOCHS,
+    patience: int = EARLY_STOPPING_EPOCHS,
+    verbose: bool = True,
+    output_path: Optional[str] = None,
+):
+    """Re-run one configuration across seeds, on the search folds.
+
+    The LSTM is the only model here whose weights start random, so a small K1
+    gap between it and a tree model has never been separable from seed noise —
+    the spread across folds mixes seed variance with data variance and cannot
+    be asked to answer this. Running the *winner* at three seeds on the same
+    two folds measures it directly.
+
+    Only the winner. Repeating all thirty candidates would pay three times the
+    search bill to answer a question that only matters for the configuration
+    actually being reported.
+
+    The row layout is `summarise_candidate()`'s, deliberately: the seed-42 row
+    must be comparable column for column with that candidate's row in
+    `lstm_search_results.csv`, and any difference between them is
+    nondeterminism rather than seed variance.
+    """
+    frame = walk_forward.eligible_rows(df, lookback=lookback)
+    make = bind_panel(df, feature_cols=feature_cols, lookback=lookback,
+                      device_name=device_name, sizes=sizes, tail_days=tail_days,
+                      max_epochs=max_epochs, patience=patience)
+
+    rows = []
+    for seed in seeds:
+        started = time.perf_counter()
+        fit_predict = make({**params, "random_state": seed},
+                           quantiles=quantiles)
+        results = pd.concat(
+            [walk_forward.run_fold(frame, fold_id, fit_predict,
+                                   model_name=model_name, quantiles=quantiles,
+                                   prepared=True)
+             for fold_id in folds],
+            ignore_index=True,
+        )
+        record = {
+            "seed": seed,
+            **model_common.summarise_candidate(results, model_name, folds,
+                                               quantiles),
+            "best_epoch": model_common.reported_capacity(fit_predict),
+            "elapsed_seconds": round(time.perf_counter() - started, 1),
+        }
+        rows.append(record)
+        if verbose:
+            print(f"seed {seed}: K1={record['pinball']:.4f} "
+                  f"epoch={record['best_epoch'] or '-'} "
+                  f"{record['elapsed_seconds']:.0f}s", flush=True)
+
+    table = pd.DataFrame(rows)
+    if output_path is not None:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        table.to_csv(output_path, index=False)
+    return table
+
+
+def seed_spread(repeats) -> dict:
+    """min / mean / max / range of K1 across the seeds.
+
+    `range` is the number that decides how the K1 table may be read: if the
+    spread across seeds of one configuration exceeds the K1 distance between
+    the LSTM and a tree model, that distance is not a difference between
+    models and the results document has to say so (spec §2.3).
+    """
+    values = pd.Series(repeats["pinball"], dtype="float64").dropna()
+    if values.empty:
+        return {"min": float("nan"), "mean": float("nan"),
+                "max": float("nan"), "range": float("nan")}
+    return {
+        "min": float(values.min()),
+        "mean": float(values.mean()),
+        "max": float(values.max()),
+        "range": float(values.max() - values.min()),
+    }

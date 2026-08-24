@@ -20,7 +20,7 @@ from typing import Callable, Optional
 import joblib
 import pandas as pd
 
-from . import modeling_prep, purging, walk_forward
+from . import evaluation, modeling_prep, purging, walk_forward
 
 # The encoded categoricals, the only columns one-hot expansion touches.
 IDX_COLS = [col for col in modeling_prep.FEATURE_COLS if col.endswith("_idx")]
@@ -143,7 +143,56 @@ def sample_search_space(
     return candidates
 
 
-SEARCH_METRICS = ("pinball", "mae", "coverage", "fill_rate")
+# `pinball` is K1 — the mean across the whole quantile grid — because that is
+# what select_best() ranks on. The other three are read at one point of the
+# grid and say which point in `headline_quantile`, since "mae" on its own stops
+# meaning anything once there are nineteen of them.
+SEARCH_METRICS = ("pinball", "mae_headline", "coverage_headline",
+                  "fill_rate_headline", "coverage_gap", "crossing_rate")
+
+
+def headline_quantile(quantiles: tuple) -> float:
+    """The grid point the per-candidate summary columns are read at.
+
+    0.9 when the grid contains it, which is every Tahap A run: it is the
+    service level the business ships at (B-9), so it is the number a reader
+    checks first. Tahap B grids come from critical ratios and need not contain
+    0.9 at all, so the nearest point stands in rather than a KeyError three
+    hours into a search.
+    """
+    return min(quantiles, key=lambda tau: abs(tau - evaluation.DEFAULT_ALPHA))
+
+
+def summarise_candidate(results: pd.DataFrame, model_name: str, folds: tuple,
+                        quantiles: tuple) -> dict:
+    """The one row per candidate that lands in the search CSV.
+
+    Public because the LSTM's seed-repeat protocol writes rows that have to be
+    comparable with the search CSV column for column — the spec's own check is
+    that the seed-42 repeat reproduces the winner's row exactly, and two
+    summaries built by two functions could not support it.
+
+    K1 decides the winner; the rest is what a reader needs to see *why* a
+    candidate won or lost — whether it bought its pinball with a calibration
+    drift (`coverage_gap`, signed, so a bodily shift is distinguishable from
+    scatter) or with a distribution that crosses itself.
+    """
+    headline = headline_quantile(quantiles)
+    calibration = walk_forward.coverage_by_quantile(results, model_name, folds=folds)
+    return {
+        "pinball": walk_forward.pooled_k1(results, model_name, folds=folds),
+        "mae_headline": walk_forward.pooled_metric(
+            results, model_name, metric="mae", folds=folds, quantile=headline),
+        "coverage_headline": walk_forward.pooled_metric(
+            results, model_name, metric="coverage", folds=folds, quantile=headline),
+        "fill_rate_headline": walk_forward.pooled_metric(
+            results, model_name, metric="fill_rate", folds=folds, quantile=headline),
+        "coverage_gap": float(calibration["gap"].mean()),
+        "crossing_rate": walk_forward.pooled_metric(
+            results, model_name, metric="crossing_rate", folds=folds,
+            quantile=headline),
+        "headline_quantile": headline,
+    }
 
 # Where a model leaves the capacity its own early stopping picked, one value
 # per fold. Two names because the two models that have such a thing named it
@@ -158,7 +207,7 @@ def run_search(
     make_fit_predict: Callable,
     search_space: dict,
     folds: tuple,
-    alpha: float,
+    quantiles: tuple,
     model_name: str,
     feature_cols: Optional[list] = None,
     verbose: bool = True,
@@ -206,25 +255,24 @@ def run_search(
         started = time.perf_counter()
         try:
             fit_predict = make_fit_predict(candidate, feature_cols=feature_cols,
-                                           quantile=alpha)
+                                           quantiles=quantiles)
             parts = [
                 walk_forward.run_fold(frame, fold_id, fit_predict,
-                                      model_name=model_name, alpha=alpha,
+                                      model_name=model_name, quantiles=quantiles,
                                       prepared=True)
                 for fold_id in folds
             ]
             results = pd.concat(parts, ignore_index=True)
-            for metric in SEARCH_METRICS:
-                record[metric] = walk_forward.pooled_metric(
-                    results, model_name, metric=metric, folds=folds
-                )
+            record.update(summarise_candidate(results, model_name, folds,
+                                              quantiles))
         except catch as failure:
             for metric in SEARCH_METRICS:
                 record[metric] = float("nan")
+            record["headline_quantile"] = headline_quantile(quantiles)
             message = str(failure)
         # Recorded outside the try so a candidate that died after forty minutes
         # still reports the forty minutes.
-        record["best_epoch"] = _reported_capacity(fit_predict)
+        record["best_epoch"] = reported_capacity(fit_predict)
         record["elapsed_seconds"] = round(time.perf_counter() - started, 1)
         record["error"] = message
         if verbose:
@@ -240,7 +288,7 @@ def run_search(
     return _ordered(rows)
 
 
-def _reported_capacity(fit_predict) -> Optional[str]:
+def reported_capacity(fit_predict) -> Optional[str]:
     """The per-fold capacity a model chose, joined for one CSV cell.
 
     A string rather than a number because a candidate is scored on several
@@ -264,6 +312,11 @@ def _ordered(rows: list) -> pd.DataFrame:
             .reset_index(drop=True))
 
 
+# A column no single-quantile checkpoint can have. Its absence is how a
+# pre-2026-08-24 file is recognised.
+CHECKPOINT_SCHEMA_COL = "headline_quantile"
+
+
 def _assert_checkpoint_matches(
     prior: pd.DataFrame,
     candidates: list,
@@ -275,7 +328,21 @@ def _assert_checkpoint_matches(
     Compares the searched parameters rather than trusting the file name. NaN
     stands in for None in the CSV, and booleans survive the round trip as
     numpy bools, so both are normalised before comparison.
+
+    The schema check is the multi-quantile migration's half of this guard, and
+    it matters more than it looks. The three search CSVs on disk were written
+    by the single-quantile runs against the *same* search space and the *same*
+    seed, so the parameter comparison below accepts them happily — and a
+    resumed run would skip every candidate, hand back the old run's pinball@0.9
+    numbers, and let them be written up as K1. Nothing about that would look
+    wrong in the output.
     """
+    if CHECKPOINT_SCHEMA_COL not in prior.columns:
+        raise ValueError(
+            f"checkpoint {path} berasal dari run kuantil tunggal (tidak ada "
+            f"kolom {CHECKPOINT_SCHEMA_COL!r}) — angkanya pinball@0,9, bukan "
+            f"K1. Hapus berkasnya atau jalankan dengan resume=False"
+        )
     for _, row in prior.iterrows():
         candidate_id = int(row["candidate_id"])
         if candidate_id >= len(candidates):
@@ -299,12 +366,17 @@ def _assert_checkpoint_matches(
 
 
 def select_best(search_results: pd.DataFrame, candidates: list) -> dict:
-    """The candidate with the lowest pooled pinball across the search folds.
+    """The candidate with the lowest K1 across the search folds.
 
-    Pinball alone decides it. The service level is uniform across every SKU by
-    the data owner's decision, so the selection criterion has to be uniform
-    too — picking on a per-segment metric would optimize for a split the
-    business does not make.
+    K1 alone decides it — the mean pinball over the whole quantile grid, in
+    the `pinball` column. The service level is uniform across every SKU by the
+    data owner's decision, so the selection criterion has to be uniform too —
+    picking on a per-segment metric would optimize for a split the business
+    does not make.
+
+    Calibration and crossing are recorded beside it but do not vote here. K2
+    is a separate rung of the ladder applied to the finalists, and folding it
+    into the search would collapse two criteria the methodology keeps apart.
     """
     scored = search_results[search_results["pinball"].notna()]
     if scored.empty:

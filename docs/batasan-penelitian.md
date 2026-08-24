@@ -202,6 +202,29 @@ konfirmasi pemilik data, bukan pada pembandingan baris.
   bukan bagian dari perbandingan tiga arsitektur. Lihat
   `docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md`.
 
+  **Koreksi atas paragraf "Konsekuensi" di atas (2026-08-24).** Kalimat
+  "klarifikasi ini tidak mengubah proses pemilihan model" **sudah tidak berlaku**.
+  Proses pemilihan model memang kemudian berubah, lewat keputusan terpisah yang
+  dirancang di
+  `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`:
+  kriteria utama K1 tidak lagi pinball loss pada satu titik kuantil (0,9),
+  melainkan **rata-rata pinball loss lintas 19 titik kuantil** (0,05–0,95), dan
+  K2 memeriksa coverage per kuantil, bukan hanya di 0,9. Ketiga arsitektur
+  diperluas ke multi-kuantil **sebelum** pemenang ditetapkan, bukan sesudahnya.
+
+  Teks 2026-08-16 dan klarifikasi 2026-08-22 di atas **tidak dicabut** dan tidak
+  perlu dicabut — keduanya berbicara soal kuantil 0,9 sebagai **komitmen bisnis**
+  yang mengatur apa yang benar-benar dikirim ke outlet, dan komitmen itu tetap
+  utuh apa adanya. Yang keliru hanya prediksi di paragraf "Konsekuensi" tentang
+  bagaimana pemilihan model akan dijalankan. Pembedaan itu ditulis di sini supaya
+  pembaca tidak menyimpulkan bahwa janji 0,9 ikut berubah: **komitmen bisnis 0,9
+  tetap; kriteria perbandingan model yang berpindah ke multi-kuantil.**
+
+  Konsekuensi lanjutan yang layak dicatat: karena perluasan multi-kuantil kini
+  selesai untuk ketiga arsitektur sebelum pemenang ditetapkan, alokasi kuantil
+  tersegmentasi tidak lagi perlu menunggu model pemenang diperluas lebih dulu —
+  jalurnya menjadi lebih pendek, bukan lebih panjang.
+
 Sudah tertutup: 8 nilai `Kota Override` di `dataset/outlet_name_overrides.csv`
 dikonfirmasi pemilik data (2026-08-16), termasuk `KY001` Kutabumi sebagai
 `Kabupaten Tangerang` meski kolom `Kecamatan` di `outlets.csv` menyebut

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from utils import model_xgboost as xgb
-from utils import modeling_prep, purging, walk_forward
+from utils import evaluation, modeling_prep, purging, walk_forward
 
 
 FEATURES = ["feat_a", "feat_b", "cat_idx"]
@@ -189,11 +189,28 @@ class TestMakeFitPredict(unittest.TestCase):
         frame = _dated_frame(n)
         return frame.iloc[:250], frame.iloc[250:]
 
-    def test_returns_one_prediction_per_validation_row(self):
+    def test_returns_one_column_per_quantile_point(self):
         train, valid = self._split()
         prediction = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
                                           max_rounds=40)(train, valid)
-        self.assertEqual(prediction.shape, (len(valid),))
+        self.assertEqual(prediction.shape,
+                         (len(valid), len(evaluation.QUANTILE_SET_A)))
+
+    def test_the_default_grid_is_the_evaluation_grid(self):
+        self.assertEqual(tuple(xgb.QUANTILES), evaluation.QUANTILE_SET_A)
+
+    def test_the_service_level_constant_survives_as_a_scalar(self):
+        """B-9 ships at one quantile; the grid is how the model is *scored*."""
+        self.assertEqual(xgb.QUANTILE, 0.9)
+
+    def test_a_grid_of_any_size_flows_through(self):
+        """Nothing downstream may assume nineteen: Tahap B hands out a grid
+        whose length comes from the critical-ratio spread."""
+        train, valid = self._split()
+        prediction = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                          quantiles=(0.5, 0.8, 0.95),
+                                          max_rounds=40)(train, valid)
+        self.assertEqual(prediction.shape, (len(valid), 3))
 
     def test_predictions_are_never_negative(self):
         train, valid = self._split()
@@ -201,13 +218,26 @@ class TestMakeFitPredict(unittest.TestCase):
                                           max_rounds=40)(train, valid)
         self.assertTrue((prediction >= 0).all())
 
-    def test_the_high_quantile_sits_above_the_low_one(self):
+    def test_the_columns_follow_the_requested_order(self):
+        """One fit, two columns, in the order asked for. Compared on the mean
+        rather than row by row on purpose: a composite quantile head has no
+        structural monotonicity guarantee, and crossing is something this
+        project measures (`crossing_rate`) rather than asserts away."""
         train, valid = self._split()
-        high = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
-                                    quantile=0.9, max_rounds=60)(train, valid)
-        low = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
-                                   quantile=0.1, max_rounds=60)(train, valid)
-        self.assertGreater(high.mean(), low.mean())
+        prediction = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                          quantiles=(0.1, 0.9),
+                                          max_rounds=60)(train, valid)
+        self.assertGreater(prediction[:, 1].mean(), prediction[:, 0].mean())
+
+    def test_predictions_are_left_unsorted(self):
+        """A post-hoc sort would drive `crossing_rate` to zero by hiding the
+        miscalibration it exists to expose. What comes back is the head's own
+        output — crossing and all."""
+        train, valid = self._split()
+        prediction = xgb.make_fit_predict(self._params(), feature_cols=FEATURES,
+                                          quantiles=(0.9, 0.1),
+                                          max_rounds=60)(train, valid)
+        self.assertGreater(prediction[:, 0].mean(), prediction[:, 1].mean())
 
     def test_every_encoding_runs_end_to_end(self):
         train, valid = self._split()
@@ -216,7 +246,9 @@ class TestMakeFitPredict(unittest.TestCase):
                 self._params(encoding=encoding), feature_cols=FEATURES,
                 max_rounds=40, idx_cols=["cat_idx"],
             )(train, valid)
-            self.assertEqual(prediction.shape, (len(valid),), encoding)
+            self.assertEqual(prediction.shape,
+                             (len(valid), len(evaluation.QUANTILE_SET_A)),
+                             encoding)
 
     def test_one_hot_really_expands_on_this_frame(self):
         """Guards the test suite itself: without idx_cols the synthetic frame
@@ -266,11 +298,11 @@ class TestMakeFitPredict(unittest.TestCase):
         original = xgb.build_estimator
 
         def spy(params, n_estimators, enable_categorical=False,
-                early_stopping_rounds=None, quantile=xgb.QUANTILE):
+                early_stopping_rounds=None, quantiles=xgb.QUANTILES):
             model = original(params, n_estimators,
                              enable_categorical=enable_categorical,
                              early_stopping_rounds=early_stopping_rounds,
-                             quantile=quantile)
+                             quantiles=quantiles)
             real_fit = model.fit
 
             def fit(X, y, **kwargs):
@@ -297,12 +329,12 @@ class TestMakeFitPredict(unittest.TestCase):
         original = xgb.build_estimator
 
         def spy(params, n_estimators, enable_categorical=False,
-                early_stopping_rounds=None, quantile=xgb.QUANTILE):
+                early_stopping_rounds=None, quantiles=xgb.QUANTILES):
             rounds.append(n_estimators)
             return original(params, n_estimators,
                             enable_categorical=enable_categorical,
                             early_stopping_rounds=early_stopping_rounds,
-                            quantile=quantile)
+                            quantiles=quantiles)
 
         xgb.build_estimator = spy
         try:
@@ -378,10 +410,10 @@ class TestFitFinal(unittest.TestCase):
         bundle = self._bundle()
         for key in ("model", "params", "feature_cols", "columns", "categories",
                     "idx_cols", "encoding", "log_target", "best_iteration",
-                    "quantile", "n_train"):
+                    "quantiles", "n_train"):
             self.assertIn(key, bundle)
         self.assertEqual(bundle["feature_cols"], FEATURES)
-        self.assertEqual(bundle["quantile"], xgb.QUANTILE)
+        self.assertEqual(tuple(bundle["quantiles"]), xgb.QUANTILES)
 
     def test_training_stops_before_december(self):
         frame = _dated_frame(400)
@@ -418,10 +450,11 @@ class TestFitFinal(unittest.TestCase):
         bundle = self._bundle()
         self.assertEqual(bundle["model"].n_estimators, bundle["best_iteration"])
 
-    def test_predict_bundle_returns_one_value_per_row(self):
+    def test_predict_bundle_returns_one_column_per_quantile_point(self):
         frame = _dated_frame(400)
         bundle = self._bundle(frame)
-        self.assertEqual(xgb.predict_bundle(bundle, frame).shape, (len(frame),))
+        self.assertEqual(xgb.predict_bundle(bundle, frame).shape,
+                         (len(frame), len(evaluation.QUANTILE_SET_A)))
 
     def test_predict_bundle_is_non_negative(self):
         frame = _dated_frame(400)

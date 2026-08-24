@@ -30,10 +30,15 @@ def _panel(periods=245):
     return modeling_prep.assign_folds(pd.DataFrame(rows))
 
 
-def _mean_fit_predict(params, feature_cols=None, quantile=0.9):
-    """A stand-in model: no library, no fitting, one number per validation row."""
+QUANTILES = (0.1, 0.5, 0.9)
+
+
+def _mean_fit_predict(params, feature_cols=None, quantiles=QUANTILES):
+    """A stand-in model: no library, no fitting, one row per validation row and
+    one column per quantile — the shape `walk_forward` now requires."""
     def fit_predict(train, valid):
-        return np.full(len(valid), float(params["alpha"]))
+        flat = np.full(len(valid), float(params["alpha"]))
+        return np.repeat(flat[:, None], len(quantiles), axis=1)
     return fit_predict
 
 
@@ -81,7 +86,7 @@ class TestRunSearch(unittest.TestCase):
     def test_scores_a_space_it_has_never_seen(self):
         results = model_common.run_search(
             _panel(), self._candidates(), make_fit_predict=_mean_fit_predict,
-            search_space=SPACE, folds=(1,), alpha=0.9, model_name="toy",
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES, model_name="toy",
             feature_cols=FEATURES, verbose=False,
         )
         self.assertEqual(list(results["candidate_id"]), [0, 1])
@@ -90,21 +95,21 @@ class TestRunSearch(unittest.TestCase):
     def test_records_the_searched_keys_of_that_space(self):
         results = model_common.run_search(
             _panel(), self._candidates(), make_fit_predict=_mean_fit_predict,
-            search_space=SPACE, folds=(1,), alpha=0.9, model_name="toy",
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES, model_name="toy",
             feature_cols=FEATURES, verbose=False,
         )
         for key in SPACE:
             self.assertIn(key, results.columns)
 
     def test_a_failing_candidate_is_recorded_not_raised(self):
-        def exploding(params, feature_cols=None, quantile=0.9):
+        def exploding(params, feature_cols=None, quantiles=QUANTILES):
             def fit_predict(train, valid):
                 raise ValueError("meledak")
             return fit_predict
 
         results = model_common.run_search(
             _panel(), self._candidates(), make_fit_predict=exploding,
-            search_space=SPACE, folds=(1,), alpha=0.9, model_name="toy",
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES, model_name="toy",
             feature_cols=FEATURES, verbose=False,
         )
         self.assertEqual(len(results), 2)
@@ -113,7 +118,7 @@ class TestRunSearch(unittest.TestCase):
 
     def test_an_uncaught_exception_type_propagates(self):
         """The catch list is deliberately narrow: a bug must not become a NaN row."""
-        def exploding(params, feature_cols=None, quantile=0.9):
+        def exploding(params, feature_cols=None, quantiles=QUANTILES):
             def fit_predict(train, valid):
                 raise KeyError("bug")
             return fit_predict
@@ -121,22 +126,112 @@ class TestRunSearch(unittest.TestCase):
         with self.assertRaises(KeyError):
             model_common.run_search(
                 _panel(), self._candidates(), make_fit_predict=exploding,
-                search_space=SPACE, folds=(1,), alpha=0.9, model_name="toy",
+                search_space=SPACE, folds=(1,), quantiles=QUANTILES, model_name="toy",
                 feature_cols=FEATURES, verbose=False,
             )
 
     def test_a_widened_catch_list_records_the_new_type(self):
-        def exploding(params, feature_cols=None, quantile=0.9):
+        def exploding(params, feature_cols=None, quantiles=QUANTILES):
             def fit_predict(train, valid):
                 raise KeyError("bug")
             return fit_predict
 
         results = model_common.run_search(
             _panel(), self._candidates(), make_fit_predict=exploding,
-            search_space=SPACE, folds=(1,), alpha=0.9, model_name="toy",
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES, model_name="toy",
             feature_cols=FEATURES, verbose=False, catch=(KeyError,),
         )
         self.assertTrue(results["pinball"].isna().all())
+
+
+class TestRunSearchMetrics(unittest.TestCase):
+    def _results(self):
+        return model_common.run_search(
+            _panel(), [{**DEFAULTS, "alpha": a} for a in (1, 2)],
+            make_fit_predict=_mean_fit_predict, search_space=SPACE,
+            folds=(1,), quantiles=QUANTILES, model_name="toy",
+            feature_cols=FEATURES, verbose=False,
+        )
+
+    def test_pinball_is_k1_not_a_single_point(self):
+        """The selection column has to be the criterion the methodology
+        defines, or select_best() picks on something else than K1."""
+        from utils import walk_forward
+        frame = walk_forward.eligible_rows(_panel())
+        fit_predict = _mean_fit_predict({**DEFAULTS, "alpha": 1})
+        scored = walk_forward.run_fold(frame, 1, fit_predict, model_name="toy",
+                                       quantiles=QUANTILES, prepared=True)
+        expected = walk_forward.pooled_k1(scored, "toy")
+        self.assertAlmostEqual(float(self._results().iloc[0]["pinball"]), expected)
+
+    def test_the_headline_quantile_is_recorded_beside_its_metrics(self):
+        """`mae` alone would be ambiguous once there are nineteen of them."""
+        results = self._results()
+        for column in ["mae_headline", "coverage_headline", "fill_rate_headline",
+                       "headline_quantile"]:
+            self.assertIn(column, results.columns)
+        self.assertTrue((results["headline_quantile"] == 0.9).all())
+
+    def test_calibration_and_crossing_are_recorded_for_k2(self):
+        results = self._results()
+        self.assertIn("coverage_gap", results.columns)
+        self.assertIn("crossing_rate", results.columns)
+        self.assertTrue(results["coverage_gap"].notna().all())
+
+    def test_a_one_dimensional_prediction_fails_the_candidate(self):
+        """Recorded, not raised: a model wired to the old scalar contract
+        should cost one candidate, not a multi-hour run."""
+        def flat(params, feature_cols=None, quantiles=QUANTILES):
+            return lambda train, valid: np.full(len(valid), 1.0)
+
+        results = model_common.run_search(
+            _panel(), [{**DEFAULTS, "alpha": 1}], make_fit_predict=flat,
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES,
+            model_name="toy", feature_cols=FEATURES, verbose=False,
+        )
+        self.assertTrue(results["pinball"].isna().all())
+        self.assertIn("bentuk", results.iloc[0]["error"])
+
+
+class TestStaleSchemaCheckpoint(unittest.TestCase):
+    """The three search CSVs on disk were written by the single-quantile runs
+    against the same space and the same seed. The parameter guard accepts them;
+    only the schema guard stops a resume from reporting pinball@0.9 as K1."""
+
+    def _candidates(self):
+        return [{**DEFAULTS, "alpha": a} for a in (1, 2)]
+
+    def _old_checkpoint(self, path):
+        pd.DataFrame([
+            {"candidate_id": 0, "alpha": 1, "beta": "x", "pinball": 0.5,
+             "mae": 1.0, "coverage": 0.9, "fill_rate": 0.9,
+             "best_epoch": None, "elapsed_seconds": 1.0, "error": None},
+        ]).to_csv(path, index=False)
+
+    def test_a_single_quantile_checkpoint_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "old.csv")
+            self._old_checkpoint(path)
+            with self.assertRaisesRegex(ValueError, "kuantil tunggal"):
+                model_common.run_search(
+                    _panel(), self._candidates(),
+                    make_fit_predict=_mean_fit_predict, search_space=SPACE,
+                    folds=(1,), quantiles=QUANTILES, model_name="toy",
+                    feature_cols=FEATURES, verbose=False, checkpoint_path=path,
+                )
+
+    def test_resume_false_ignores_it_and_overwrites(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "old.csv")
+            self._old_checkpoint(path)
+            results = model_common.run_search(
+                _panel(), self._candidates(), make_fit_predict=_mean_fit_predict,
+                search_space=SPACE, folds=(1,), quantiles=QUANTILES,
+                model_name="toy", feature_cols=FEATURES, verbose=False,
+                checkpoint_path=path, resume=False,
+            )
+            self.assertIn("headline_quantile", results.columns)
+            self.assertEqual(len(results), 2)
 
 
 class TestRunSearchCheckpoint(unittest.TestCase):
@@ -147,7 +242,7 @@ class TestRunSearchCheckpoint(unittest.TestCase):
         return model_common.run_search(
             _panel(), candidates or self._candidates(),
             make_fit_predict=_mean_fit_predict, search_space=SPACE,
-            folds=(1,), alpha=0.9, model_name="toy", feature_cols=FEATURES,
+            folds=(1,), quantiles=QUANTILES, model_name="toy", feature_cols=FEATURES,
             verbose=False, checkpoint_path=path, resume=resume,
         )
 
@@ -163,13 +258,13 @@ class TestRunSearchCheckpoint(unittest.TestCase):
             self._run(path)
             calls = []
 
-            def counting(params, feature_cols=None, quantile=0.9):
+            def counting(params, feature_cols=None, quantiles=QUANTILES):
                 calls.append(params["alpha"])
                 return _mean_fit_predict(params)
 
             model_common.run_search(
                 _panel(), self._candidates(), make_fit_predict=counting,
-                search_space=SPACE, folds=(1,), alpha=0.9, model_name="toy",
+                search_space=SPACE, folds=(1,), quantiles=QUANTILES, model_name="toy",
                 feature_cols=FEATURES, verbose=False, checkpoint_path=path,
             )
             self.assertEqual(calls, [])
@@ -271,7 +366,7 @@ class TestRunSearchCost(unittest.TestCase):
     def _reporting(self, attribute, per_fold=(4, 6)):
         """A model that reports its own chosen capacity the way the real ones
         do: one value appended to a list on the callable, per fold."""
-        def make(params, feature_cols=None, quantile=0.9):
+        def make(params, feature_cols=None, quantiles=QUANTILES):
             inner = _mean_fit_predict(params)
 
             def fit_predict(train, valid):
@@ -286,7 +381,7 @@ class TestRunSearchCost(unittest.TestCase):
     def _run(self, make, folds=(1, 2), candidates=None, **kwargs):
         return model_common.run_search(
             _panel(), candidates or self._candidates(), make_fit_predict=make,
-            search_space=SPACE, folds=folds, alpha=0.9, model_name="toy",
+            search_space=SPACE, folds=folds, quantiles=QUANTILES, model_name="toy",
             feature_cols=FEATURES, verbose=False, **kwargs,
         )
 
@@ -311,7 +406,7 @@ class TestRunSearchCost(unittest.TestCase):
     def test_a_failed_candidate_still_records_what_it_burned(self):
         """A candidate that dies after forty minutes is the most expensive row
         in the table, and the one a budget post-mortem most needs."""
-        def exploding(params, feature_cols=None, quantile=0.9):
+        def exploding(params, feature_cols=None, quantiles=QUANTILES):
             def fit_predict(train, valid):
                 raise ValueError("meledak")
             return fit_predict

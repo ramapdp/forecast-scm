@@ -1,14 +1,38 @@
 # XGBoost modeling — design
 
+## Status — revisi multi-kuantil (2026-08-24)
+
+Bagian kuantil dan kriteria pencarian spec ini **direvisi** mengikuti
+`docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`, lewat
+checklist di
+`docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md`
+(butir 1). Yang berubah: `quantile_alpha` menjadi daftar `QUANTILE_SET`, dan
+kriteria pencarian menjadi rata-rata pinball loss lintas kuantil. Yang **tidak**
+berubah: ruang pencarian, protokol dua fit, mekanisme purging, dan seluruh
+arsitektur di Part 1.
+
+`QUANTILE_SET` saat ini berada di **Tahap A** — 19 titik merata
+`[0.05, 0.10, ..., 0.90, 0.95]` — karena tabel pelacakan B-10
+(`docs/batasan-penelitian.md`) masih mencatat 0% volume dengan entri biaya
+presisi, jauh di bawah ambang ≥80% yang mengaktifkan Tahap B.
+
+Seluruh angka terukur di bagian Background di bawah, dan di
+`docs/hasil-modeling-xgb.md`, masih berasal dari run kuantil-0,9 tunggal dan
+**akan digantikan** begitu pencarian dijalankan ulang. Angka-angka itu
+dipertahankan apa adanya sampai run baru selesai, supaya perbandingannya
+terhadap hasil lama tetap terbaca.
+
 ## Purpose
 
 Train and evaluate the second of the three candidate models against
 `dataset/model_ready/model_input.parquet`, through the walk-forward runner the
 Random Forest spec built for exactly this purpose.
 
-The deliverable answers two questions: **does an XGBoost predicting the 0.9
-quantile of `target_lead_time_cumulative` beat the naive baselines, and how
-does it compare to the Random Forest on identical rows?**
+The deliverable answers two questions: **does an XGBoost predicting
+`target_lead_time_cumulative` across `QUANTILE_SET` beat the naive baselines,
+and how does it compare to the Random Forest on identical rows?** Both are
+answered on the multi-quantile criterion K1 — the unweighted mean pinball loss
+over every point in `QUANTILE_SET` — not on a single quantile point.
 
 This spec is the follow-up promised by
 `docs/superpowers/specs/2026-08-18-random-forest-modeling-design.md`, whose
@@ -37,6 +61,13 @@ walk-forward folds (345,547 validation rows): **pinball@0.9 2.410**, MAE 15.64,
 coverage 0.932. Best naive baseline `naive_roll_mean_7`: pinball 4.503. On the
 three folds untouched by model selection (1, 2, 4): RF pinball **2.403**.
 
+**Superseded (2026-08-24).** Those are single-quantile numbers. The forest is
+being re-scored across the whole of `QUANTILE_SET` — without retraining, since
+`quantile-forest` reads any quantile from the same leaves — so the figure this
+model is actually compared against becomes RF's mean pinball over
+`QUANTILE_SET`. The numbers above stay here as the old-criterion reference
+until that re-scoring lands in `docs/hasil-modeling-rf.md`.
+
 Categorical cardinalities, measured on `model_input.parquet` 2026-08-19:
 `Kode Barang_idx` 70, `Nama Cabang_idx` 59, `kota_idx` 16, `Kategori
 Barang_idx` 8, `branch_volume_tier_idx` 4, `demand_segment_idx` 4,
@@ -49,8 +80,15 @@ searchable rather than decided by assumption.
 Not reopened here:
 
 - **Primary target** — `target_lead_time_cumulative`.
-- **Loss and service level** — pinball loss at quantile **0.9, uniform across
-  every SKU** (data owner, 2026-08-16).
+- **Service level commitment** — quantile **0.9, uniform across every SKU**
+  (data owner, 2026-08-16), clarified 2026-08-22 as an *aggregate* commitment at
+  the delivery level (B-9). That is the business promise the production model
+  serves; it is no longer the same thing as the model-comparison criterion.
+- **Loss and comparison criterion** — mean pinball loss over `QUANTILE_SET`
+  (K1), per
+  `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`
+  Bagian 2. Points are averaged unweighted, and every per-quantile score is
+  reported alongside the mean rather than hidden behind it.
 - **Validation** — walk-forward, 5 expanding folds (Jul–Nov 2025). December
   2025 opens exactly once, after all three models have been compared.
 - **Feature set** — `modeling_prep.FEATURE_COLS`, identical for every model.
@@ -63,7 +101,7 @@ Settled during brainstorming 2026-08-19.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Quantile mechanism | `reg:quantileerror` with `quantile_alpha=0.9`, `tree_method="hist"` | XGBoost's native quantile objective, available since 2.0. It optimizes the same loss the models are selected on, so training objective and selection criterion agree |
+| Quantile mechanism | `reg:quantileerror` with `quantile_alpha=QUANTILE_SET`, `tree_method="hist"` | XGBoost's native quantile objective, available since 2.0. Passing a list rather than a scalar fits every point in one call and keeps the training objective identical to the selection criterion, which is now the mean pinball across those same points. A list-valued `quantile_alpha` is established practice, not an improvisation (Sluijterman et al. 2024) |
 | Code structure | Extract `utils/model_common.py` first, then write `utils/model_xgboost.py` against it | The search protocol, checkpoint/resume, one-hot expansion and bundle I/O are not RF-specific. Duplicating them means fixing every future bug twice, then three times when the LSTM lands; importing them from `model_random_forest` would point the dependency arrow the wrong way permanently |
 | Boosting rounds | Early stopping on a held-out training tail, then **refit on the full training rows** at `best_iteration` | The validation fold cannot be used for early stopping without leaking. Carving the tail out permanently would cost XGBoost ~4% of its training rows — the most recent ones — and score it on a different population than the Random Forest saw. The second fit restores the exact row set, at 2x fit cost that `hist` can afford |
 | Categorical encoding | `encoding` as a searched flag over `ordinal` / `native` / `one_hot` | Cardinalities are small enough that all three are affordable. `native` (`enable_categorical=True`) is XGBoost's structural advantage over the forest; `one_hot` matches the configuration the RF search actually chose. Fixing this by assumption would leave "XGB lost on algorithm or on encoding?" unanswerable |
@@ -213,6 +251,23 @@ for the reason the RF spec gives: only a few dimensions carry real signal, so
 random draws cover each dimension's range better than a truncated grid at the
 same cost.
 
+**All 30 candidates must be re-run under the multi-quantile objective
+(2026-08-24).** The search space itself is unchanged, and so is the seed — the
+same 30 draws are evaluated — but each candidate now fits `len(QUANTILE_SET)`
+quantiles instead of one, so the recorded scores in
+`dataset/model_ready/xgb_search_results.csv` and the winner in
+`xgb_best_params.json` do not carry over. The budget stays at **30**: the
+project deliberately sets computation cost aside in favour of finding the best
+model, so a heavier objective per candidate is not a reason to search less
+widely (decision 2026-08-24, closing the budget half of open question 2 in the
+multi-quantile spec).
+
+The migration checklist and the multi-quantile spec both quote "18 candidates"
+for XGBoost. That is a transcription of the **Random Forest** budget; XGBoost's
+measured budget is 30 (`dataset/model_ready/xgb_search_results.csv`, 30 rows;
+`docs/hasil-modeling-xgb.md` §"Pencarian hyperparameter"). 30 is the number that
+applies here.
+
 `n_estimators` is absent by design (see Decisions). `max_depth=None` has no
 XGBoost equivalent worth searching under a `hist` tree method at this depth
 range.
@@ -223,9 +278,10 @@ Identical to the Random Forest search, which is the point of extracting
 `model_common.run_search()`:
 
 - Scored on **folds 3 and 5** only.
-- Criterion: **pooled pinball@0.9**, weighted by row count rather than
-  averaged flat, so November — the smallest fold — does not count as much as
-  September.
+- Criterion: **pooled mean pinball over `QUANTILE_SET`** (K1), weighted by row
+  count rather than averaged flat, so November — the smallest fold — does not
+  count as much as September. The row-count weighting applies across folds; the
+  averaging across quantile points inside each fold stays unweighted.
 - **No subsampling.** Every training row of each fold is used.
 - Each finished candidate is flushed to
   `dataset/model_ready/xgb_search_results.csv` immediately, and a restart
@@ -267,8 +323,10 @@ If XGBoost wins narrowly, both are honest rival explanations. If it wins by a
 margin comparable to RF's 46% over the best baseline, neither explains it.
 
 MAE is reported for context only, never as a winning criterion — comparing a
-0.9-quantile model's MAE against a mid-point baseline punishes it for doing
-exactly what was asked. Pinball@0.9 decides.
+quantile model's MAE against a mid-point baseline punishes it for doing exactly
+what was asked. The mean pinball over `QUANTILE_SET` decides, with the
+per-quantile breakdown reported beside it so a model that wins on the average
+while losing badly at one end is visible rather than averaged into a pass.
 
 ## Part 4 — Artifacts
 
@@ -278,6 +336,11 @@ exactly what was asked. Pinball@0.9 decides.
 | Selected hyperparameters | `dataset/model_ready/xgb_best_params.json` | No |
 | Full results table | `dataset/model_ready/xgb_walk_forward_results.csv` | No |
 | Trained booster | `models/xgboost_q90.joblib` | No — `models/` is already gitignored |
+
+The `q90` in the filename is now historical: the bundle holds every point in
+`QUANTILE_SET`, not just 0.9. The name is left alone so the artifact path stays
+stable across the migration; the bundle's own `quantile` field records the full
+set.
 | Notebook | `notebook/modeling_xgb.ipynb` | **Yes** |
 | Results summary | `docs/hasil-modeling-xgb.md` | **Yes** — the evidence for the write-up belongs in git |
 
@@ -326,7 +389,23 @@ And the wrapper's own contract:
 - `predict_bundle()` forces the recorded column order, and a shuffled input
   frame produces identical predictions.
 - Predictions are non-negative.
-- `fit_predict` returns exactly `len(valid)` values.
+- `fit_predict` returns exactly `len(valid)` values — one row per validation
+  row, one column per point in `QUANTILE_SET`.
+
+Multi-quantile tests added 2026-08-24:
+
+- **No quantile crossing.** For every row, the prediction at τ=0.7 is ≤ the
+  prediction at τ=0.8, and so on across the whole of `QUANTILE_SET`. Standard
+  pinball loss is known to be prone to crossing (Sluijterman et al. 2024); if it
+  turns out significant here, their arctan pinball loss is the documented
+  fallback rather than an ad-hoc post-hoc sort.
+- **Backward compatibility at 0.9.** The τ=0.9 column of the multi-quantile
+  model reproduces the single-quantile model's prediction within numerical
+  tolerance on the same rows, so the extension is visibly not changing what was
+  already validated.
+- **Grid-size independence.** `QUANTILE_SET` of any length flows through
+  `fit_predict`, the bundle, and `predict_bundle()` without a hard-coded 19; the
+  Tahap A → Tahap B switch must need no code change.
 
 ## Part 6 — Dependencies
 
@@ -363,5 +442,9 @@ pinned.
   is compared against
 - `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md` — the
   shared feature table, folds, segments, and the quantile-0.9 decision
+- `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md` —
+  the definition of `QUANTILE_SET` and of criteria K1/K2 this spec now targets
+- `docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md` —
+  the checklist under which this spec was revised
 - `docs/batasan-penelitian.md` — B-1/B-2/B-3, the pickup-date information
   ceiling that bounds every model here

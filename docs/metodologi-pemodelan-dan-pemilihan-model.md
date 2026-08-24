@@ -14,8 +14,8 @@ terbaik yang direncanakan** beserta protokol pembukaan test set.
 | Fitur | 56 kolom (`modeling_prep.FEATURE_COLS`) |
 | Target | `target_lead_time_cumulative` |
 | Kandidat model | Random Forest kuantil, XGBoost kuantil, LSTM kuantil |
-| Kriteria pemilihan | `pinball@0.9` |
-| Status | Ketiga model selesai divalidasi; **pemenang belum ditetapkan**; test set Desember 2025 masih terkunci |
+| Kriteria pemilihan | Rata-rata `pinball` lintas `QUANTILE_SET` (19 titik, 0,05–0,95) — direvisi 2026-08-24, sebelumnya `pinball@0.9` tunggal |
+| Status | **Migrasi multi-kuantil sedang berjalan.** Spec ketiga model sudah direvisi; ketiga notebook belum dijalankan ulang, sehingga seluruh angka di §16 dan §18 masih angka kuantil-0,9 tunggal dan **belum menjadi dasar keputusan yang sah**. Pemenang belum ditetapkan; test set Desember 2025 masih terkunci |
 | Artefak model | `models/{random_forest,xgboost,lstm}_q90.joblib` **basi per 2026-08-23** — dilatih sebelum refresh kategori WIP-2, akan dilatih ulang (§19a) |
 | Verifikasi | 667 unit test lulus (`.venv/bin/python3 -m unittest discover -p "test_*.py"`) |
 | Tanggal dokumen | 22 Agustus 2026 |
@@ -30,6 +30,24 @@ dokumen ini bisa dibaca berdiri sendiri, bukan supaya menggantikan keduanya.
 Angka hasil terukur tiap model ada di `docs/hasil-modeling-{rf,xgb,lstm}.md`.
 Batasan yang tidak bisa dihilangkan dengan kode ada di
 `docs/batasan-penelitian.md`.
+
+> **Migrasi evaluasi multi-kuantil (2026-08-24).** Kriteria perbandingan model
+> di Bagian III berubah dari pinball loss pada satu titik kuantil (0,9) menjadi
+> **rata-rata pinball loss lintas banyak titik kuantil sekaligus**. Metodologinya
+> ada di
+> `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`;
+> checklist penerapannya di
+> `docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md`.
+>
+> Bagian yang **sudah** direvisi di dokumen ini: §15 (definisi metrik), §17
+> (definisi K1 dan K2), §19 (angka utama protokol Desember), §21 (rencana
+> kerja). Bagian yang **belum**, karena menunggu ketiga notebook dijalankan
+> ulang: §16 (posisi hasil) dan §18 (penerapan tangga) — keduanya diberi
+> penanda eksplisit di tempatnya.
+>
+> Migrasi ini tidak membuang hasil out-of-sample apa pun: test set Desember
+> belum pernah dibuka, jadi yang diulang hanya pencarian hyperparameter dan
+> walk-forward di kelima fold latih.
 
 ---
 
@@ -925,22 +943,84 @@ pesimistis, bukan yang terukur di satu konfigurasi.
 Baris **kandidat** dan **ruang pencarian** adalah asimetri anggaran yang harus
 disebut di setiap pembahasan hasil: perbandingannya belum dinetralkan.
 
+> **Dinetralkan pada run multi-kuantil (keputusan pemilik proyek, 2026-08-24).**
+> Tabel di atas mendeskripsikan run kuantil-0,9 tunggal dan dipertahankan apa
+> adanya sampai butir 0d menuliskannya ulang dari angka baru. Untuk run
+> multi-kuantil, ketiga baris yang menjadi sumber asimetri berubah: kandidat
+> LSTM 12 → **30** (setara XGBoost), ruang pencarian LSTM 48 → **144** (dua
+> dimensi kapasitas dikembalikan), dan LSTM mendapat **pengulangan 3 seed** pada
+> konfigurasi terbaiknya sehingga baris "bergantung seed acak" tidak lagi
+> berdiri tanpa angka. Anggaran RF (18) dan XGBoost (30) tidak berubah. Alasan
+> dan konsekuensinya di §21 dan di §2.2
+> `docs/superpowers/specs/2026-08-19-lstm-modeling-design.md`.
+
 ---
 
 # Bagian III — Strategi Komparasi dan Pemilihan Model
 
 ## 15. Metrik dan justifikasinya
 
-### 15.1 Kriteria tunggal: `pinball@0.9`
+### 15.1 Kriteria tunggal: rata-rata `pinball` lintas `QUANTILE_SET`
+
+**Direvisi 2026-08-24.** Sampai tanggal itu kriterianya adalah `pinball@0.9`
+tunggal. Perumusan lamanya dipertahankan di 15.1.1 di bawah, karena empat
+alasan yang menopangnya tidak dibatalkan — hanya diperluas.
 
 ```python
 delta = actual - predicted
-loss  = np.where(delta >= 0, alpha * delta, (alpha - 1.0) * delta).mean()
+def pinball(alpha):
+    return np.where(delta >= 0, alpha * delta, (alpha - 1.0) * delta).mean()
+
+K1 = np.mean([pinball(tau) for tau in QUANTILE_SET])
 ```
 
-Kekurangan dikali **0,9**; kelebihan dikali **0,1**.
+Pada setiap titik τ, kekurangan dikali **τ** dan kelebihan dikali **1 − τ**.
+Rata-ratanya **tak berbobot**: setiap titik kuantil menyumbang sama besar.
 
-**Empat alasan berlapis:**
+`QUANTILE_SET` saat ini di **Tahap A**: 19 titik merata
+`[0,05, 0,10, …, 0,90, 0,95]`. Ia berpindah otomatis ke Tahap B — grid yang
+diturunkan dari sebaran critical ratio aktual — begitu B-10 mencapai ambang ≥80%
+volume dengan data biaya presisi. Definisi lengkap kedua tahap dan mekanisme
+peralihannya ada di
+`docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md` Bagian 1.
+K1 ditulis generik terhadap ukuran grid, jadi peralihan itu tidak menuntut
+perubahan rumus di atas.
+
+**Kenapa berpindah dari satu titik ke banyak titik — tiga alasan:**
+
+**(a) Peringkat model terbukti berpindah tergantung titik evaluasinya.** Model
+yang unggul di pinball@0,9 tidak dijamin unggul di kuantil lain (Serafin et al.,
+2024). Pada data ini alasannya bukan teoretis: §18 mencatat ketiga model **seri
+dalam 0,88%** pada satu titik kuantil. Peringkat yang tidak terpisahkan di satu
+titik adalah justru situasi di mana memperluas titik evaluasi paling mungkin
+memisahkan — dan kalau ternyata tetap seri lintas 19 titik, itu temuan yang jauh
+lebih kuat daripada seri di satu titik.
+
+**(b) Kalibrasi baik di satu titik bisa kebetulan.** Menilai model hanya di 0,9
+berisiko menangkap kalibrasi yang benar di titik itu saja tanpa menjamin
+kalibrasi di seluruh distribusi (Gneiting & Resin, 2022). §16 sudah memberi
+petunjuknya: coverage ketiga model di 0,9 berjarak 0,002–0,034 dari target, tapi
+tidak ada satu angka pun yang memberitahu apa yang terjadi di ekor bawah.
+
+**(c) Karena standar bidangnya memang begitu.** Kompetisi M5 Uncertainty —
+patokan forecasting demand ritel skala besar, 42.840 deret Walmart — menilai
+model pada **sembilan** titik kuantil sekaligus lewat pinball loss terskala yang
+dirata-ratakan, bukan satu titik (Makridakis et al., 2021). Rata-rata pinball
+pada grid yang cukup padat juga mendekati CRPS (Bröcker, 2012), sehingga K1
+berperilaku seperti proper scoring rule untuk seluruh distribusi ramalan, bukan
+untuk satu persentilnya.
+
+**Ongkos komputasinya sengaja dikesampingkan.** Tujuan proyek ini menemukan model
+terbaik, bukan model termurah pada tahap penelitian. Ongkos tetap dilaporkan,
+tapi tempatnya di K3 (§17) sebagai tie-breaker, bukan sebagai alasan mempersempit
+kriteria utama.
+
+#### 15.1.1 Kenapa 0,9 tetap penting — dan di mana tempatnya sekarang
+
+Kuantil 0,9 **tidak dicabut**; ia berpindah peran. Ia tetap **komitmen bisnis**
+yang mengatur apa yang dikirim ke outlet, dan berhenti menjadi **satu-satunya
+titik tempat model dibandingkan**. Empat alasan yang menopang pilihan 0,9 masih
+berlaku persis apa adanya:
 
 **(a) Karena service level-nya 0,9, dan itu keputusan bisnis yang sudah dikunci.**
 Dikonfirmasi pemilik data 2026-08-16, **seragam untuk setiap SKU** — pemisahan
@@ -950,16 +1030,34 @@ seluruh pengiriman. Angka 0,9 adalah pernyataan bisnis: *kehabisan stok sembilan
 kali lebih mahal daripada kelebihan stok dalam jumlah yang sama.* Pinball@0.9
 adalah terjemahan matematis langsung dari kalimat itu.
 
+> **Klarifikasi pemilik data 2026-08-22** (B-9 `docs/batasan-penelitian.md`):
+> "seragam untuk semua item" dimaksudkan sebagai **komitmen agregat di level
+> pengiriman**, bukan larangan variasi teknis per item. Janji 0,9 ke outlet tetap
+> utuh; yang boleh bervariasi adalah kuantil input per segmen yang dipakai
+> mencapainya, selama rata-rata tertimbangnya kembali ke 0,9. Itulah yang membuat
+> menilai model di luar titik 0,9 bukan hanya sah secara metodologis, tapi
+> **diperlukan**: alokasi tersegmentasi
+> (`docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md`)
+> akan benar-benar membaca kuantil selain 0,9 dari model produksi, jadi model itu
+> harus terbukti kalibrasinya di sana juga.
+
 **(b) Karena meramal rata-rata berarti kehabisan stok separuh waktu.** Model yang
 meminimalkan MSE meramal *mean*; yang meminimalkan MAE meramal *median*.
 Keduanya, secara definisi, terlampaui permintaan aktual sekitar separuh hari.
 Coverage baseline titik-tengah yang terukur — **0,61** — adalah bukti empirisnya.
 
-**(c) Karena yang dilatih dan yang dinilai harus fungsi yang sama.** Dua dari tiga
-model mengoptimalkan persis metrik yang menilai mereka (§14).
+**(c) Karena yang dilatih dan yang dinilai harus fungsi yang sama.** Ini tetap
+terpenuhi setelah migrasi, dan untuk ketiga model sekaligus, bukan dua dari tiga
+seperti sebelumnya: XGBoost melatih `quantile_alpha=QUANTILE_SET`, LSTM
+menjumlahkan pinball lintas kuantil di head-nya, dan Random Forest membaca
+seluruh titik dari distribusi empiris daun yang sama. Objektif latih dan
+kriteria pemilihan tetap fungsi yang sama.
 
-**(d) Karena kriterianya tidak berpindah.** `select_best()` memakainya sejak
-tahap pencarian sampai pemilihan akhir.
+**(d) Karena kriterianya tidak berpindah.** `select_best()` memakai K1 yang sama
+sejak tahap pencarian sampai pemilihan akhir. Yang berubah sekali, dan dicatat
+di sini, adalah definisi K1 itu sendiri — dan itu terjadi **sebelum** test set
+Desember dibuka, sehingga tidak ada hasil out-of-sample yang dipilih ulang
+setelah melihat angkanya.
 
 ### 15.2 Metrik pendamping dan perannya
 
@@ -967,8 +1065,8 @@ tahap pencarian sampai pemilihan akhir.
 
 | Metrik | Peran | Alasan keberadaannya |
 |---|---|---|
-| **`pinball`** | **Kriteria pemilihan** | Satu-satunya yang memutuskan |
-| `coverage` | Cek kalibrasi | Dilatih di 0,9 → harus kembali ~0,9. Jauh di atas = overstock sistematis; jauh di bawah = janji service level tidak ditepati |
+| **`pinball` per τ** | **Kriteria pemilihan** (dirata-ratakan menjadi K1) | Satu-satunya yang memutuskan. Dilaporkan **per titik kuantil berdampingan**, bukan hanya sebagai satu rata-rata — model yang menang di rata-rata tapi kalah telak di satu ujung grid harus terlihat, bukan tertelan |
+| `coverage` per τ | Cek kalibrasi | Untuk setiap τ, proporsi baris dengan `actual ≤ prediksi` harus mendekati τ. Diperiksa **per kuantil**, bukan hanya di 0,9 (§17 K2). Jauh di atas = overstock sistematis; jauh di bawah = janji service level tidak ditepati |
 | `fill_rate` | Kriteria sukses pemilik data | "Outlet tidak kehabisan", dinyatakan dalam unit. Kekurangan dijumlahkan **sebelum** dibagi, sehingga surplus di satu outlet-hari tidak bisa menutupi kehabisan di outlet lain — barangnya sudah berada di cabang yang salah pada hari yang salah |
 | `shortfall_units` / `overstock_units` | Penerjemah ke bahasa bisnis | "pinball 2,390" tidak bisa didiskusikan di rapat; "kekurangan turun 73%, kelebihan naik 2,5×" bisa |
 | `mae` | **Konteks saja** | Dilaporkan, tidak memutuskan |
@@ -1021,14 +1119,33 @@ menobatkan model yang unggul hanya di tempat menebak nol itu mudah — alasan
 
 ### 15.4 Tidak pernah satu angka global
 
-Setiap hasil dilaporkan dalam **tiga potongan**: gabungan, per `demand_segment`,
-dan per `is_delivery_day` (`walk_forward.GROUP_COLS`). Delivery day adalah baris
-yang benar-benar menaikkan barang ke truk; segmen permintaan adalah sumbu tempat
-satu angka global paling mudah menyesatkan.
+Setiap hasil dilaporkan dalam **empat potongan**: gabungan, per `demand_segment`,
+per `is_delivery_day` (`walk_forward.GROUP_COLS`), dan — sejak 2026-08-24 — **per
+titik kuantil**. Delivery day adalah baris yang benar-benar menaikkan barang ke
+truk; segmen permintaan adalah sumbu tempat satu angka global paling mudah
+menyesatkan.
+
+Potongan keempat lahir dari alasan yang sama persis dengan tiga yang pertama.
+K1 adalah rata-rata 19 angka, dan sebuah rata-rata bisa menyembunyikan model yang
+kalibrasinya rusak di ekor bawah tapi tertolong di tengah grid. Aturan yang
+sudah berlaku di dokumen ini — jangan pernah melaporkan satu angka yang bisa
+menyembunyikan kegagalan di sub-populasi — sekarang berlaku juga pada sumbu
+kuantil, bukan hanya pada sumbu baris.
 
 ---
 
 ## 16. Posisi hasil saat ini
+
+> **⚠ MENUNGGU PENGGANTIAN (2026-08-24).** Seluruh angka di bagian ini diukur
+> pada kriteria **lama** (pinball@0,9 tunggal), dan pada artefak model yang
+> dilatih 19–20 Agu 2026 — sebelum reclass kategori WIP-2 2026-08-22. Keduanya
+> membuat angka di sini **tidak sah lagi sebagai dasar keputusan**, meskipun
+> tetap sah sebagai catatan historis tentang apa yang terukur pada kriteria lama.
+>
+> Bagian ini ditulis ulang penuh setelah ketiga notebook dijalankan ulang dan
+> `docs/hasil-modeling-{rf,xgb,lstm}.md` diregenerasi — bukan diedit sebagian,
+> karena seluruh angkanya berubah. Sampai itu terjadi, angka di bawah
+> dipertahankan apa adanya supaya perbandingan lama-baru tetap bisa dilakukan.
 
 Ketiga model sudah dijalankan penuh. Angka berikut dari **345.547 baris validasi
 yang identik** — dijamin `walk_forward.eligible_rows()`, dikonfirmasi oleh fakta
@@ -1106,11 +1223,40 @@ memisahkan.
 Model yang menang secara gabungan tetapi kalah di satu bulan bukan model yang
 bisa diterapkan; SCM mengirim setiap minggu, bukan setiap tahun.
 
-### K1 — Kriteria utama: pinball@0.9 di potongan fold bersih (1/2/4)
+### K1 — Kriteria utama: rata-rata pinball lintas `QUANTILE_SET` di potongan fold bersih (1/2/4)
 
-> Pemenang adalah pinball terendah, **asalkan selisihnya ≥ 2%** terhadap
-> pesaing terdekat. Di bawah ambang itu, hasilnya dinyatakan **seri** dan tangga
-> diteruskan ke K2.
+**Direvisi 2026-08-24** (§15.1). Sebelumnya: pinball@0,9 tunggal.
+
+> Pemenang adalah **rata-rata pinball lintas `QUANTILE_SET` terendah**,
+> **asalkan selisihnya ≥ 2%** terhadap pesaing terdekat. Di bawah ambang itu,
+> hasilnya dinyatakan **seri** dan tangga diteruskan ke K2.
+
+Yang berubah **hanya targetnya**, dari satu titik menjadi rata-rata seluruh titik
+di `QUANTILE_SET`. Disiplin walk-forward-nya identik: potongan fold bersih tetap
+1/2/4, ambang 2% tetap dikalibrasi dari varians terukur run ini sendiri
+(justifikasi di bawah tidak berubah), dan pemenang tetap harus lolos G0 lebih
+dulu.
+
+Dua hal yang perlu dinyatakan supaya kriteria ini tidak disalahbaca:
+
+- **Rata-ratanya tak berbobot.** Setiap titik kuantil menyumbang sama besar,
+  termasuk 0,9. Pembobotan yang lebih berat ke arah 0,9 — karena itu komitmen
+  bisnis di B-9 — sudah dipertimbangkan dan **belum diputuskan**; ia tercatat
+  sebagai pertanyaan terbuka nomor 1 di
+  `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md`.
+  Sampai itu diputuskan, tak berbobot adalah yang berlaku, dan pilihan itu
+  dinyatakan di sini supaya tidak terbaca sebagai kelalaian.
+- **Skor per titik tetap dilaporkan berdampingan.** K1 memutuskan lewat satu
+  angka, tapi angka itu tidak pernah berdiri sendiri di laporan (§15.4).
+
+**Peringatan yang melekat pada perubahan ini.** Ambang 2% dikalibrasi terhadap
+varians yang terukur pada metrik **lama**. Rata-rata 19 titik kemungkinan lebih
+stabil daripada satu titik — merata-ratakan meredam derau — sehingga ambang 2%
+bisa jadi terlalu longgar pada metrik baru. Ini **tidak** disetel ulang secara
+spekulatif: kalibrasi ulangnya dilakukan setelah ketiga run baru selesai, dari
+varians antar-fold dan antar-model yang benar-benar terukur di run itu, dengan
+cara yang sama persis seperti ambang 2% diturunkan pertama kali. Sampai itu
+terjadi, ambang 2% tetap berlaku dan keterbatasannya dicatat di sini.
 
 **Justifikasi ambang 2%.** Ambang ini tidak dipilih dari kebiasaan, melainkan
 dikalibrasi dari kebisingan yang terukur di run ini sendiri:
@@ -1125,13 +1271,41 @@ di bawahnya tidak bisa dipisahkan dari varians seed dan varians bulan.
 
 ### K2 — Kalibrasi terhadap service level yang dijanjikan
 
-> `|coverage − 0,90|` pada potongan fold bersih, dibaca bersama stabilitasnya
-> antar fold.
+**Direvisi 2026-08-24.** Sebelumnya diperiksa hanya di 0,9.
+
+> Untuk **setiap** τ di `QUANTILE_SET`: `|coverage(τ) − τ|` pada potongan fold
+> bersih, dibaca bersama stabilitasnya antar fold. `|coverage(0,9) − 0,90|`
+> tetap dilaporkan terpisah dan diberi bobot khusus, karena 0,9 adalah titik yang
+> benar-benar dijanjikan ke bisnis (B-9).
 
 Ini bukan kriteria cadangan sembarangan — ia menguji **janji yang sama** dengan
-kriteria utama, dari sudut yang berbeda. Model yang coverage-nya jauh di atas 0,90
-menepati janji dengan cara yang mahal (overstock sistematis); yang jauh di bawah
-tidak menepatinya sama sekali.
+kriteria utama, dari sudut yang berbeda. Model yang coverage-nya jauh di atas
+targetnya menepati janji dengan cara yang mahal (overstock sistematis); yang jauh
+di bawah tidak menepatinya sama sekali.
+
+**Kenapa memeriksa seluruh τ memperkuat anak tangga ini, bukan sekadar
+memperbanyak angkanya.** Simpangan yang **konsisten searah di seluruh** titik
+kuantil adalah sinyal jauh lebih kuat daripada simpangan yang hanya muncul di
+satu titik: yang pertama berarti seluruh distribusi ramalan model itu bergeser,
+yang kedua bisa kebetulan. Dua pola yang harus dibedakan eksplisit saat menuruni
+anak tangga ini:
+
+| Pola | Bacaan |
+|---|---|
+| Simpangan searah di hampir seluruh τ | Bias sistematis pada seluruh distribusi — alasan kuat untuk tersisih |
+| Simpangan besar hanya di beberapa τ, arah campur | Derau atau kelemahan lokal — dicatat, bukan alasan menyisihkan |
+
+Contoh dari data lama: simpangan Random Forest +0,034 di 0,9 dinilai bukan derau
+justru karena **konsisten searah di kelima fold**. Sumbu kuantil menambah
+dimensi kedua untuk uji konsistensi yang sama.
+
+**Quantile crossing.** Prediksi yang tidak monoton terhadap τ pada baris yang sama
+(mis. prediksi τ=0,7 melampaui τ=0,8) adalah kegagalan kalibrasi yang hanya
+terlihat setelah multi-kuantil dijalankan. Ia dilaporkan sebagai laju (proporsi
+baris yang punya minimal satu inversi) untuk XGBoost dan LSTM; Random Forest
+kebal secara struktural karena setiap titiknya adalah persentil dari satu
+distribusi empiris yang sama. Laju crossing yang material dibaca di K2, bukan
+diperbaiki diam-diam dengan mengurutkan hasil.
 
 ### K3 — Ongkos operasional dan reprodusibilitas
 
@@ -1152,6 +1326,21 @@ kompromi.
 
 ## 18. Penerapan tangga pada angka yang ada
 
+> **⚠ MENUNGGU PENGGANTIAN (2026-08-24).** Tangga di bawah dituruni memakai angka
+> §16, yaitu angka kriteria **lama**. Usulan keputusan di ujungnya (XGBoost)
+> karenanya **belum menjadi keputusan yang sah** di bawah K1 yang sudah direvisi,
+> dan tidak boleh dibekukan atau dikutip sebagai pemenang.
+>
+> Perlu dinyatakan tegas kenapa ini bukan formalitas: pada K1 lama ketiga model
+> **seri dalam 0,88%**, dan pemenang akhirnya ditentukan oleh K3 (ongkos), bukan
+> akurasi. Kriteria yang tidak memisahkan adalah justru kondisi di mana
+> memperluas titik evaluasi paling mungkin mengubah hasilnya — jadi urutan di
+> K1 dan K2 di bawah adalah yang paling mungkin berubah setelah run ulang, bukan
+> yang paling kecil kemungkinannya.
+>
+> Bagian ini ditulis ulang penuh setelah §16 diregenerasi. Teks lama
+> dipertahankan sebagai jejak keputusan pada kriteria lama.
+
 Menuruni tangga dengan angka §16 — ini **usulan**, ditulis sebelum Desember dibuka
 dan menunggu persetujuan sebelum dibekukan:
 
@@ -1161,7 +1350,7 @@ Semua mengalahkan `naive_roll_mean_7` di **kelima** fold dengan margin serupa
 (~2,4 lawan ~4,5). Fold 4 (Oktober) konsisten paling berat bagi ketiganya —
 properti bulannya, bukan properti modelnya.
 
-### K1 — Pinball fold bersih: **SERI**
+### K1 — Pinball fold bersih: **SERI** *(kriteria lama, pinball@0,9 tunggal)*
 
 | model | pinball (fold 1/2/4) | selisih ke terbaik |
 |---|---:|---:|
@@ -1219,6 +1408,7 @@ pengulangan seed yang pernah dijalankan untuk mengukur variansnya.
 ### Usulan keputusan
 
 > **Model produksi yang diusulkan: XGBoost kuantil 0.9.**
+> *(Usulan pada kriteria lama — ditahan sampai run ulang multi-kuantil selesai.)*
 >
 > Dasarnya harus dinyatakan apa adanya: **bukan** karena XGBoost lebih akurat.
 > Pada kriteria utama ketiganya seri dalam batas kebisingan yang bisa diukur run
@@ -1260,10 +1450,18 @@ eksekusi. Tidak dicicil — agar tidak ada kesempatan mengintip lalu mengulang.
 panel** (996 baris warm-up, 4.333 baris tanpa target). Baris yang dikeluarkan
 bukan irisan yang bias, tetapi angkanya wajib disebut.
 
-**4. Angka utama = skor model terpilih.** pinball@0.9, coverage, dan fill_rate
-XGBoost adalah angka final penelitian. Dua model lain dilaporkan sebagai
-**pembanding deskriptif**, dengan label eksplisit bahwa pemenang ditetapkan
-sebelum Desember dibuka.
+**4. Angka utama = skor model terpilih.** Rata-rata pinball lintas
+`QUANTILE_SET` (K1), coverage **per titik kuantil** (K2), dan fill_rate model
+terpilih adalah angka final penelitian. Skor pinball dan coverage di **τ = 0,9**
+dilaporkan terpisah dan diberi tempat khusus, karena itulah titik yang dijanjikan
+ke bisnis (B-9) — tetapi ia adalah salah satu angka yang dilaporkan, bukan lagi
+satu-satunya angka utama. Dua model lain dilaporkan sebagai **pembanding
+deskriptif**, dengan label eksplisit bahwa pemenang ditetapkan sebelum Desember
+dibuka.
+
+*Direvisi 2026-08-24; sebelumnya berbunyi "pinball@0.9, coverage, dan fill_rate
+XGBoost", yang mengasumsikan pemenang sudah pasti XGBoost — asumsi yang ditahan
+sampai run ulang selesai (§18).*
 
 **5. Tiga potongan, bukan satu angka.** Gabungan, per `demand_segment`, per
 `is_delivery_day` — sama seperti seluruh pelaporan validasi.
@@ -1276,11 +1474,13 @@ ini. Ia bukan alasan mengganti pilihan.
 ### 19.1 Yang akan membatalkan rencana ini
 
 Satu-satunya hasil yang menuntut lebih dari sekadar pelaporan adalah **kegagalan
-kalibrasi yang besar**: coverage XGBoost di Desember jatuh jauh di bawah 0,90
-(indikatif: < 0,85). Itu bukan sinyal untuk menukar model — ketiganya menargetkan
-kuantil yang sama dan akan bergerak searah — melainkan sinyal bahwa Desember
-berperilaku berbeda dari lima bulan validasi, yang harus dibahas sebagai
-keterbatasan generalisasi musiman, bukan disembunyikan.
+kalibrasi yang besar**: coverage model terpilih di Desember jatuh jauh di bawah
+targetnya (indikatif: coverage di τ=0,9 turun di bawah 0,85, atau simpangan
+searah yang besar di seluruh `QUANTILE_SET`). Itu bukan sinyal untuk menukar
+model — ketiganya menargetkan grid kuantil yang sama dan akan bergerak searah —
+melainkan sinyal bahwa Desember berperilaku berbeda dari lima bulan validasi,
+yang harus dibahas sebagai keterbatasan generalisasi musiman, bukan
+disembunyikan.
 
 ---
 
@@ -1309,6 +1509,16 @@ Bagian ini ada supaya klaim di laporan tidak melampaui apa yang ditopang data.
   dataset.
 - ❌ "LSTM lebih buruk dari XGBoost." Tanpa pengulangan seed, "sedikit lebih
   buruk" tidak bisa dipisahkan dari "dapat seed yang kurang beruntung".
+
+> **Dua butir di atas berubah pada run multi-kuantil (2026-08-24).** Keduanya
+> ditulis untuk run kuantil-0,9 tunggal dan tetap berlaku untuk angka-angka run
+> itu. Untuk run multi-kuantil, penyetaraan anggaran (LSTM 30 kandidat, ruang
+> 144, 3 seed pada pemenang — §21) mencabut tiga dari empat alasan di butir
+> pertama dan seluruh alasan di butir kedua. Yang **tetap** berlaku dan tidak
+> boleh hilang saat §20 ditulis ulang: satu dataset, satu domain, satu periode.
+> Penyetaraan anggaran membuat "LSTM kalah karena arsitekturnya" menjadi klaim
+> yang bisa dipertahankan pada dataset ini — bukan menjadi klaim tentang
+> arsitektur LSTM secara umum.
 - ❌ Klaim apa pun berbasis MAE terhadap baseline (§15.3).
 - ❌ Klaim yang mengandaikan sumbu waktu pemesanan (`docs/batasan-penelitian.md`
   B-1, B-2, B-3).
@@ -1334,15 +1544,63 @@ Bagian ini ada supaya klaim di laporan tidak melampaui apa yang ditopang data.
 
 ## 21. Rencana kerja tersisa
 
+**Diperbarui 2026-08-24** — migrasi multi-kuantil menyisipkan butir 0a–0d di
+depan, dan butir 1 tidak boleh dijalankan sebelum keempatnya selesai.
+
 | # | Pekerjaan | Status |
 |---|---|---|
-| 1 | Membekukan usulan §18 dalam sebuah commit | ⬜ menunggu persetujuan |
+| **0a** | **Revisi spec RF/XGB/LSTM + §15/§17/§19/§21 ke kriteria multi-kuantil** | ✅ selesai 2026-08-24 |
+| **0b** | **Implementasi multi-kuantil di `evaluation.py`, `walk_forward.py`, `model_common.py`, `model_xgboost.py`, `model_lstm.py`, `model_random_forest.py` + ketiga notebook** | ✅ selesai 2026-08-24 — kontrak `fit_predict` kini `(n, len(QUANTILE_SET))`, 739 tes lolos, notebook diubah tetapi **belum dijalankan** |
+| **0c** | **Menjalankan ulang ketiga notebook** — ketiganya dengan pencarian hyperparameter penuh pada data pasca-reclass: Random Forest (18 kandidat), XGBoost (30 kandidat), dan LSTM (**30 kandidat, ruang 144, + 3 seed pada pemenang**). Pencarian RF semula hendak dipakai ulang; keputusan itu dibalik 2026-08-24 karena `rf_best_params.json` dipilih di atas data pra-reclass WIP-2 — kebasian yang sama yang sudah dipakai sebagai alasan membuang bundle-nya | ⬜ setelah #0b — komputasi berat, berjam-jam, menunggu izin terpisah. Prosedurnya (termasuk langkah 0 yang sengaja gagal) di `2026-08-22-model-comparison-refactor-migration.md` §"Prosedur Fase 3" |
+| **0d** | **Menulis ulang `docs/hasil-modeling-{rf,xgb,lstm}.md` dari nol, lalu §16 dan §18** | ⬜ setelah #0c |
+| 1 | Membekukan usulan §18 dalam sebuah commit | ⬜ menunggu #0d, lalu persetujuan |
 | 2 | Menjalankan protokol §19 — buka Desember sekali | ⬜ setelah #1 |
 | 3 | Menulis `docs/hasil-test-desember.md` | ⬜ setelah #2 |
+| **3a** | **Alokasi kuantil tersegmentasi pada model pemenang** — Bagian 4 spec-nya (perluasan multi-kuantil) sudah diwarisi dari #0c, jadi tinggal simulasi λ dan seterusnya | ⬜ setelah #3, `2026-08-22-segmented-quantile-allocation-design.md` |
 | 4 | **Dekomposisi harian** (`target_h1`…`target_h4`) untuk ketiga model — menjawab "kapan permintaan terkonsentrasi" | ⬜ direncanakan di spec pemodelan |
 | 5 | **SHAP untuk pemenang saja** — menjawab "kenapa model meyakini ini" | ⬜ direncanakan di spec pemodelan |
 | 6 | Mengisi `tanggal_buka` Cikarang Pusat di `outlet_closures.csv` + memperbarui `RELOCATION_DATES` | ⬜ menunggu pemilik data |
 | 7 | Memperluas `calendar_features.py` ke 2026 sebelum data periode baru masuk | ⬜ |
+
+**Penyetaraan anggaran pencarian (keputusan pemilik proyek, 2026-08-24,
+sesudah T-7).** Butir 0b dan 0c dijalankan dengan anggaran pencarian LSTM yang
+dinaikkan: **30 kandidat** (dari 12, setara XGBoost), **ruang 144** (dua dimensi
+kapasitas — `num_layers` dan `hidden_size` — dikembalikan ke `SEARCH_SPACE`),
+dan **3 seed** pada konfigurasi terbaik. Anggaran RF (18) dan XGBoost (30) tidak
+berubah.
+
+Alasannya adalah validitas atribusi, bukan ongkos. Ketimpangan anggaran selama
+ini tercatat sebagai keterbatasan yang dibaca bersama hasil (§14, §20) —
+posisi yang bisa diterima ketika anggaran itu warisan run sebelumnya. Begitu
+**ketiga model dicari ulang penuh dari nol** di butir 0c, ekonominya berubah:
+ketimpangan itu tidak lagi diwarisi, melainkan dipilih ulang, dan mempertahankan
+LSTM di 12 draw berarti secara sadar memilih menghasilkan angka yang tidak dapat
+diatribusikan. Tanpa penyetaraan ini, kalau LSTM kalah di K1 kita tidak bisa
+membedakan apakah **arsitekturnya memang kurang cocok** atau **pencariannya yang
+paling dangkal** — dan itu persis pertanyaan inti penelitian ini. Dua dimensi
+kapasitas itu dipotong 2026-08-19 karena ongkos per epoch, bukan karena terbukti
+tidak menolong; §18 dan `hasil-modeling-lstm.md` mencatatnya sebagai pertanyaan
+yang tidak pernah ditanyakan, bukan pertanyaan yang sudah dijawab. Tiga seed
+menjawab keberatan yang berdiri sendiri: LSTM satu-satunya model yang
+inisialisasinya acak, sehingga variansnya selama ini hanya bisa **diduga** dari
+selisih antar fold — yang mencampur varians seed dengan varians data.
+
+Konsekuensi ongkos dinyatakan terbuka: ini menaikkan ongkos butir 0c secara
+signifikan, karena LSTM model termahal per fit dan ketiga perubahan mengalikan
+ongkosnya sekaligus — 2,5x kandidat, head 19 keluaran, dua fit tambahan untuk
+seed kedua dan ketiga, dan sebagian draw kini boleh mengambil `num_layers=2`
+atau `hidden_size=256` yang per epoch-nya jauh lebih mahal (259 s vs 104 s pada
+pengukuran 2026-08-19). Plafon 8 jam LSTM sudah ditinggalkan sebelum ini;
+keputusan ini memperbesar kelampauannya, dan wall clock sebenarnya dicatat di
+`docs/hasil-modeling-lstm.md` sebagai ongkos terukur.
+
+Butir 0a–0d adalah migrasi evaluasi multi-kuantil
+(`docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md`).
+Urutannya tidak bebas: butir 1 membekukan pemenang, dan membekukan pemenang di
+atas angka kriteria lama akan membekukan keputusan yang kriterianya sendiri sudah
+diganti. Migrasi ini tidak membuang hasil out-of-sample apa pun karena Desember
+belum pernah dibuka — yang diulang hanya pencarian dan walk-forward di kelima
+fold latih.
 
 Butir 4 dan 5 bukan tambahan opsional — keduanya sudah tertulis sebagai rencana
 penjelasan (*explainability*) di
@@ -1365,3 +1623,6 @@ ketiganya berarti membayar ongkos penjelasan untuk model yang tidak akan dipakai
 | Desain prapemrosesan pemodelan | `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md` |
 | Desain tiap model | `docs/superpowers/specs/2026-08-{18-random-forest,19-xgboost,19-lstm}-modeling-design.md` |
 | Mesin evaluasi bersama | `utils/walk_forward.py`, `utils/model_common.py`, `utils/evaluation.py` |
+| Metodologi evaluasi multi-kuantil | `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md` |
+| Checklist migrasi multi-kuantil | `docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md` |
+| Alokasi kuantil tersegmentasi | `docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md` |
