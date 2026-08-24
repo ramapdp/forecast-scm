@@ -117,7 +117,7 @@ Hasilnya LSTM akhirnya dilatih di populasi baris yang persis sama dengan yang
 dilihat RF dan XGBoost.
 
 Ketiga baseline naive dinilai pada **baris yang identik** dengan LSTM —
-dijamin oleh `utils/walk_forward.py` yang memiliki definisi fold dan kelayakan
+dijamin oleh `utils/modelling/walk_forward.py` yang memiliki definisi fold dan kelayakan
 baris, dan menerima model sebagai callable yang disuntikkan. `walk_forward.py`
 tidak disentuh sama sekali untuk model ini. Baris yang sama itu juga yang
 dipakai run RF dan XGBoost, yang membuat §6 sah dilakukan.
@@ -172,7 +172,7 @@ Tiga hal yang ditentukan angka ini:
    menanyakan** apakah lapisan kedua akan menolong.
 
 3. **Jendela padat tidak pernah dimaterialisasi.** Tensor 1.502.522 × 28 × 56
-   float32 berukuran **9,42 GB** di mesin 16 GB. `utils/sequence_windows.py`
+   float32 berukuran **9,42 GB** di mesin 16 GB. `utils/modelling/sequence_windows.py`
    menyimpan panel sebagai satu matriks kontigu **294 MB** plus array posisi
    akhir jendela, dan tiap jendela adalah irisan `sliding_window_view` dari
    situ — tidak ada yang disalin sampai satu batch dibentuk. Ini yang membuat

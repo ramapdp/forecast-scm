@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import modeling_prep, sequence_windows
+from utils.modelling import modeling_prep, sequence_windows
 
 
 def _panel(n_days=60, n_pairs=2, start="2025-01-01", seed=5):

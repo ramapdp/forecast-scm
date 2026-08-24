@@ -464,7 +464,7 @@ terverifikasi.
 
 ---
 
-## 10. Tahap 13 — Modeling preprocessing (`utils/modeling_prep.py`)
+## 10. Tahap 13 — Modeling preprocessing (`utils/modelling/modeling_prep.py`)
 
 Tahap ini mengubah `featured.parquet` (64 kolom) menjadi
 `model_input.parquet` (76 kolom) — satu sumber kebenaran yang dikonsumsi
@@ -724,14 +724,14 @@ Jendela geser per pasangan menghasilkan tensor `(n_samples, 28, n_features)`.
 
 ```bash
 # Pipeline data-prep penuh (tahap 1–12)
-.venv/bin/python3 -m utils.prepare_forecast_data
+.venv/bin/python3 -m utils.data_preprocessing.prepare_forecast_data
 
 # Modeling preprocessing (tahap 13–14)
-.venv/bin/python3 -m utils.modeling_prep
+.venv/bin/python3 -m utils.modelling.modeling_prep
 
 # Lewat notebook
 jupyter nbconvert --to notebook --execute --inplace \
-  notebook/data-processing.ipynb notebook/train_test_split.ipynb \
+  notebook/data_processing.ipynb notebook/train_test_split.ipynb \
   notebook/modeling_prep.ipynb
 
 # Seluruh unit test (274 test)

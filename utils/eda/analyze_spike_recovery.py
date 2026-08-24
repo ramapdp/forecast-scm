@@ -15,7 +15,7 @@ Kedua hipotesis punya jejak yang berbeda dan bisa dipisahkan dari data:
                         menggantikan permintaan berikutnya
 
 Jalankan sebagai modul dari root repo:
-    .venv/bin/python3 -m utils.analyze_spike_recovery
+    .venv/bin/python3 -m utils.eda.analyze_spike_recovery
 
 Skrip ini hanya MEMBACA featured.parquet dan mencetak tabel; ia tidak
 menulis artefak apa pun dan bukan bagian dari pipeline.
@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
 
-from . import build_panel, outlier_handling
+from utils.data_preprocessing import build_panel, outlier_handling
 
 PAIR_COLS = build_panel.PAIR_COLS
 # Jendela tidak boleh menyeberangi masa tutup cabang, jadi segment_id ikut
@@ -75,11 +75,13 @@ def add_window_means(
     grouped = result.groupby(series_cols, sort=False)
 
     def _lead(series: pd.Series, how: str) -> pd.Series:
+        """Hitung agregat (sum/count) dari jendela ke depan dengan rolling mundur."""
         # Jendela sesudah = jendela sebelum pada deret yang dibalik.
         rolled = series[::-1].shift(1).rolling(window, min_periods=1)
         return (rolled.sum() if how == "sum" else rolled.count())[::-1]
 
     def _lag(series: pd.Series, how: str) -> pd.Series:
+        """Hitung agregat (sum/count) dari jendela ke belakang dengan rolling biasa."""
         rolled = series.shift(1).rolling(window, min_periods=1)
         return rolled.sum() if how == "sum" else rolled.count()
 
@@ -158,6 +160,7 @@ def compare_windows(rows: pd.DataFrame) -> dict:
 
 
 def _print_row(label: str, s: dict) -> None:
+    """Format dan cetak satu baris statistik ke console."""
     if not s.get("n_compared"):
         print(f"{label:<44} (tidak ada baris dengan jendela penuh)")
         return

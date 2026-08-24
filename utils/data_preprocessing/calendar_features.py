@@ -24,28 +24,38 @@ EID_AL_ADHA_DATES: dict[int, datetime.date] = {
 }
 PROXIMITY_WINDOW_DAYS = 14
 
+# ── KOMPONEN TANGGAL DASAR ────────────────────────────────────────────────────
 
 def day_of_week(date_col: pd.Series) -> pd.Series:
+    """Hari dalam minggu: 0=Senin, 6=Minggu."""
     return date_col.dt.dayofweek
 
 
 def day_of_month(date_col: pd.Series) -> pd.Series:
+    """Tanggal dalam bulan (1–31)."""
     return date_col.dt.day
 
 
 def month(date_col: pd.Series) -> pd.Series:
+    """Bulan dalam tahun (1–12)."""
     return date_col.dt.month
 
 
+# ── AKHIR PEKAN & HARI LIBUR NASIONAL ──────────────────────────────────────
+
 def is_weekend(date_col: pd.Series) -> pd.Series:
+    """True jika hari adalah Sabtu (5) atau Minggu (6)."""
     return date_col.dt.dayofweek >= 5
 
 
 def is_national_holiday(date_col: pd.Series) -> pd.Series:
+    """True jika tanggal adalah hari libur nasional Indonesia (dari library `holidays`)."""
     return date_col.dt.date.isin(ID_HOLIDAYS)
 
+# ── FITUR RAMADAN ───────────────────────────────────────────────────────────────
 
 def is_ramadan(date_col: pd.Series) -> pd.Series:
+    """True jika tanggal jatuh dalam periode Ramadan."""
     def check(d):
         period = RAMADAN_PERIODS.get(d.year)
         return period is not None and period[0] <= d <= period[1]
@@ -53,6 +63,7 @@ def is_ramadan(date_col: pd.Series) -> pd.Series:
 
 
 def days_into_ramadan(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari sejak awal Ramadan (0 = hari pertama). NaN di luar Ramadan."""
     def compute(d):
         period = RAMADAN_PERIODS.get(d.year)
         if period is None or not (period[0] <= d <= period[1]):
@@ -62,6 +73,7 @@ def days_into_ramadan(date_col: pd.Series) -> pd.Series:
 
 
 def days_until_ramadan(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari menuju Ramadan. NaN jika sudah dalam Ramadan atau setelah Ramadan."""
     def compute(d):
         period = RAMADAN_PERIODS.get(d.year)
         if period is None or d >= period[0]:
@@ -69,12 +81,15 @@ def days_until_ramadan(date_col: pd.Series) -> pd.Series:
         return (period[0] - d).days
     return date_col.dt.date.apply(compute)
 
+# ── FITUR IDUL FITRI ───────────────────────────────────────────────────────────
 
 def is_eid_al_fitr(date_col: pd.Series) -> pd.Series:
+    """True jika tanggal adalah Idul Fitri."""
     return date_col.dt.date.apply(lambda d: EID_AL_FITR_DATES.get(d.year) == d)
 
 
 def days_since_eid_al_fitr(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari setelah Idul Fitri, dalam jendela PROXIMITY_WINDOW_DAYS. NaN di luar jendela."""
     def compute(d):
         eid_date = EID_AL_FITR_DATES.get(d.year)
         if eid_date is None or d < eid_date:
@@ -85,6 +100,7 @@ def days_since_eid_al_fitr(date_col: pd.Series) -> pd.Series:
 
 
 def days_until_eid_al_fitr(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari menuju Idul Fitri, dalam jendela PROXIMITY_WINDOW_DAYS. NaN di luar jendela."""
     def compute(d):
         eid_date = EID_AL_FITR_DATES.get(d.year)
         if eid_date is None or d > eid_date:
@@ -93,12 +109,15 @@ def days_until_eid_al_fitr(date_col: pd.Series) -> pd.Series:
         return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
     return date_col.dt.date.apply(compute)
 
+# ── FITUR IDUL ADHA ────────────────────────────────────────────────────────────
 
 def is_eid_al_adha(date_col: pd.Series) -> pd.Series:
+    """True jika tanggal adalah Idul Adha."""
     return date_col.dt.date.apply(lambda d: EID_AL_ADHA_DATES.get(d.year) == d)
 
 
 def days_since_eid_al_adha(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari setelah Idul Adha, dalam jendela PROXIMITY_WINDOW_DAYS. NaN di luar jendela."""
     def compute(d):
         eid_date = EID_AL_ADHA_DATES.get(d.year)
         if eid_date is None or d < eid_date:
@@ -109,6 +128,7 @@ def days_since_eid_al_adha(date_col: pd.Series) -> pd.Series:
 
 
 def days_until_eid_al_adha(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari menuju Idul Adha, dalam jendela PROXIMITY_WINDOW_DAYS. NaN di luar jendela."""
     def compute(d):
         eid_date = EID_AL_ADHA_DATES.get(d.year)
         if eid_date is None or d > eid_date:
@@ -117,12 +137,15 @@ def days_until_eid_al_adha(date_col: pd.Series) -> pd.Series:
         return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
     return date_col.dt.date.apply(compute)
 
+# ── FITUR HARI KEMERDEKAAN ─────────────────────────────────────────────────────
 
 def is_independence_day(date_col: pd.Series) -> pd.Series:
+    """True jika tanggal adalah 17 Agustus (Hari Kemerdekaan Indonesia)."""
     return (date_col.dt.month == 8) & (date_col.dt.day == 17)
 
 
 def days_since_independence_day(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari setelah 17 Agustus, dalam jendela PROXIMITY_WINDOW_DAYS. NaN di luar jendela."""
     def compute(d):
         event_date = datetime.date(d.year, 8, 17)
         if d < event_date:
@@ -133,6 +156,7 @@ def days_since_independence_day(date_col: pd.Series) -> pd.Series:
 
 
 def days_until_independence_day(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari menuju 17 Agustus, dalam jendela PROXIMITY_WINDOW_DAYS. NaN di luar jendela."""
     def compute(d):
         event_date = datetime.date(d.year, 8, 17)
         if d > event_date:
@@ -141,12 +165,15 @@ def days_until_independence_day(date_col: pd.Series) -> pd.Series:
         return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
     return date_col.dt.date.apply(compute)
 
+# ── FITUR TAHUN BARU ──────────────────────────────────────────────────────────────
 
 def is_new_year(date_col: pd.Series) -> pd.Series:
+    """True jika tanggal adalah 1 Januari."""
     return (date_col.dt.month == 1) & (date_col.dt.day == 1)
 
 
 def days_since_new_year(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari setelah 1 Januari, dalam jendela PROXIMITY_WINDOW_DAYS. NaN di luar jendela."""
     def compute(d):
         event_date = datetime.date(d.year, 1, 1)
         if d < event_date:
@@ -157,6 +184,11 @@ def days_since_new_year(date_col: pd.Series) -> pd.Series:
 
 
 def days_until_new_year(date_col: pd.Series) -> pd.Series:
+    """Jumlah hari menuju Tahun Baru berikutnya, dalam jendela PROXIMITY_WINDOW_DAYS.
+
+    Berbeda dari event lain: melihat ke Tahun Baru tahun berikutnya jika
+    tanggal saat ini sudah melewati 1 Januari tahun ini.
+    """
     def compute(d):
         this_year = datetime.date(d.year, 1, 1)
         event_date = this_year if d <= this_year else datetime.date(d.year + 1, 1, 1)
@@ -164,6 +196,7 @@ def days_until_new_year(date_col: pd.Series) -> pd.Series:
         return delta if delta <= PROXIMITY_WINDOW_DAYS else float("nan")
     return date_col.dt.date.apply(compute)
 
+# ── VALIDASI & ORKESTRASI ────────────────────────────────────────────────────────
 
 def check_year_coverage(date_col: pd.Series) -> None:
     covered_years = set(RAMADAN_PERIODS.keys())

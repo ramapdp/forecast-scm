@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import purging
+from utils.modelling import purging
 
 
 def _rows(dates, lead_times):

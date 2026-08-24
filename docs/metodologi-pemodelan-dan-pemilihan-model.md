@@ -407,7 +407,7 @@ sudah bersih dan berfitur: 1.502.522 baris × 68 kolom.
 Desember 2025. Target yang tanggal sasarannya jatuh setelah 2025-12-31
 dibiarkan `NaN` alih-alih mempersempit jendela test.
 
-**Purging** (`utils/purging.py`) — baris training yang jendela lead-time-nya
+**Purging** (`utils/modelling/purging.py`) — baris training yang jendela lead-time-nya
 menjangkau ke Desember **dibuang**, bukan dipertahankan: labelnya sebagian
 dijumlahkan dari permintaan periode test. 6.188 baris sebelum perbaikan, 0
 sesudahnya. `fold_train_mask()` menerapkan purge yang sama di setiap batas fold
@@ -436,7 +436,7 @@ menjadi sandaran `shift`.
 
 ## 7. Tahap 13–14 — Prapemrosesan pemodelan dan adapter
 
-`utils/modeling_prep.py` menambahkan lima hal terakhir sebelum data menyentuh
+`utils/modelling/modeling_prep.py` menambahkan lima hal terakhir sebelum data menyentuh
 model, menghasilkan `model_input.parquet` (1.502.522 baris × 82 kolom).
 
 ### 7.1 `is_event_driven`
@@ -562,7 +562,7 @@ Sebuah perbandingan hanya layak dilaporkan bila ketiga model melihat **baris yan
 sama persis**. Itu bukan sesuatu yang bisa dijamin oleh kedisiplinan penulisan
 tiga skrip training terpisah. Maka jaminan itu dipindahkan ke struktur:
 
-> `utils/walk_forward.py` **memiliki** definisi kelayakan baris, batas fold, dan
+> `utils/modelling/walk_forward.py` **memiliki** definisi kelayakan baris, batas fold, dan
 > penilaian. Ia tidak tahu apa pun tentang model. Seluruh antarmuka model adalah
 > satu callable:
 >
@@ -593,7 +593,7 @@ saat LSTM ditambahkan.
 
 Hasilnya: **345.547 baris validasi** di lima fold.
 
-### 9.2 Mesin bersama: `utils/model_common.py`
+### 9.2 Mesin bersama: `utils/modelling/model_common.py`
 
 Bagian yang tidak dimiliki model mana pun secara khusus dikumpulkan di sini —
 karena membiarkannya di dalam modul Random Forest berarti memperbaiki bug
@@ -665,7 +665,7 @@ daripada yang dijanjikan.
 | | |
 |---|---|
 | Implementasi | `quantile_forest.RandomForestQuantileRegressor` |
-| Modul | `utils/model_random_forest.py` |
+| Modul | `utils/modelling/model_random_forest.py` |
 | Ruang pencarian | 1.152 kombinasi |
 | Kandidat ditarik | **18** |
 
@@ -735,7 +735,7 @@ percaya diri dari fitur yang salah.
 | | |
 |---|---|
 | Implementasi | `xgboost==2.1.4`, `XGBRegressor(objective="reg:quantileerror", quantile_alpha=0.9, tree_method="hist")` |
-| Modul | `utils/model_xgboost.py` |
+| Modul | `utils/modelling/model_xgboost.py` |
 | Ruang pencarian | 2.592 kombinasi |
 | Kandidat ditarik | **30** |
 
@@ -819,7 +819,7 @@ berbeda tidak gagal — ia memprediksi dengan percaya diri dari fitur yang salah
 | | |
 |---|---|
 | Implementasi | `torch==2.8.0`, `QuantileLSTM` |
-| Modul | `utils/model_lstm.py`, `utils/sequence_windows.py` |
+| Modul | `utils/modelling/model_lstm.py`, `utils/modelling/sequence_windows.py` |
 | Ruang pencarian | 48 kombinasi |
 | Kandidat ditarik | **12** |
 
@@ -1117,7 +1117,7 @@ setelah melihat angkanya.
 
 ### 15.3 Kenapa MSE / RMSE tidak dipakai — dan tidak dihitung
 
-`utils/evaluation.py` tidak memiliki fungsi RMSE maupun MSE. Itu bukan
+`utils/modelling/evaluation.py` tidak memiliki fungsi RMSE maupun MSE. Itu bukan
 kelalaian. Empat alasan, dua di antaranya spesifik pada data ini:
 
 **1. Simetris — bertentangan langsung dengan service level.** Menghukum
@@ -1660,7 +1660,7 @@ ketiganya berarti membayar ongkos penjelasan untuk model yang tidak akan dipakai
 | Hasil terukur per model | `docs/hasil-modeling-{rf,xgb,lstm}.md` |
 | Desain prapemrosesan pemodelan | `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md` |
 | Desain tiap model | `docs/superpowers/specs/2026-08-{18-random-forest,19-xgboost,19-lstm}-modeling-design.md` |
-| Mesin evaluasi bersama | `utils/walk_forward.py`, `utils/model_common.py`, `utils/evaluation.py` |
+| Mesin evaluasi bersama | `utils/modelling/walk_forward.py`, `utils/modelling/model_common.py`, `utils/modelling/evaluation.py` |
 | Metodologi evaluasi multi-kuantil | `docs/superpowers/specs/2026-08-22-multi-quantile-evaluation-design.md` |
 | Checklist migrasi multi-kuantil | `docs/superpowers/specs/2026-08-22-model-comparison-refactor-migration.md` |
 | Alokasi kuantil tersegmentasi | `docs/superpowers/specs/2026-08-22-segmented-quantile-allocation-design.md` |

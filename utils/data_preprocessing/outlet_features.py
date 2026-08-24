@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 OUTLETS_FILE = str(BASE_DIR / "dataset/outlets.csv")
 OVERRIDES_FILE = str(BASE_DIR / "dataset/outlet_name_overrides.csv")
@@ -31,16 +31,20 @@ INDONESIAN_WEEKDAYS = {
     "Jumat": 4, "Sabtu": 5, "Minggu": 6,
 }
 
+# ── DATA LOADERS ─────────────────────────────────────────────────────────────────
 
 def load_outlets(path: str = OUTLETS_FILE) -> pd.DataFrame:
+    """Muat daftar outlet dari CSV (data master outlet)."""
     return pd.read_csv(path, sep=";", encoding="utf-8-sig")
 
 
 def load_overrides(path: str = OVERRIDES_FILE) -> pd.DataFrame:
+    """Muat tabel override nama cabang → outlet (matching manual oleh data owner)."""
     return pd.read_csv(path, sep=";", encoding="utf-8-sig", dtype=str)
 
 
 def load_region_mapping(path: str = REGION_MAPPING_FILE) -> pd.DataFrame:
+    """Muat tabel mapping cabang → kawasan dan jadwal pengiriman."""
     return pd.read_csv(path, sep=";", encoding="utf-8-sig")
 
 
@@ -98,6 +102,7 @@ def load_closures(
 
     return closures
 
+# ── GAP DETECTION ────────────────────────────────────────────────────────────────
 
 def _gap_is_recorded(
     branch: str,
@@ -146,8 +151,10 @@ def detect_unrecorded_gaps(
             })
     return findings
 
+# ── DELIVERY SCHEDULE HELPERS ───────────────────────────────────────────────────
 
 def parse_delivery_days(hari_pengiriman: str) -> set[int]:
+    """Parse string jadwal pengiriman ('Senin, Rabu') menjadi set indeks hari (0=Senin)."""
     tokens = re.split(r"\bdan\b|,", hari_pengiriman)
     days = set()
     for token in tokens:
@@ -161,6 +168,12 @@ def parse_delivery_days(hari_pengiriman: str) -> set[int]:
 
 
 def compute_lead_time_days(day_of_week: int, delivery_days: set[int]) -> int:
+    """Hitung berapa hari lagi pengiriman berikutnya dari hari saat ini.
+
+    Selalu ke depan: jika hari ini adalah hari pengiriman, hasilnya bukan 0
+    melainkan 7 (pengiriman minggu depan). Ini mencerminkan kenyataan operasional:
+    keputusan pengiriman sudah dibuat di awal hari, bukan di akhirnya.
+    """
     # Always strictly forward: if day_of_week is itself a delivery day, this
     # returns the days to the *next* occurrence, never 0.
     for d in range(1, 8):
@@ -228,8 +241,10 @@ def add_delivery_day_flag(
     result["is_delivery_day"] = result["is_delivery_day"].fillna(False).astype(bool)
     return result.drop(columns=["_weekday_tmp"])
 
+# ── BRANCH MATCHING & CANONICALIZATION ─────────────────────────────────────────
 
 def _strip_for_matching(nama_cabang: str) -> str:
+    """Hapus prefix kode (mis. 'KY068 - ') dan tanda kurung untuk matching fuzzy ke outlets.csv."""
     stripped = PREFIX_RE.sub("", nama_cabang)
     stripped = TRAILING_PAREN_RE.sub("", stripped)
     return stripped.strip()
@@ -238,6 +253,11 @@ def _strip_for_matching(nama_cabang: str) -> str:
 def match_branch_to_outlet(
     nama_cabang: str, outlets_df: pd.DataFrame, overrides_df: pd.DataFrame
 ) -> tuple[Optional[pd.Series], Optional[str]]:
+    """Cari baris outlet yang cocok untuk nama cabang, dengan priority ke tabel override.
+
+    Mengembalikan (outlet_row, kota_override). Jika tidak ada yang cocok, mengembalikan
+    (None, None) — caller memutuskan apakah ini error atau cukup diabaikan.
+    """
     override_row = overrides_df[overrides_df["Nama Cabang"] == nama_cabang]
     if not override_row.empty:
         nama_outlet = override_row.iloc[0]["Nama Outlet"]
@@ -257,6 +277,7 @@ def match_branch_to_outlet(
 
 
 def normalize_kota(kota: Optional[str], kota_override: Optional[str]) -> str:
+    """Pilih nilai kota yang valid: override > nilai asli > 'Unknown'."""
     if kota_override:
         return kota_override.strip()
     if kota is None or (isinstance(kota, float) and pd.isna(kota)):
@@ -276,6 +297,11 @@ def filter_matched_branches(
     overrides_df: pd.DataFrame,
     branch_col: str = "Nama Cabang",
 ) -> pd.DataFrame:
+    """Buang baris dari cabang yang tidak ditemukan di master outlet.
+
+    Cabang yang tidak bisa di-match tidak akan punya fitur outlet (kota, channel,
+    jadwal), sehingga lebih aman untuk dibuang dari pipeline daripada diisi NaN.
+    """
     branches = df[branch_col].unique()
     matched = {
         b for b in branches
@@ -290,6 +316,12 @@ def canonicalize_branch_names(
     overrides_df: pd.DataFrame,
     branch_col: str = "Nama Cabang",
 ) -> pd.DataFrame:
+    """Ganti Nama Cabang dengan nama kanonik dari outlets.csv.
+
+    Nama kanonik adalah 'Nama Outlet' di master outlet. Ini menyatukan kode
+    lama dan baru dari cabang yang sama (mis. KY068 Kramatwatu) ke satu identitas,
+    sehingga riwayat mereka tergabung dalam satu panel.
+    """
     branches = df[branch_col].unique()
     canonical_names = {}
     for nama_cabang in branches:
@@ -356,6 +388,9 @@ OBSERVED_RELOCATION_DATES: dict[str, pd.Timestamp] = {
     if branch not in LOWER_BOUND_RELOCATIONS
 }
 
+# ── FEATURE BUILDERS ───────────────────────────────────────────────────────────────
+
+# ── RELOCATION FEATURES ────────────────────────────────────────────────────────────
 
 def add_relocation_feature(
     df: pd.DataFrame,
@@ -363,6 +398,13 @@ def add_relocation_feature(
     branch_col: str = "Nama Cabang",
     date_col: str = "Tanggal",
 ) -> pd.DataFrame:
+    """Tambahkan kolom days_since_relocation: selisih hari antara tanggal baris dan tanggal relokasi.
+
+    Bernilai negatif sebelum relokasi (cabang belum pindah), nol pada hari relokasi,
+    positif sesudahnya. NaN untuk cabang yang tidak ada di RELOCATION_DATES.
+    Beberapa entri adalah lower bound (cabang belum pindah dalam window data);
+    tandanya adalah nilai negatif besar di seluruh riwayat.
+    """
     result = df.copy()
     relocation_date = result[branch_col].map(relocation_dates)
     result["days_since_relocation"] = (result[date_col] - relocation_date).dt.days
@@ -372,6 +414,12 @@ def add_relocation_feature(
 def build_outlet_features(
     branch_names: list[str], outlets_df: pd.DataFrame, overrides_df: pd.DataFrame
 ) -> pd.DataFrame:
+    """Bangun tabel fitur outlet (kota, channel online) untuk setiap nama cabang.
+
+    Cabang yang tidak ditemukan di master outlet tetap masuk tabel dengan
+    nilai NaN — bukan dibuang — karena penapisan sudah dilakukan sebelumnya
+    oleh filter_matched_branches().
+    """
     rows = []
     for nama_cabang in branch_names:
         outlet_row, kota_override = match_branch_to_outlet(nama_cabang, outlets_df, overrides_df)

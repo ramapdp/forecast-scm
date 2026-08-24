@@ -61,7 +61,7 @@ what the current `model_input.parquet` would produce.
 
 ## 2. Pipeline stages
 
-Run via `notebook/data-processing.ipynb` (interactive/QA, stops at the cleaned
+Run via `notebook/data_processing.ipynb` (interactive/QA, stops at the cleaned
 + feature-engineered `featured.parquet`) followed by `notebook/train_test_split.ipynb`
 (interactive, split + export), or `prepare_forecast_data.py` (scripted, runs
 the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
@@ -199,7 +199,7 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
    `target_lead_time_cumulative` is left as `NaN` rather than shrinking the
    test window when the target date would fall past 2025-12-31. Training rows
    whose lead-time window reaches into December are **purged**
-   (`utils/purging.py`) rather than kept: their label is summed partly over
+   (`utils/modelling/purging.py`) rather than kept: their label is summed partly over
    test-period demand. 6,188 rows before the fix, 0 after. `fold_train_mask()`
    applies the same purge at each walk-forward fold boundary.
 11. **Export splits** — `export_splits` writes `dataset/model_ready/train.parquet`
@@ -214,8 +214,8 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
     the output carries every column in `FEATURED_COLUMNS` (64). Notebook-only extras remain: a
     lag/rolling leakage spot-check, per-outlet date ranges, the visual QA
     section, and split-integrity checks in `train_test_split.ipynb`.
-13. **Modeling preprocessing** (`utils/modeling_prep.py`, run via
-    `notebook/modeling_prep.ipynb` or `python3 -m utils.modeling_prep`) —
+13. **Modeling preprocessing** (`utils/modelling/modeling_prep.py`, run via
+    `notebook/modeling_prep.ipynb` or `python3 -m utils.modelling.modeling_prep`) —
     adds `is_event_driven` (per-SKU, from `dataset/event_driven_items.csv`),
     `demand_segment` (Syntetos-Boylan ADI/CV², computed from the training
     period only), `fold_id` (five expanding walk-forward folds over Jul–Nov
@@ -260,7 +260,7 @@ the whole thing end to end; `run_qa_checks()` fires on both paths — see stage
     unless `require_finite=False`, that neither feature block contains NaN,
     since a tree model consumes NaN natively while an LSTM turns it into NaN
     loss.
-15. **Evaluation floor** — `utils/evaluation.py` provides pinball loss,
+15. **Evaluation floor** — `utils/modelling/evaluation.py` provides pinball loss,
     quantile coverage, `fill_rate` / `shortfall_units` / `overstock_units`,
     and three naive baselines, groupable by `demand_segment` or
     `is_delivery_day`. `roll_mean_7 × lead_time_days` reaches MAE 13.05 and

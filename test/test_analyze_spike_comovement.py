@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import analyze_spike_comovement as asc
+from utils.eda import analyze_spike_comovement as asc
 
 
 def _rows(records):

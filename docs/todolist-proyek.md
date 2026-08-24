@@ -15,7 +15,7 @@ riwayat git berkas ini.
 
 **Terakhir diverifikasi: 2026-08-24** — 752 tes lolos
 (`.venv/bin/python3 -m unittest discover -p "test_*.py"` → `Ran 752 tests … OK`),
-`QUANTILE_SET_A` (19 titik) sudah terpasang di `utils/evaluation.py`,
+`QUANTILE_SET_A` (19 titik) sudah terpasang di `utils/modelling/evaluation.py`,
 `walk_forward.py`, `model_common.py`, dan ketiga adapter model.
 
 Legenda: ✅ selesai · 🔄 sedang berjalan · ⬜ belum mulai · ⚠️ selesai tapi
@@ -47,7 +47,7 @@ berarti membekukan keputusan yang kriterianya sendiri sudah diganti
 Pipeline 14 tahap dari `dataset/csv/*.csv` sampai
 `dataset/model_ready/{train,test}.parquet` sudah terimplementasi penuh dan
 terverifikasi terhadap output parquet-nya (`docs/pipeline-overview.md` §2–3).
-Orkestrasi: `utils/prepare_forecast_data.py::main()`.
+Orkestrasi: `utils/data_preprocessing/prepare_forecast_data.py::main()`.
 
 ### A1. Fitur & tahap pipeline (selesai)
 
@@ -66,7 +66,7 @@ Orkestrasi: `utils/prepare_forecast_data.py::main()`.
   tercatat. Sebelum ini, 19.304 baris `Kuantitas = 0` difabrikasi dan membuat
   `branch_avg_daily_qty` KY011 salah 3,6×.
   Spec: `2026-08-15-outlet-lifecycle-handling-design.md`.
-- [x] **Penanganan lonjakan (outlier)** di-wire ke `data-processing.ipynb`
+- [x] **Penanganan lonjakan (outlier)** di-wire ke `data_processing.ipynb`
   (2026-08-08) — urutan final: kalender → capping → target/lag/rolling, karena
   `apply_outlier_capping` butuh kolom event kalender untuk pengecualian
   event-window. `add_targets` tetap memakai `Kuantitas` mentah; lag/rolling/
@@ -90,7 +90,7 @@ Orkestrasi: `utils/prepare_forecast_data.py::main()`.
   (`FGS-00001/2/3/4/5/12/13/18/49/53`), 19.987 baris pindah kategori, lewat
   `EXPLICIT_CATEGORY_OVERRIDES`. Indeks WIP-2 (4) sengaja **tidak** dibebaskan
   (kebijakan stabilitas indeks, `metodologi-preprocessing.md` §4.12(e)).
-- [x] **Gerbang konsistensi kategori** — `utils/verify_category_consistency.py`,
+- [x] **Gerbang konsistensi kategori** — `utils/eda/verify_category_consistency.py`,
   supaya kategori tidak bisa diam-diam bergeser lagi di refresh berikutnya.
 
 ### A2. Konfirmasi pemilik data (semuanya tertutup) ✅
@@ -180,14 +180,14 @@ di-sign-off". Semuanya sudah dikonfirmasi dan di-wire; rinciannya ada di
   item melonjak serentak (tanda pesanan besar), tetapi 38,6% melonjak sendirian
   — condong ke akhir pekan dan didominasi Packaging (60,1%). Tiga langkah
   menyempitkannya sampai bisa dijawab:
-  1. **Hipotesis restock gugur** (`utils/analyze_spike_recovery.py`) — lonjakan
+  1. **Hipotesis restock gugur** (`utils/eda/analyze_spike_recovery.py`) — lonjakan
      bersifat aditif: permintaan 7 hari sesudah tidak turun dibanding 7 hari
      sebelum (lonjakan sendirian +1,4%, p = 0,24; dengan lonjakan tetangga
      dikeluarkan dari jendela +0,2%, p = 1,0), dan kadensinya juga tidak
      berubah (4,95 → 4,97 hari bergerak per 7 hari). Ia berdiri **di atas**
      garis dasar, bukan meminjam permintaan hari berikutnya.
   2. **Yang "sendirian" ternyata tidak sendirian**
-     (`utils/analyze_spike_comovement.py`) — pada 1.157 cabang-hari lonjakan
+     (`utils/eda/analyze_spike_comovement.py`) — pada 1.157 cabang-hari lonjakan
      Packaging berdiri sendiri, Nasi Kebuli justru naik ke 1,92× median-nya
      (hari biasa 0,91×), di persentil **0,821** dari sebaran cabangnya sendiri
      setelah dicocokkan per hari-dalam-minggu (H0 = 0,500; p = 2,9e−137).
@@ -217,20 +217,20 @@ di-sign-off". Semuanya sudah dikonfirmasi dan di-wire; rinciannya ada di
 
 ## Fase B — Prapemrosesan pemodelan & mesin evaluasi bersama ✅
 
-- [x] `utils/modeling_prep.py` — `featured.parquet` → `model_input.parquet`:
+- [x] `utils/modelling/modeling_prep.py` — `featured.parquet` → `model_input.parquet`:
   `is_event_driven`, `demand_segment` (Syntetos-Boylan), `fold_id` (5 fold
   jendela mengembang), imputasi yang mempertahankan makna, pengindeksan
   kategorikal yang tidak pernah dibangun ulang, `FEATURE_COLS` 56 kolom, dua
   adapter (tabular & sekuens) di bawah satu kontrak.
   Spec: `2026-08-12-modeling-preprocessing-design.md`.
-- [x] `utils/walk_forward.py` — runner 5 fold dengan `validate_contract()`,
+- [x] `utils/modelling/walk_forward.py` — runner 5 fold dengan `validate_contract()`,
   memastikan ketiga model dinilai pada baris, kunci, target, dan fold yang
   identik.
-- [x] `utils/purging.py` + `sequence_windows.py` — purging horizon dan
+- [x] `utils/modelling/purging.py` + `sequence_windows.py` — purging horizon dan
   jendela sekuens LSTM.
-- [x] `utils/model_common.py` — random search dengan checkpoint/resume,
+- [x] `utils/modelling/model_common.py` — random search dengan checkpoint/resume,
   ekspansi one-hot, format bundle.
-- [x] `utils/evaluation.py` — pinball per τ, MAE, coverage, fill rate,
+- [x] `utils/modelling/evaluation.py` — pinball per τ, MAE, coverage, fill rate,
   crossing rate; tiga baseline naif sebagai lantai.
 - [x] Kelayakan baris (tiga potongan) dan enam aturan anti-kebocoran
   terdokumentasi di §8–9 `metodologi-pemodelan-dan-pemilihan-model.md`.
@@ -243,12 +243,12 @@ Ketiganya **terimplementasi dan pernah dijalankan penuh**, tetapi seluruh angka
 hasilnya sudah usang: dijalankan 18–20 Agustus 2026 di atas data
 pra-reklasifikasi kategori, dengan kriteria kuantil-tunggal (pinball@0,9).
 
-- [x] `utils/model_random_forest.py` — quantile forest (`quantile-forest`).
+- [x] `utils/modelling/model_random_forest.py` — quantile forest (`quantile-forest`).
   Spec: `2026-08-18-random-forest-modeling-design.md`.
-- [x] `utils/model_xgboost.py` — `reg:quantileerror`, protokol dua fit (early
+- [x] `utils/modelling/model_xgboost.py` — `reg:quantileerror`, protokol dua fit (early
   stopping pada tail 30 hari yang di-purge, lalu refit penuh).
   Spec: `2026-08-19-xgboost-modeling-design.md`.
-- [x] `utils/model_lstm.py` — LSTM dengan pinball loss.
+- [x] `utils/modelling/model_lstm.py` — LSTM dengan pinball loss.
   Spec: `2026-08-19-lstm-modeling-design.md`.
 - [x] Tiga notebook modeling (`modeling_{rf,xgb,lstm}.ipynb`) dan tiga dokumen
   hasil (`hasil-modeling-{rf,xgb,lstm}.md`).
@@ -289,9 +289,9 @@ checklist eksekusi: `2026-08-22-model-comparison-refactor-migration.md`.
 
 ### 0b — Implementasi kode multi-kuantil ✅ (2026-08-24)
 
-- [x] `utils/evaluation.py` — `QUANTILE_SET_A` (19 titik), `QUANTILE_SET_B`,
+- [x] `utils/modelling/evaluation.py` — `QUANTILE_SET_A` (19 titik), `QUANTILE_SET_B`,
   `resolve_quantile_set()`, pinball per τ + K1.
-- [x] `utils/walk_forward.py`, `utils/model_common.py` — `alpha: float` diganti
+- [x] `utils/modelling/walk_forward.py`, `utils/modelling/model_common.py` — `alpha: float` diganti
   `quantiles: tuple` di seluruh jalur; kontrak `fit_predict` kini
   `(n, len(QUANTILE_SET))`.
 - [x] `utils/model_{random_forest,xgboost,lstm}.py` — ketiganya memprediksi
@@ -416,7 +416,7 @@ nonstop**, rinciannya per model per tahap di §"Perkiraan ongkos Fase 3"
 > `ID_HOLIDAYS` yang tidak dijaga `check_year_coverage`), dan apa yang harus
 > di-derive ulang.
 
-- [ ] **Re-run `.venv/bin/python3 -m utils.prepare_forecast_data` setiap kali
+- [ ] **Re-run `.venv/bin/python3 -m utils.data_preprocessing.prepare_forecast_data` setiap kali
   ada perubahan di script pipeline mana pun** — parquet gampang jadi stale
   relatif ke kode, dan tidak ada guard otomatis untuk itu.
 - [ ] **Verifikasi `EXCLUDED_ITEMS` (`xxx.FGS.00066/67/68/69`) tidak muncul di

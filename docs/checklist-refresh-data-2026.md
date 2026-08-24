@@ -16,10 +16,10 @@ Urutannya wajib, dan yang paling mudah terlewat: `prepare_forecast_data` **tidak
 `modeling_prep`, jadi keduanya harus dijalankan sendiri-sendiri:
 
 ```bash
-.venv/bin/python3 -m utils.merge_dataset               # kalau ada file CSV baru
-.venv/bin/python3 -m utils.verify_category_consistency # gerbang: nol SKU multi-kategori
-.venv/bin/python3 -m utils.prepare_forecast_data       # featured.parquet + train/test.parquet
-.venv/bin/python3 -m utils.modeling_prep               # model_input.parquet + category_mapping.json
+.venv/bin/python3 -m utils.merge_split_data.merge_dataset             # kalau ada file CSV baru
+.venv/bin/python3 -m utils.eda.verify_category_consistency           # gerbang: nol SKU multi-kategori
+.venv/bin/python3 -m utils.data_preprocessing.prepare_forecast_data  # featured.parquet + train/test.parquet
+.venv/bin/python3 -m utils.modelling.modeling_prep                   # model_input.parquet + category_mapping.json
 .venv/bin/python3 -m unittest discover -p "test_*.py"
 ```
 
@@ -65,7 +65,7 @@ membatalkan model yang sudah dilatih. Nol baris memakai index 4 — slot itu kos
 
 ### A-1. Kalender 2026 — satu gagal keras, satu salah diam-diam ⚠️
 
-`utils/calendar_features.py` hanya mengenal 2024 dan 2025. Ada **dua** konstanta yang harus
+`utils/data_preprocessing/calendar_features.py` hanya mengenal 2024 dan 2025. Ada **dua** konstanta yang harus
 diisi, dan hanya **satu** yang dijaga:
 
 | Konstanta | Baris | Yang terjadi kalau lupa |

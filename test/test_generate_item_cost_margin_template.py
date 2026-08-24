@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from utils import generate_item_cost_margin_template as gen
+from utils.eda import generate_item_cost_margin_template as gen
 
 
 def _write_model_input(path: Path, rows: list[tuple[str, str, str]]) -> None:

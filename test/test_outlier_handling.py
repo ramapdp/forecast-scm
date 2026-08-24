@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from utils import outlier_handling
+from utils.data_preprocessing import outlier_handling
 
 
 def _pair_rows(pair, qtys, start="2025-01-01"):

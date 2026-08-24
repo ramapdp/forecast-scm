@@ -3,9 +3,15 @@ from pathlib import Path
 
 import pandas as pd
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+from utils.merge_split_data import merge_dataset
 
-RAW_DATA_FILE = str(BASE_DIR / "dataset/dataset.csv")
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+# Single source of truth: the file merge_dataset writes is the file every
+# downstream stage reads. Kept as a reference rather than a second literal so
+# a move of the merged output cannot leave this pointing at a path that no
+# longer exists.
+RAW_DATA_FILE = merge_dataset.OUTPUT_FILE
 DATE_FORMAT = "%d %b %Y"
 
 XXX_PREFIX_RE = re.compile(r"^xxx\.\s*", re.IGNORECASE)
@@ -16,11 +22,24 @@ TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
 WHITESPACE_RE = re.compile(r"(?<=\d)(?=[a-z])|(\s+)")
 
 
+# ── TEXT NORMALIZATION HELPERS ───────────────────────────────────────────────
+
 def strip_xxx_prefix(value: str) -> str:
+    """Buang prefix 'xxx.' (case-insensitive) dari kode barang.
+
+    Prefix ini muncul di data sumber lama sebagai penanda sementara dan tidak
+    membawa makna bisnis — menghapusnya menyatukan kode yang sebenarnya sama.
+    """
     return XXX_PREFIX_RE.sub("", value)
 
 
 def unify_separator(code: str) -> str:
+    """Ganti titik antara huruf dan angka dengan strip (mis. 'FGS.00001' → 'FGS-00001').
+
+    Data sumber menggunakan campuran titik dan strip sebagai separator pada
+    kode barang. Penyatuan ke strip memungkinkan kode yang sama dikenali sebagai
+    kunci yang identik tanpa mengubah makna.
+    """
     return SEPARATOR_RE.sub("-", code)
 
 
@@ -31,9 +50,19 @@ def normalize_name_for_comparison(name: str) -> str:
     return name
 
 
+
+# ── CODE MAP BUILDING ────────────────────────────────────────────────────────
+
 def resolve_conditional_normalization(
     df: pd.DataFrame, transform, code_col: str = "Kode Barang", name_col: str = "Nama Barang"
 ) -> dict[str, str]:
+    """Terapkan transform pada kode barang, tapi hanya jika semua kode yang tergabung
+    setelah transform punya nama barang yang identik (setelah normalisasi nama).
+
+    Ini mencegah dua item berbeda secara fisik (mis. dua SKU dengan nama berbeda)
+    digabungkan hanya karena kode mereka mirip setelah transformasi. Jika ada
+    konflik nama, kode asli dipertahankan tanpa perubahan.
+    """
     names_by_raw = df.groupby(code_col)[name_col].apply(
         lambda s: {normalize_name_for_comparison(n) for n in s}
     )
@@ -59,6 +88,15 @@ def resolve_conditional_normalization(
 def build_normalized_code_map(
     df: pd.DataFrame, code_col: str = "Kode Barang", name_col: str = "Nama Barang"
 ) -> dict[str, str]:
+    """Bangun peta kode_asli → kode_normal dalam dua pass berurutan.
+
+    Pass 1: strip prefix 'xxx.' (kondisional — lihat resolve_conditional_normalization).
+    Pass 2: ganti titik-sebagai-separator dengan strip, diterapkan pada hasil pass 1.
+
+    Dua pass terpisah diperlukan karena transformasi pertama bisa mengubah
+    konteks untuk transformasi kedua: kode yang tadinya identik setelah strip-xxx
+    mungkin masih berbeda titik/strip-nya.
+    """
     pass1 = resolve_conditional_normalization(df, strip_xxx_prefix, code_col, name_col)
 
     df_pass1 = df.copy()
@@ -70,15 +108,24 @@ def build_normalized_code_map(
 
 
 def apply_item_normalization(df: pd.DataFrame) -> pd.DataFrame:
+    """Terapkan peta normalisasi kode ke seluruh DataFrame, mengganti kolom Kode Barang."""
     code_map = build_normalized_code_map(df)
     result = df.copy()
     result["Kode Barang"] = result["Kode Barang"].map(code_map)
     return result
 
 
+
+# ── CATEGORY CANONICALIZATION ─────────────────────────────────────────────────
+
 def canonicalize_item_names(
     df: pd.DataFrame, code_col: str = "Kode Barang", name_col: str = "Nama Barang"
 ) -> pd.DataFrame:
+    """Seragamkan Nama Barang tiap kode ke satu nama kanonik (nama tanpa prefix 'xxx.').
+
+    Baris dengan prefix 'xxx.' dianggap nama sementara; baris bersih dijadikan
+    referensi. Jika semua baris suatu kode masih pakai prefix, nama aslinya dipertahankan.
+    """
     result = df.copy()
     is_clean = result[name_col].map(strip_xxx_prefix) == result[name_col]
     canonical = result.loc[is_clean].groupby(code_col)[name_col].first()
@@ -134,6 +181,16 @@ def canonicalize_item_categories(
     category_col: str = "Kategori Barang",
     date_col: str = "Tanggal",
 ) -> pd.DataFrame:
+    """Seragamkan kategori per SKU menggunakan sinonim dan override eksplisit.
+
+    Dua langkah:
+    1. Sinonim (CATEGORY_SYNONYMS): satukan varian penamaan yang identik secara
+       bisnis (mis. 'Minuman' → 'Minuman - FG') hanya jika SKU itu memang
+       hanya punya satu kategori setelah penyatuan.
+    2. Override eksplisit (EXPLICIT_CATEGORY_OVERRIDES): tulis ulang kategori
+       untuk SKU tertentu yang sudah dikonfirmasi pemilik data, terlepas dari
+       apa yang tertulis di sumber.
+    """
     result = df.copy()
     normalized = result[category_col].replace(CATEGORY_SYNONYMS)
 
@@ -160,9 +217,12 @@ AGG_SPEC = {"Kuantitas": "sum", "Kategori Barang": "first", "Nama Barang": "firs
 EXCLUDED_BRANCHES = {"Kebab Saudagar - Kutabumi"}
 
 
+# ── UNIT CONVERSION & EXCLUSIONS ─────────────────────────────────────────────
+
 def exclude_branches(
     df: pd.DataFrame, branches: set[str] = EXCLUDED_BRANCHES, branch_col: str = "Nama Cabang"
 ) -> pd.DataFrame:
+    """Buang semua baris dari cabang yang ada di daftar EXCLUDED_BRANCHES."""
     return df[~df[branch_col].isin(branches)].reset_index(drop=True)
 
 
@@ -179,6 +239,12 @@ def convert_gram_items_to_porsi(
     unit_col: str = "Satuan",
     qty_col: str = "Kuantitas",
 ) -> pd.DataFrame:
+    """Konversi kuantitas item tertentu dari Gram ke Porsi menggunakan faktor konversi.
+
+    Item seperti Santan/Gula Cendol dicatat dalam gram di sumber, tetapi
+    secara operasional lebih bermakna dalam porsi. Konversi dilakukan hanya
+    pada baris dengan satuan 'Gr' supaya baris yang sudah benar tidak tersentuh.
+    """
     result = df.copy()
     result[qty_col] = result[qty_col].astype(float)
     for code, factor in factors.items():
@@ -194,6 +260,7 @@ EXCLUDED_ITEMS = {"xxx.FGS.00066", "xxx.FGS.00067", "xxx.FGS.00068", "xxx.FGS.00
 def exclude_items(
     df: pd.DataFrame, items: set[str] = EXCLUDED_ITEMS, code_col: str = "Kode Barang"
 ) -> pd.DataFrame:
+    """Buang semua baris dari item yang ada di daftar EXCLUDED_ITEMS."""
     return df[~df[code_col].isin(items)].reset_index(drop=True)
 
 
@@ -206,6 +273,12 @@ def apply_item_renames(
     code_col: str = "Kode Barang",
     name_col: str = "Nama Barang",
 ) -> pd.DataFrame:
+    """Ganti kode dan nama item tertentu menggunakan peta rename eksplisit.
+
+    Berbeda dari normalisasi otomatis: rename eksplisit dipakai ketika kode
+    lama dan baru tidak bisa disatukan oleh aturan regex (mis. penggantian
+    kode total oleh pemilik data).
+    """
     result = df.copy()
     matched = result[code_col].isin(renames)
     raw_codes = result.loc[matched, code_col]
@@ -214,11 +287,30 @@ def apply_item_renames(
     return result
 
 
+
+# ── PIPELINE ENTRY POINT ─────────────────────────────────────────────────────
+
 def reaggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Agregasi ulang ke level harian per (item, cabang) setelah normalisasi kode.
+
+    Normalisasi kode bisa menggabungkan beberapa kode yang tadinya berbeda
+    menjadi satu. Tanpa agregasi ulang ini, hasil penggabungan akan punya
+    banyak baris duplikat per (item, cabang, tanggal).
+    """
     return df.groupby(["Kode Barang", "Tanggal", "Nama Cabang"], as_index=False).agg(AGG_SPEC)
 
 
 def load_and_normalize(path: str = RAW_DATA_FILE) -> pd.DataFrame:
+    """Muat dataset CSV mentah lalu jalankan seluruh pipeline normalisasi item.
+
+    Urutan langkah dipentingkan:
+    1. Exclude cabang & rename eksplisit — sebelum normalisasi kode supaya
+       mapping tidak mencampur item dari cabang yang akan dibuang.
+    2. Konversi unit & exclude item — sebelum normalisasi kode.
+    3. Normalisasi kode (xxx-prefix + separator) — menyatukan kode yang sama.
+    4. Kanonikalisasi nama & kategori — setelah kode final diketahui.
+    5. Re-agregasi harian — setelah normalisasi kode bisa menggabungkan baris.
+    """
     df = pd.read_csv(path, sep=";", encoding="utf-8-sig")
     df["Tanggal"] = pd.to_datetime(df["Tanggal"], format=DATE_FORMAT)
     df = exclude_branches(df)

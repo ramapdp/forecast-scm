@@ -159,7 +159,7 @@ memicu error, bukan diabaikan diam-diam).
 |---|---|
 | Preprocessing | ✅ selesai, artefak terverifikasi (7 kategori, 0 SKU multi-kategori, 1.502.522 baris, fold cocok) |
 | Reklasifikasi kategori WIP-2 → FG | ✅ selesai, 10 SKU, lewat `EXPLICIT_CATEGORY_OVERRIDES` |
-| Gerbang konsistensi kategori | ✅ `utils/verify_category_consistency.py` |
+| Gerbang konsistensi kategori | ✅ `utils/eda/verify_category_consistency.py` |
 | Fase 1 — dokumentasi migrasi multi-kuantil | ✅ selesai |
 | Fase 2 — implementasi kode multi-kuantil | ✅ selesai 2026-08-24 (kontrak `fit_predict` multi-kuantil, notebook diubah tetapi belum dijalankan) |
 | Prasyarat metodologis Fase 3 (target latih/nilai, kerapatan grid) | ✅ ditutup 2026-08-24 |

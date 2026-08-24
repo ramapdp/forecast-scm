@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import evaluation
+from utils.modelling import evaluation
 
 
 class TestPinballLoss(unittest.TestCase):

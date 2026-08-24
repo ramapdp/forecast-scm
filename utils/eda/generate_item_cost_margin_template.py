@@ -4,7 +4,7 @@ AKTUAL dari dataset Anda (bukan tebakan), dengan kolom biaya dikosongkan
 untuk diisi tim SCM.
 
 Jalankan sebagai modul dari root repo:
-    .venv/bin/python3 -m utils.generate_item_cost_margin_template
+    .venv/bin/python3 -m utils.eda.generate_item_cost_margin_template
 
 Aman dijalankan berkali-kali: jika dataset/item_cost_margin.csv sudah ada,
 skrip TIDAK menimpa baris yang sudah terisi -- ia hanya MENAMBAHKAN baris
@@ -19,7 +19,7 @@ import pandas as pd
 
 # Berkas ini ada di utils/, jadi root repo adalah dua tingkat di atasnya --
 # sama seperti seluruh modul lain di paket ini.
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 MODEL_INPUT_PATH = BASE_DIR / "dataset/model_ready/model_input.parquet"
 OUTPUT_PATH = BASE_DIR / "dataset/item_cost_margin.csv"
 
@@ -42,6 +42,7 @@ COLUMNS = [
 LONG_SHELF_LIFE_CATEGORIES = {"Packaging", "Barang Umum"}
 LONG_SHELF_LIFE_SENTINEL_DAYS = 365
 
+# ── PEMROSESAN DATA KATEGORI ──────────────────────────────────────────────────────
 
 def resolve_latest_category(
     df: pd.DataFrame,
@@ -77,6 +78,7 @@ def load_sku_to_category(path: Path = MODEL_INPUT_PATH) -> dict[str, str]:
 
 
 def load_existing_rows(path: Path = OUTPUT_PATH) -> dict[str, dict]:
+    """Muat baris template yang sudah ada dari CSV jika file sudah tersedia."""
     if not Path(path).exists():
         return {}
     with open(path, encoding="utf-8-sig", newline="") as f:
@@ -100,6 +102,7 @@ SHELF_LIFE_RANK_OVERRIDES = {
 
 
 def build_blank_row(kode_barang: str, kategori: str) -> dict:
+    """Bentuk dictionary baris kosong untuk SKU baru dengan sentinel umur simpan jika berlaku."""
     shelf_life = (
         str(LONG_SHELF_LIFE_SENTINEL_DAYS)
         if kategori in LONG_SHELF_LIFE_CATEGORIES
@@ -119,6 +122,7 @@ def build_blank_row(kode_barang: str, kategori: str) -> dict:
         ),
     }
 
+# ── VALIDASI UMUR SIMPAN (SHELF LIFE) ─────────────────────────────────────────
 
 def detect_shelf_life_mismatches(
     existing: dict[str, dict], sku_to_category: dict[str, str]
@@ -166,6 +170,7 @@ def detect_shelf_life_mismatches(
 
 
 def report_mismatches(findings: list[dict]) -> None:
+    """Cetak peringatan tentang baris yang shelf_life_days-nya usang ke console."""
     if not findings:
         return
     print(
@@ -181,11 +186,13 @@ def report_mismatches(findings: list[dict]) -> None:
             f"({finding['alasan']})"
         )
 
+# ── ORKESTRASI I/O ──────────────────────────────────────────────────────────────
 
 def main(
     model_input_path: Path = MODEL_INPUT_PATH,
     output_path: Path = OUTPUT_PATH,
 ) -> None:
+    """Fungsi utama: deteksi ketidaksesuaian, isi baris kosong untuk SKU baru, dan simpan."""
     sku_to_category = load_sku_to_category(model_input_path)
     existing = load_existing_rows(output_path)
 

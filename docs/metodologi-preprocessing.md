@@ -834,14 +834,14 @@ Seluruh hasil pada dokumen ini dapat direproduksi dengan perintah berikut, dijal
 
 ```bash
 # Pipeline prapemrosesan data, tahap 1–12
-.venv/bin/python3 -m utils.prepare_forecast_data
+.venv/bin/python3 -m utils.data_preprocessing.prepare_forecast_data
 
 # Prapemrosesan pemodelan, tahap 13–14
-.venv/bin/python3 -m utils.modeling_prep
+.venv/bin/python3 -m utils.modelling.modeling_prep
 
 # Melalui notebook
 jupyter nbconvert --to notebook --execute --inplace \
-  notebook/data-processing.ipynb notebook/train_test_split.ipynb \
+  notebook/data_processing.ipynb notebook/train_test_split.ipynb \
   notebook/modeling_prep.ipynb
 
 # Seluruh pengujian unit

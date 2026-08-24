@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from utils import model_common, modeling_prep
+from utils.modelling import model_common, modeling_prep
 
 
 FEATURES = ["feat_a", "feat_b", "cat_idx"]
@@ -157,7 +157,7 @@ class TestRunSearchMetrics(unittest.TestCase):
     def test_pinball_is_k1_not_a_single_point(self):
         """The selection column has to be the criterion the methodology
         defines, or select_best() picks on something else than K1."""
-        from utils import walk_forward
+        from utils.modelling import walk_forward
         frame = walk_forward.eligible_rows(_panel())
         fit_predict = _mean_fit_predict({**DEFAULTS, "alpha": 1})
         scored = walk_forward.run_fold(frame, 1, fit_predict, model_name="toy",

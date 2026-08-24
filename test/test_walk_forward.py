@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import modeling_prep, walk_forward
+from utils.modelling import modeling_prep, walk_forward
 
 
 def _panel(n_days=245, pairs=(("I1", "B1"), ("I2", "B1")), start="2025-05-01"):

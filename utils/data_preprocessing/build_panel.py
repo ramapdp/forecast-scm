@@ -9,6 +9,8 @@ CARRY_COLS = ["Kategori Barang", "Nama Barang", "Satuan"]
 SEGMENT_COL = "segment_id"
 
 
+# ── HISTORY FILTER ────────────────────────────────────────────────────────────
+
 def filter_min_history(
     df: pd.DataFrame,
     cutoff: pd.Timestamp = TEST_START,
@@ -16,6 +18,13 @@ def filter_min_history(
     pair_cols: list[str] = PAIR_COLS,
     date_col: str = "Tanggal",
 ) -> pd.DataFrame:
+    """Buang pasangan (item, cabang) yang belum punya riwayat cukup sebelum cutoff.
+
+    Pasangan dengan kurang dari min_days hari sebelum cutoff tidak punya cukup
+    konteks untuk membentuk lag dan rolling features — melatih model pada mereka
+    hanya menambah noise. Filter ini mencegah pasangan baru masuk ke set training
+    sebelum siap.
+    """
     pre_cutoff_counts = (
         df[df[date_col] < cutoff]
         .groupby(pair_cols)
@@ -26,7 +35,15 @@ def filter_min_history(
     return df.merge(valid_pairs, on=pair_cols, how="inner").reset_index(drop=True)
 
 
+
+# ── CLOSURE & SEGMENT HELPERS ─────────────────────────────────────────────────
+
 def _drop_closed_dates(dates: pd.DatetimeIndex, intervals: list) -> pd.DatetimeIndex:
+    """Hapus tanggal yang jatuh dalam interval penutupan cabang dari date range.
+
+    Setiap interval adalah [start, end): start inklusif, end eksklusif.
+    end=None berarti cabang masih tutup sampai akhir data.
+    """
     values = pd.Series(dates)
     keep = pd.Series(True, index=values.index)
     for start, end in intervals:
@@ -36,6 +53,13 @@ def _drop_closed_dates(dates: pd.DatetimeIndex, intervals: list) -> pd.DatetimeI
 
 
 def _segment_ids(dates: pd.Series, breakpoints: Optional[list] = None) -> pd.Series:
+    """Beri nomor segmen berurutan pada deret tanggal yang mungkin terputus.
+
+    Segmen baru dimulai di mana dua tanggal berurutan lebih dari 1 hari
+    jaraknya (karena interval tutup dihapus), atau di tanggal breakpoint
+    (relokasi cabang yang tidak menutup operasional tapi memutus pola demand).
+    Segmen pertama selalu bernomor 1.
+    """
     # A new segment begins wherever two kept dates are more than one day
     # apart — which is exactly where a closure interval was removed — or on a
     # breakpoint date, where the outlet kept trading but the demand series
@@ -48,6 +72,9 @@ def _segment_ids(dates: pd.Series, breakpoints: Optional[list] = None) -> pd.Ser
     starts_new_segment.iloc[0] = False
     return starts_new_segment.cumsum().astype(int) + 1
 
+
+
+# ── PANEL CONSTRUCTION ────────────────────────────────────────────────────────────
 
 def build_dense_panel(
     df: pd.DataFrame,

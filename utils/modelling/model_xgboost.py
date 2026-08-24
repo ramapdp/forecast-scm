@@ -286,7 +286,7 @@ def make_fit_predict(
     return fit_predict
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 MODEL_FILE = str(BASE_DIR / "models/xgboost_q90.joblib")
 BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/xgb_best_params.json")
 SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/xgb_search_results.csv")

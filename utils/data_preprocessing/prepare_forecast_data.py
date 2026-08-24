@@ -9,9 +9,9 @@ from . import normalize_items
 from . import calendar_features
 from . import outlet_features
 from . import outlier_handling
-from . import purging
+from utils.modelling import purging
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 PAIR_COLS = build_panel.PAIR_COLS
 SEGMENT_COL = build_panel.SEGMENT_COL

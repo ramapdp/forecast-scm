@@ -3,8 +3,7 @@ import unittest
 import numpy as np
 import torch
 
-from utils import (evaluation, model_common, model_lstm, modeling_prep,
-                   sequence_windows, walk_forward)
+from utils.modelling import evaluation, model_common, model_lstm, modeling_prep, sequence_windows, walk_forward
 
 
 class TestPinballLoss(unittest.TestCase):

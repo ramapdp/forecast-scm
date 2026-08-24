@@ -29,7 +29,9 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# ── ALIGNMENT HELPER ─────────────────────────────────────────────────────────────────
+
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 EVAL_TARGET_COL = "target_lead_time_cumulative"
 LEAD_TIME_COL = "lead_time_days"
@@ -40,15 +42,17 @@ ITEM_COL = "Kode Barang"
 # results documents lead with, so it keeps a name of its own.
 DEFAULT_ALPHA = 0.9
 
-# Tahap A: 19 evenly spaced points, 0.05 to 0.95. Even spacing is the point —
-# the mean pinball over a dense uniform grid approaches CRPS (Bröcker 2012),
-# so this grid scores the whole predictive distribution rather than sampling
-# one service level and hoping the ranking holds elsewhere.
+# ── MULTI-QUANTILE SCORING ────────────────────────────────────────────────────────
+
+# Tahap A: 19 titik berjarak sama, 0.05 sampai 0.95. Jarak yang seragam itulah
+# intinya — rata-rata pinball pada grid uniform yang rapat mendekati CRPS
+# (Bröcker 2012), sehingga grid ini menilai seluruh distribusi prediktif, bukan
+# satu service level saja lalu berharap peringkatnya berlaku di titik lain.
 QUANTILE_SET_A = tuple(round(0.05 * step, 2) for step in range(1, 20))
 
-# Tahap B: the grid stops being uniform and becomes the spread of critical
-# ratios the segmented allocation will actually ship at. Percentiles rather
-# than every segment's ratio, because 200 segments would mean 200 fits.
+# Tahap B: grid berhenti seragam dan menjadi sebaran critical ratio yang benar-
+# benar dipakai alokasi tersegmentasi. Persentil, bukan setiap rasio segmen,
+# karena 200 segmen berarti 200 fit.
 QUANTILE_SET_B_PERCENTILES = (10, 25, 50, 75, 90)
 
 # B-10 closes at 80% of volume carried by SKUs with a non-`rendah` cost entry.
@@ -72,7 +76,15 @@ NAIVE_BASELINES = {
 }
 
 
-def _aligned(y_true: pd.Series, y_pred: pd.Series) -> tuple[np.ndarray, np.ndarray]:
+def _aligned(
+    y_true: Union[np.ndarray, pd.Series],
+    y_pred: Union[np.ndarray, pd.Series],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Konversi y_true dan y_pred ke np.ndarray dan buang baris dengan NaN di keduanya.
+
+    Metrik tidak bisa dihitung pada NaN. Membuang baris NaN secara simetris
+    memastikan indeks y_true dan y_pred tetap sejajar.
+    """
     y_true = pd.Series(y_true).reset_index(drop=True)
     y_pred = pd.Series(y_pred).reset_index(drop=True)
     keep = y_true.notna()
@@ -82,7 +94,10 @@ def _aligned(y_true: pd.Series, y_pred: pd.Series) -> tuple[np.ndarray, np.ndarr
     )
 
 
+# ── METRIK DASAR ──────────────────────────────────────────────────────────────────
+
 def mae(y_true: pd.Series, y_pred: pd.Series) -> float:
+    """Mean Absolute Error — baseline simetris, unit sama dengan target (porsi/unit produk)."""
     actual, predicted = _aligned(y_true, y_pred)
     if actual.size == 0:
         return float("nan")
@@ -90,11 +105,11 @@ def mae(y_true: pd.Series, y_pred: pd.Series) -> float:
 
 
 def pinball_loss(y_true: pd.Series, y_pred: pd.Series, alpha: float = DEFAULT_ALPHA) -> float:
-    """Asymmetric loss: a shortfall costs `alpha`, an excess costs `1 - alpha`.
+    """Pinball loss (quantile loss) — asimetris berdasarkan nilai quantile.
 
-    At alpha 0.9 a stockout is nine times as expensive as the same amount of
-    overstock, which is why a mean forecast — right half the time by
-    construction — is the wrong target for a replenishment decision.
+    Di q=0.5, identik dengan MAE / 2. Di q > 0.5, under-prediction dihukum lebih
+    berat (sesuai kebijakan safety stock). Loss ini yang diminimalkan oleh quantile
+    regression.
     """
     actual, predicted = _aligned(y_true, y_pred)
     if actual.size == 0:
@@ -103,8 +118,10 @@ def pinball_loss(y_true: pd.Series, y_pred: pd.Series, alpha: float = DEFAULT_AL
     return float(np.where(delta >= 0, alpha * delta, (alpha - 1.0) * delta).mean())
 
 
+# ── METRIK UNIT ──────────────────────────────────────────────────────────────────
+
 def shortfall_units(y_true: pd.Series, y_pred: pd.Series) -> float:
-    """Units demanded but not forecast — the stockout, in the unit shipped."""
+    """Total unit kekurangan (y_true > y_pred). Nol di mana prediksi cukup atau lebih."""
     actual, predicted = _aligned(y_true, y_pred)
     if actual.size == 0:
         return float("nan")
@@ -120,16 +137,9 @@ def overstock_units(y_true: pd.Series, y_pred: pd.Series) -> float:
 
 
 def fill_rate(y_true: pd.Series, y_pred: pd.Series) -> float:
-    """Share of demanded units the forecast would have covered.
+    """Proporsi demand yang terpenuhi: 1 - shortfall / total demand.
 
-    This is the data owner's stated success criterion — "the outlet does not
-    run out" — stated in units rather than in error magnitude, and it is the
-    one number an outlet manager can check against their own experience.
-
-    Shortfalls are summed before the ratio, so a surplus on one outlet-day
-    cannot cancel a stockout on another: the goods are already at the wrong
-    branch on the wrong day. A window with no demand at all scores 1.0, since
-    nothing went unserved.
+    Fill rate 0.95 artinya 95% demand terpenuhi. NaN jika total demand nol.
     """
     actual, predicted = _aligned(y_true, y_pred)
     if actual.size == 0:
@@ -141,12 +151,7 @@ def fill_rate(y_true: pd.Series, y_pred: pd.Series) -> float:
 
 
 def quantile_coverage(y_true: pd.Series, y_pred: pd.Series) -> float:
-    """Share of actuals at or below the forecast.
-
-    Train at alpha and this should come back near alpha. Far above means
-    systematic overstock; far below means the outlet runs dry more often than
-    the service level promises.
-    """
+    """Proporsi baris di mana y_true <= y_pred. Untuk q=0.9, target coverage adalah 90%."""
     actual, predicted = _aligned(y_true, y_pred)
     if actual.size == 0:
         return float("nan")

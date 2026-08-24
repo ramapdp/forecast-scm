@@ -83,7 +83,7 @@ itu. Hasilnya XGBoost akhirnya dilatih di populasi baris yang persis sama
 dengan yang dilihat Random Forest, jadi perbandingannya setara.
 
 Ketiga baseline naive dinilai pada **baris yang identik** dengan XGBoost —
-dijamin oleh `utils/walk_forward.py` yang memiliki definisi fold dan kelayakan
+dijamin oleh `utils/modelling/walk_forward.py` yang memiliki definisi fold dan kelayakan
 baris, dan menerima model sebagai callable yang disuntikkan. Baris yang sama
 itu juga yang dipakai run Random Forest, yang membuat §6 sah dilakukan.
 

@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from utils import verify_category_consistency as verify
+from utils.eda import verify_category_consistency as verify
 
 
 def _frame(rows: list[tuple[str, str]]) -> pd.DataFrame:

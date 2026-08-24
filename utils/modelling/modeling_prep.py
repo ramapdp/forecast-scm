@@ -9,10 +9,10 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from . import build_panel
+from utils.data_preprocessing import build_panel
 from . import purging
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 MODEL_READY_DIR = str(BASE_DIR / "dataset/model_ready")
 FEATURED_FILE = str(BASE_DIR / "dataset/model_ready/featured.parquet")
@@ -46,6 +46,7 @@ TRAIN_TARGET_COL = "target_lead_time_cumulative_capped"
 EVAL_TARGET_COL = "target_lead_time_cumulative"
 LOOKBACK = 28
 
+# ── EVENT-DRIVEN FLAG ───────────────────────────────────────────────────────────────
 
 def load_event_items(path: str = EVENT_ITEMS_FILE) -> pd.DataFrame:
     return pd.read_csv(path, sep=";", encoding="utf-8-sig")
@@ -77,6 +78,8 @@ def add_event_flag(
     result["is_event_driven"] = mapped.astype(bool)
     return result
 
+
+# ── DEMAND SEGMENTATION (SYNTETOS-BOYLAN) ─────────────────────────────────────────
 
 # Syntetos-Boylan cut-offs. ADI = average interval between non-zero demand
 # days; CV2 = squared coefficient of variation of the non-zero quantities.
@@ -132,6 +135,14 @@ def classify_pairs(
     pair_cols: list = None,
     date_col: str = DATE_COL,
 ) -> pd.DataFrame:
+    """Klasifikasikan setiap pasangan ke salah satu dari 4 segmen Syntetos-Boylan.
+
+    Matriks klasifikasi (ADI > 1.32 → intermittent, CV² > 0.49 → erratic):
+      ADI rendah, CV² rendah  →  smooth
+      ADI rendah, CV² tinggi  →  erratic
+      ADI tinggi, CV² rendah  →  intermittent
+      ADI tinggi, CV² tinggi  →  lumpy
+    """
     pair_cols = pair_cols or PAIR_COLS
     stats = compute_pair_demand_stats(
         df, cutoff=cutoff, qty_col=qty_col, pair_cols=pair_cols, date_col=date_col
@@ -146,6 +157,8 @@ def classify_pairs(
     result["demand_segment"] = result["demand_segment"].fillna("lumpy")
     return result
 
+
+# ── FOLD ASSIGNMENT ───────────────────────────────────────────────────────────────
 
 # Five expanding-window folds. Training data for fold k is every row dated
 # before FOLD_STARTS[k-1]; validation is that month alone. December 2025 is
@@ -164,6 +177,11 @@ def assign_folds(
     fold_starts: list = None,
     date_col: str = DATE_COL,
 ) -> pd.DataFrame:
+    """Beri nomor fold ke setiap baris berdasarkan bulan kalender.
+
+    Nomor fold dimulai dari 1 sesuai urutan FOLD_STARTS. Baris di luar semua
+    jendela fold mendapat NaN — baris ini tidak dipakai dalam walk-forward.
+    """
     fold_starts = fold_starts or FOLD_STARTS
     result = df.copy()
     result["fold_id"] = np.nan
@@ -196,6 +214,8 @@ def fold_train_mask(
         mask &= purging.lookahead_safe_mask(df, boundary, date_col=date_col)
     return mask
 
+
+# ── CATEGORICAL ENCODING ──────────────────────────────────────────────────────────
 
 CATEGORICAL_COLS = [
     "Kode Barang",
@@ -256,6 +276,12 @@ def encode_categoricals(
     mapping: dict,
     cols: list = None,
 ) -> pd.DataFrame:
+    """Konversi nilai kategorikal menjadi indeks integer menggunakan mapping yang tersimpan.
+
+    Nilai yang tidak dikenali (mis. cabang baru saat refresh) dipetakan ke
+    UNKNOWN_INDEX (0), bukan di-raise sebagai error, supaya pipeline tidak
+    berhenti hanya karena ada cabang baru.
+    """
     cols = cols or CATEGORICAL_COLS
     result = df.copy()
     for col in cols:
@@ -266,12 +292,14 @@ def encode_categoricals(
 
 
 def save_category_mapping(mapping: dict, path: str = CATEGORY_MAPPING_FILE) -> None:
+    """Simpan mapping kategori ke file JSON supaya indeks konsisten antar refresh data."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(mapping, handle, ensure_ascii=False, indent=2, sort_keys=True)
 
 
 def load_category_mapping(path: str = CATEGORY_MAPPING_FILE) -> dict:
+    """Muat mapping kategori dari file JSON."""
     with open(path, encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -319,6 +347,7 @@ HISTORY_COLS = [
     "roll_mean_28", "roll_std_28",
 ]
 
+# ── FEATURE IMPUTATION ───────────────────────────────────────────────────────────────
 
 def impute_features(df: pd.DataFrame) -> pd.DataFrame:
     """Fill the nulls a neural net cannot consume, preserving each column's
@@ -423,6 +452,7 @@ def drop_warmup_rows(
     position = result.groupby(pair_cols, observed=True).cumcount()
     return result[position >= lookback].reset_index(drop=True)
 
+# ── ADAPTER: TABULAR (XGBoost/RF) ───────────────────────────────────────────────────
 
 def to_tabular(
     df: pd.DataFrame,
@@ -468,6 +498,7 @@ def fit_scaler(df: pd.DataFrame, feature_cols: list) -> dict:
 
 
 def apply_scaler(df: pd.DataFrame, scaler: dict, feature_cols: list) -> pd.DataFrame:
+    """Terapkan scaler (mean/std per kolom) ke DataFrame."""
     result = df.copy()
     for col in feature_cols:
         mean, std = scaler[col]
@@ -476,6 +507,7 @@ def apply_scaler(df: pd.DataFrame, scaler: dict, feature_cols: list) -> pd.DataF
 
 
 def save_scaler(scaler: dict, path: str = SCALER_FILE) -> None:
+    """Simpan parameter scaler (mean/std) ke JSON supaya bisa dipakai ulang di inference."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     serializable = {col: list(params) for col, params in scaler.items()}
     with open(path, "w", encoding="utf-8") as handle:
@@ -483,6 +515,7 @@ def save_scaler(scaler: dict, path: str = SCALER_FILE) -> None:
 
 
 def load_scaler(path: str = SCALER_FILE) -> dict:
+    """Muat parameter scaler dari JSON."""
     with open(path, encoding="utf-8") as handle:
         return {col: tuple(params) for col, params in json.load(handle).items()}
 
@@ -493,6 +526,7 @@ def inverse_log_target(values: np.ndarray) -> np.ndarray:
     """
     return np.expm1(values)
 
+# ── ADAPTER: SEQUENCES (LSTM) ─────────────────────────────────────────────────────
 
 def to_sequences(
     df: pd.DataFrame,
@@ -606,6 +640,7 @@ def validate_contract(tabular: dict, sequences: dict, require_finite: bool = Tru
         "Pembagian fold berbeda antar adapter"
     )
 
+# ── CONTRACT VALIDATION & EXPORT ───────────────────────────────────────────────────
 
 def build_model_input(
     featured_path: str = FEATURED_FILE,

@@ -212,7 +212,7 @@ def run_search(
     )
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 MODEL_FILE = str(BASE_DIR / "models/random_forest_q90.joblib")
 BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/rf_best_params.json")
 SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/rf_search_results.csv")

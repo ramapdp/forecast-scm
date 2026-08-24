@@ -27,13 +27,15 @@ from . import evaluation, modeling_prep, purging, walk_forward
 IDX_COLS = [col for col in modeling_prep.FEATURE_COLS if col.endswith("_idx")]
 
 
-def assert_no_nan(frame: pd.DataFrame, feature_cols: list) -> None:
-    """Fail loudly on a null the estimator cannot consume.
+# ── INPUT VALIDATION ──────────────────────────────────────────────────────────────
 
-    Deliberately not an imputation step. build_model_input() already ran
-    impute_features(), and running it a second time would recompute
-    was_relocated from a column that is now filled with 0.0, setting the
-    indicator True on every row and erasing the distinction it exists to make.
+def assert_no_nan(frame: pd.DataFrame, feature_cols: list) -> None:
+    """Gagalkan eksekusi jika ada nilai NaN pada kolom fitur yang akan masuk ke model.
+
+    Sengaja tidak melakukan imputasi di sini. build_model_input() sudah
+    menjalankan impute_features(). Melakukannya lagi akan merusak fitur
+    seperti was_relocated yang memang dibiarkan NaN untuk menandakan
+    sesuatu.
     """
     counts = frame[feature_cols].isna().sum()
     offenders = counts[counts > 0]
@@ -44,24 +46,19 @@ def assert_no_nan(frame: pd.DataFrame, feature_cols: list) -> None:
 ES_TAIL_DAYS = 30
 
 
+# ── EARLY STOPPING SPLIT ──────────────────────────────────────────────────────────
+
 def split_early_stopping(
     train: pd.DataFrame,
     tail_days: int = ES_TAIL_DAYS,
     date_col: str = modeling_prep.DATE_COL,
 ) -> tuple:
-    """Split a fold's training rows into fit rows and an early-stopping tail.
+    """Pecah row training dalam satu fold menjadi himpunan fit dan tail early-stopping.
 
-    The tail is the last `tail_days` calendar days. The purge on the fit side
-    is not extra caution: `target_lead_time_cumulative` sums over
-    H+1..H+lead_time_days, so a fit row dated within `lead_time_days` of the
-    tail carries a label built partly out of the early-stopping window. Without
-    the purge, early stopping would be reading a signal it had partly trained
-    on and would stop too late — the identical leak `fold_train_mask()`
-    prevents at the fold boundary, one scale down.
-
-    Lives here rather than in one model's module because two models need it:
-    XGBoost chooses a boosting-round count this way, the LSTM chooses an epoch
-    count. Neither mechanism is specific to its model family.
+    Tail adalah `tail_days` hari kalender terakhir. Purge pada himpunan fit
+    penting karena `target_lead_time_cumulative` menggunakan data dari masa depan
+    (H+1..H+lead_time_days). Jika tidak ada purge, model akan berlatih dari sinyal
+    yang bocor ke periode early-stopping.
     """
     if train.empty:
         raise ValueError("frame training kosong")
@@ -80,20 +77,18 @@ def split_early_stopping(
     return fit_rows, es_rows
 
 
+# ── TARGET ACCESS ─────────────────────────────────────────────────────────────────
+
 def train_target(
     frame: pd.DataFrame,
     log_target: bool = False,
     column: str = modeling_prep.TRAIN_TARGET_COL,
 ) -> np.ndarray:
-    """The label every model fits on: the capped target, optionally logged.
+    """Label tempat setiap model belajar: target yang sudah di-cap, dengan opsi log.
 
-    One seam rather than three. Each model used to read its own target column
-    inline, which meant "train on the capped target" had to be got right in
-    three separate modules with nothing checking they agreed — and two of the
-    three disagreeing would still produce a full set of plausible numbers.
-
-    Scoring deliberately does not come through here; `walk_forward.run_fold()`
-    reads `EVAL_TARGET_COL` directly.
+    Semua model mengambil target melalui fungsi ini untuk memastikan konsistensi
+    (misal: memastikan semua benar-benar menggunakan target yang di-cap).
+    Skoring tidak lewat sini, melainkan membaca `EVAL_TARGET_COL` secara langsung.
     """
     if column not in frame.columns:
         raise KeyError(
@@ -105,10 +100,10 @@ def train_target(
 
 
 def target_provenance() -> dict:
-    """The two target names, for a bundle to carry with it.
+    """Dua nama kolom target yang perlu disimpan bersama model bundle.
 
-    A bundle that does not say which target trained it cannot be read back
-    without guessing, and guessing wrong produces numbers that look ordinary.
+    Bundle yang tidak menyebutkan target mana yang melatihnya tidak bisa di-load
+    tanpa menebak-nebak, yang berisiko pada evaluasi yang salah.
     """
     return {
         "train_target": modeling_prep.TRAIN_TARGET_COL,
@@ -116,18 +111,17 @@ def target_provenance() -> dict:
     }
 
 
+# ── ONE-HOT EXPANSION ─────────────────────────────────────────────────────────────
+
 def expand_one_hot(
     train_X: pd.DataFrame,
     valid_X: pd.DataFrame,
     idx_cols: Optional[list] = None,
 ) -> tuple:
-    """One-hot the encoded categoricals, with validation reindexed onto the
-    training columns.
+    """Ekspansi one-hot untuk fitur kategorikal. Kolom validasi disesuaikan dengan train.
 
-    The reindex is the point. A category that appears only in validation would
-    otherwise add a column there and shift every column after it, so the model
-    would read the wrong feature at every position — silently, since the shapes
-    still line up.
+    Hal ini penting karena kategori yang hanya muncul di validasi akan mengubah
+    jumlah dan urutan kolom, membuat model salah membaca fitur secara diam-diam.
     """
     idx_cols = IDX_COLS if idx_cols is None else idx_cols
     present = [col for col in idx_cols if col in train_X.columns]
@@ -137,6 +131,8 @@ def expand_one_hot(
     return train_out, valid_out
 
 
+# ── HYPERPARAMETER SEARCH ─────────────────────────────────────────────────────────
+
 def sample_search_space(
     space: dict,
     defaults: dict,
@@ -145,15 +141,11 @@ def sample_search_space(
     screen: Optional[Callable[[dict], bool]] = None,
     screen_label: str = "screen",
 ) -> list:
-    """Distinct parameter sets drawn at random, optionally screened.
+    """Pilih parameter set secara acak dari search space, difilter oleh screen opsional.
 
-    Random rather than grid: only a few dimensions of these spaces carry real
-    signal, so random draws cover each dimension's range better than a
-    truncated grid at the same cost.
-
-    `screen` returns True for a candidate worth fitting. The Random Forest
-    injects its leaf-storage bound here; XGBoost has no equivalent and passes
-    None.
+    Pemilihan acak lebih efisien menemukan kombinasi optimal di ruang dimensi tinggi
+    daripada grid search. Parameter `screen` dipakai untuk menolak kandidat yang
+    misalnya melebih batas ukuran model memori (seperti di Random Forest).
     """
     rng = random.Random(seed)
     keys = sorted(space)
@@ -326,13 +318,13 @@ def run_search(
 
 
 def reported_capacity(fit_predict) -> Optional[str]:
-    """The per-fold capacity a model chose, joined for one CSV cell.
+    """Kapasitas model yang dipilih oleh early stopping per fold (mis. jumlah epoch).
 
-    A string rather than a number because a candidate is scored on several
-    folds and their spread is the interesting part — one number would have to
-    be a mean, and a mean of two epochs hides the fold that ran twice as long.
-    None for a model with no such notion, which is every Random Forest and any
-    candidate that failed before finishing its first fold.
+    Disimpan sebagai string gabungan (contoh: '40,45,42,40,50') karena kandidat
+    dinilai pada beberapa fold dan sebaran antar fold adalah metrik penting.
+    Menggunakan rata-rata tunggal akan menyembunyikan fold yang berlatih dua kali
+    lebih lama. None jika model tidak punya konsep epoch/iterasi (seperti RF) atau
+    gagal di fold pertama.
     """
     for name in CAPACITY_ATTRS:
         values = getattr(fit_predict, name, None)
@@ -341,9 +333,12 @@ def reported_capacity(fit_predict) -> Optional[str]:
     return None
 
 
+
+# ── CHECKPOINT MANAGEMENT ─────────────────────────────────────────────────────────
+
 def _ordered(rows: list) -> pd.DataFrame:
-    """Candidate order, so select_best() can index `candidates` by position
-    regardless of the order a resumed run happened to finish them in."""
+    """Mengurutkan kandidat supaya select_best() selalu membaca urutan yang benar,
+    bahkan jika proses yang dilanjutkan (resume) menyelesaikannya secara acak."""
     return (pd.DataFrame(rows)
             .sort_values("candidate_id")
             .reset_index(drop=True))
@@ -360,19 +355,11 @@ def _assert_checkpoint_matches(
     search_space: dict,
     path: str,
 ) -> None:
-    """Refuse a checkpoint whose rows describe different candidates.
+    """Tolak checkpoint jika baris-barisnya mewakili ruang parameter yang berbeda.
 
-    Compares the searched parameters rather than trusting the file name. NaN
-    stands in for None in the CSV, and booleans survive the round trip as
-    numpy bools, so both are normalised before comparison.
-
-    The schema check is the multi-quantile migration's half of this guard, and
-    it matters more than it looks. The three search CSVs on disk were written
-    by the single-quantile runs against the *same* search space and the *same*
-    seed, so the parameter comparison below accepts them happily — and a
-    resumed run would skip every candidate, hand back the old run's pinball@0.9
-    numbers, and let them be written up as K1. Nothing about that would look
-    wrong in the output.
+    Pemeriksaan schema (`CHECKPOINT_SCHEMA_COL`) sangat penting karena file
+    checkpoint lama (single-quantile) dapat lolos pengecekan parameter dan
+    tanpa disadari menggunakan hasil pinball@0.9 sebagai nilai K1 yang baru.
     """
     if CHECKPOINT_SCHEMA_COL not in prior.columns:
         raise ValueError(
@@ -403,17 +390,11 @@ def _assert_checkpoint_matches(
 
 
 def select_best(search_results: pd.DataFrame, candidates: list) -> dict:
-    """The candidate with the lowest K1 across the search folds.
+    """Pilih kandidat terbaik berdasarkan skor K1 terendah lintas fold.
 
-    K1 alone decides it — the mean pinball over the whole quantile grid, in
-    the `pinball` column. The service level is uniform across every SKU by the
-    data owner's decision, so the selection criterion has to be uniform too —
-    picking on a per-segment metric would optimize for a split the business
-    does not make.
-
-    Calibration and crossing are recorded beside it but do not vote here. K2
-    is a separate rung of the ladder applied to the finalists, and folding it
-    into the search would collapse two criteria the methodology keeps apart.
+    K1 (mean pinball lintas quantile grid) adalah kriteria tunggal pemenang.
+    Kalibrasi (K2) dan persilangan garis distribusi diukur tapi tidak ikut
+    menentukan di tahap pencarian ini agar metodologi pencarian tetap bersih.
     """
     scored = search_results[search_results["pinball"].notna()]
     if scored.empty:
@@ -422,16 +403,22 @@ def select_best(search_results: pd.DataFrame, candidates: list) -> dict:
     return candidates[best_id]
 
 
+
+# ── MODEL BUNDLE I/O ──────────────────────────────────────────────────────────────
+
 def save_bundle(bundle: dict, path: str) -> None:
+    """Simpan objek bundel (model + scaler + meta) menggunakan joblib."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, path)
 
 
 def load_bundle(path: str) -> dict:
+    """Muat objek bundel dari disk menggunakan joblib."""
     return joblib.load(path)
 
 
 def save_best_params(params: dict, path: str) -> None:
+    """Simpan parameter hiperparameter terbaik ke format JSON."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(params, handle, indent=2, sort_keys=True)

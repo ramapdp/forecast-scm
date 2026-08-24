@@ -12,6 +12,8 @@ EVENT_FLAG_COLS = [
 ]
 
 
+# ── BASELINE COMPUTATION ──────────────────────────────────────────────────────
+
 def compute_pair_baseline(
     df: pd.DataFrame,
     cutoff: pd.Timestamp = TEST_START,
@@ -20,6 +22,12 @@ def compute_pair_baseline(
     qty_col: str = "Kuantitas",
     min_history: int = MIN_PAIR_HISTORY,
 ) -> pd.DataFrame:
+    """Hitung median dan statistik baseline per pasangan (item, cabang) dari data training.
+
+    Hanya memakai baris sebelum cutoff dan Kuantitas > 0 (hari nol adalah
+    gap-fill dari build_panel, bukan transaksi nyata). Hasil median dipakai
+    untuk mendeteksi spike: baris dengan rasio >= SPIKE_RATIO_THRESHOLD dianggap outlier.
+    """
     # Leakage guard: filter to strictly-pre-cutoff (training-period) rows
     # BEFORE computing any per-pair aggregate — mirrors compute_branch_stats.
     # Kuantitas == 0 rows are always build_panel gap-fill days (raw
@@ -45,6 +53,7 @@ def compute_pair_baseline(
     stats["pair_eligible"] = (stats["pair_count"] >= min_history) & (stats["pair_median"] > 0)
     return stats.drop(columns=["pair_count"])
 
+# ── OUTLIER CAPPING ───────────────────────────────────────────────────────────────
 
 def apply_outlier_capping(
     df: pd.DataFrame,
@@ -54,6 +63,13 @@ def apply_outlier_capping(
     qty_col: str = "Kuantitas",
     event_cols: list[str] = EVENT_FLAG_COLS,
 ) -> pd.DataFrame:
+    """Cap kuantitas outlier ke nilai threshold x median baseline pasangan.
+
+    Spike yang jatuh dalam jendela event (Ramadan, Idul Fitri, dll.) TIDAK
+    di-cap: lonjakan pada hari-hari itu adalah permintaan yang sah dan bukan
+    noise yang perlu dibersihkan. Kolom Kuantitas_capped tetap <= Kuantitas
+    asli — invariant ini diverifikasi oleh run_qa_checks().
+    """
     result = df.merge(baseline_df, on=pair_cols, how="left")
     result["pair_eligible"] = result["pair_eligible"].fillna(False)
     result["baseline_ratio"] = result[qty_col] / result["pair_median"]

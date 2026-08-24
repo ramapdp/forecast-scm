@@ -3,8 +3,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import model_random_forest as rf
-from utils import evaluation, modeling_prep, purging, walk_forward
+from utils.modelling import model_random_forest as rf
+from utils.modelling import evaluation, modeling_prep, purging, walk_forward
 
 
 FEATURES = ["feat_a", "feat_b", "cat_idx"]
@@ -388,7 +388,7 @@ class TestRunSearchCheckpoint(unittest.TestCase):
                 "is_delivery_day": bool(i % 2),
                 "feat_a": float(i), "feat_b": float(i % 3), "cat_idx": i % 3,
             })
-        from utils import modeling_prep
+        from utils.modelling import modeling_prep
         return modeling_prep.assign_folds(pd.DataFrame(rows))
 
     def _candidates(self):
@@ -440,7 +440,7 @@ class TestRunSearchResume(unittest.TestCase):
                 "is_delivery_day": bool(i % 2),
                 "feat_a": float(i), "feat_b": float(i % 3), "cat_idx": i % 3,
             })
-        from utils import modeling_prep
+        from utils.modelling import modeling_prep
         return modeling_prep.assign_folds(pd.DataFrame(rows))
 
     def _candidates(self, n=3):

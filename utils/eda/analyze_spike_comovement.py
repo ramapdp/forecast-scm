@@ -19,7 +19,7 @@ seragam di [0,1] dengan rata-rata 0,5 -- jadi 0,5 adalah hipotesis nol yang
 diuji, bukan angka yang dikarang.
 
 Jalankan sebagai modul dari root repo:
-    .venv/bin/python3 -m utils.analyze_spike_comovement
+    .venv/bin/python3 -m utils.eda.analyze_spike_comovement
 
 Hanya membaca featured.parquet dan mencetak tabel; tidak menulis artefak.
 """
@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
 
-from . import build_panel
+from utils.data_preprocessing import build_panel
 
 PAIR_COLS = build_panel.PAIR_COLS
 BRANCH_DAY = ["Nama Cabang", "Tanggal"]

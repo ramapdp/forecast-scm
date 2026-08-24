@@ -570,7 +570,7 @@ def bind_panel(
     return make
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 MODEL_FILE = str(BASE_DIR / "models/lstm_q90.joblib")
 BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/lstm_best_params.json")
 SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/lstm_search_results.csv")

@@ -324,7 +324,7 @@ Reklasifikasi diterapkan di lapisan normalisasi lewat
 `normalize_items.EXPLICIT_CATEGORY_OVERRIDES`, bukan dengan mengekspor ulang
 data sumber. Konsekuensinya `dataset/dataset.csv` tetap memuat 14.828 baris
 berlabel WIP-2 selamanya, dan itu normal — bukan tanda reklasifikasi gagal.
-Gerbang `utils/verify_category_consistency.py` memeriksa keduanya secara
+Gerbang `utils/eda/verify_category_consistency.py` memeriksa keduanya secara
 terpisah: lapis sumber bersifat informasional, lapis ternormalisasi yang
 menjadi syarat lulus (nol SKU dengan kategori bervariasi).
 Perlu dicatat bahwa 14.828 itu mencakup **11 SKU**, bukan sepuluh: 2.192 baris
@@ -383,7 +383,7 @@ terkonfirmasi harfiah:
 
 1. Jumlah SKU yang punya lebih dari satu nilai `Kategori Barang` sepanjang
    riwayatnya: **0** — sesuai syarat lulus gerbang
-   `utils/verify_category_consistency.py` pada lapis ternormalisasi.
+   `utils/eda/verify_category_consistency.py` pada lapis ternormalisasi.
 2. Nilai unik `Kategori Barang`: **7 nama**, tanpa WIP-2 — `Bahan Baku (RM)`,
    `Barang Dalam Process (WIP-1)`, `Barang Jadi (FG)`, `Barang Umum`,
    `Minuman - FG`, `Packaging`, `Snack (FG)`.

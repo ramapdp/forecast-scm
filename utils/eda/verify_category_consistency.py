@@ -2,7 +2,7 @@
 
 Run after every data refresh, before anything downstream is rebuilt:
 
-    .venv/bin/python3 -m utils.verify_category_consistency
+    .venv/bin/python3 -m utils.eda.verify_category_consistency
 
 Exits 1 when the gate fails, so it can sit in a refresh script.
 
@@ -26,10 +26,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import normalize_items
+from utils.data_preprocessing import normalize_items
 
 RETIRED_CATEGORY = "Barang Semi FG (WIP-2)"
 
+
+
+# ── PEMERIKSAAN KONSISTENSI ───────────────────────────────────────────────────────
 
 def find_multi_category_skus(
     df: pd.DataFrame,
@@ -51,6 +54,7 @@ def find_multi_category_skus(
 
 
 def build_report(raw: pd.DataFrame, normalized: pd.DataFrame) -> dict:
+    """Susun laporan hasil pemeriksaan dari sumber data mentah dan ternormalisasi."""
     normalized_multi = find_multi_category_skus(normalized)
     return {
         "source_wip2_rows": int((raw["Kategori Barang"] == RETIRED_CATEGORY).sum()),
@@ -62,7 +66,11 @@ def build_report(raw: pd.DataFrame, normalized: pd.DataFrame) -> dict:
     }
 
 
+
+# ── PELAPORAN & I/O ───────────────────────────────────────────────────────────────
+
 def format_report(report: dict) -> str:
+    """Format hasil laporan pemeriksaan menjadi string terstruktur."""
     lines = ["=== Lapis sumber (informasional, tidak menggagalkan) ==="]
     lines.append(
         f"  baris {RETIRED_CATEGORY}: {report['source_wip2_rows']:,}"
@@ -98,6 +106,7 @@ def format_report(report: dict) -> str:
 
 
 def main(raw_path: Path = None) -> int:
+    """Entry point: baca data, jalankan gate, kembalikan exit code (0 sukses, 1 gagal)."""
     raw_path = raw_path or normalize_items.RAW_DATA_FILE
     raw = pd.read_csv(
         raw_path,

@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import analyze_spike_recovery as asr
+from utils.eda import analyze_spike_recovery as asr
 
 
 def _series(qtys, start="2025-01-01", pair=("A", "X"), segment=1, capped=None):

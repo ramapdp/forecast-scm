@@ -32,6 +32,7 @@ FOLDS = (1, 2, 3, 4, 5)
 # are the rows that actually put goods on a truck.
 GROUP_COLS = ("demand_segment", "is_delivery_day")
 
+# ── ROW ELIGIBILITY ────────────────────────────────────────────────────────────────
 
 def eligible_rows(
     df: pd.DataFrame,
@@ -92,6 +93,7 @@ def eligible_rows(
     frame = frame[frame[target_col].notna() & frame[train_target_col].notna()]
     return frame.reset_index(drop=True)
 
+# ── FOLD PREPARATION ──────────────────────────────────────────────────────────────
 
 def prepare_fold(
     df: pd.DataFrame,
@@ -145,6 +147,7 @@ def _scored_rows(
     return [{**header, **record, "crossing_rate": crossing}
             for record in scored.to_dict("records")]
 
+# ── SCORING PER FOLD ──────────────────────────────────────────────────────────────
 
 def run_fold(
     df: pd.DataFrame,
@@ -227,6 +230,7 @@ def run_walk_forward(
 # averaging it returns itself.
 CROSS_QUANTILE_METRICS = ("pinball", "crossing_rate")
 
+# ── AGGREGASI LINTAS FOLD ─────────────────────────────────────────────────────────
 
 def pooled_metric(
     results: pd.DataFrame,

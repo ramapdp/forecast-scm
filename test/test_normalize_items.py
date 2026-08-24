@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from utils import normalize_items
+from utils.data_preprocessing import normalize_items
 
 
 class TestStripXxxPrefix(unittest.TestCase):

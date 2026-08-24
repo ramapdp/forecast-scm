@@ -61,7 +61,7 @@ dipatok di 0.9.
 | Implementasi | `quantile_forest.RandomForestQuantileRegressor` |
 
 Ketiga baseline naive dinilai pada **baris yang identik** dengan RF — dijamin
-oleh `utils/walk_forward.py` yang memiliki definisi fold dan kelayakan baris,
+oleh `utils/modelling/walk_forward.py` yang memiliki definisi fold dan kelayakan baris,
 dan menerima model sebagai callable yang disuntikkan.
 
 ## 3. Benchmark

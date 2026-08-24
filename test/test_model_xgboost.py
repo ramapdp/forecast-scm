@@ -3,8 +3,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import model_xgboost as xgb
-from utils import evaluation, modeling_prep, purging, walk_forward
+from utils.modelling import model_xgboost as xgb
+from utils.modelling import evaluation, modeling_prep, purging, walk_forward
 
 
 FEATURES = ["feat_a", "feat_b", "cat_idx"]

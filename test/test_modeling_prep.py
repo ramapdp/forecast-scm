@@ -3,7 +3,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils import build_panel, modeling_prep
+from utils.data_preprocessing import build_panel
+from utils.modelling import modeling_prep
 
 
 def _event_items(rows):

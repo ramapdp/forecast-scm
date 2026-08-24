@@ -4,7 +4,7 @@ import unittest
 
 import pandas as pd
 
-from utils import outlet_features
+from utils.data_preprocessing import outlet_features
 
 
 def _outlets(rows):

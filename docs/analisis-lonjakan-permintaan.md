@@ -25,7 +25,7 @@ itu ditentukan oleh **kecilnya median pasangan**, bukan oleh apa yang bergerak.
 ## 1. Pertanyaan yang dijawab
 
 Dari 7.552 baris panel yang dipangkas `apply_outlier_capping`
-(`utils/outlier_handling.py`, ambang `SPIKE_RATIO_THRESHOLD = 5.0`), 38,6%
+(`utils/data_preprocessing/outlier_handling.py`, ambang `SPIKE_RATIO_THRESHOLD = 5.0`), 38,6%
 melonjak **sendirian** — hanya satu item yang melonjak di cabang itu pada hari
 itu, tanpa item lain menyertainya. Sisanya melonjak serentak dengan ≥2 item
 lain, pola yang khas untuk pesanan besar yang dilayani sekaligus.
@@ -41,8 +41,8 @@ organik/restock? Jawabannya bukan salah satu dari keduanya — lihat §4.
 
 ## 2. Langkah 1 — hipotesis restock gugur
 
-**Skrip:** `utils/analyze_spike_recovery.py` (`.venv/bin/python3 -m
-utils.analyze_spike_recovery`).
+**Skrip:** `utils/eda/analyze_spike_recovery.py` (`.venv/bin/python3 -m
+utils.eda.analyze_spike_recovery`).
 
 Hipotesis restock: lonjakan bukan permintaan tambahan, melainkan pembelian
 borongan yang "meminjam" permintaan hari-hari berikutnya — outlet menarik stok
@@ -87,8 +87,8 @@ pada arah mana pun.
 
 ## 3. Langkah 2 — yang melonjak sendirian ternyata bukan sendirian
 
-**Skrip:** `utils/analyze_spike_comovement.py` (`.venv/bin/python3 -m
-utils.analyze_spike_comovement`).
+**Skrip:** `utils/eda/analyze_spike_comovement.py` (`.venv/bin/python3 -m
+utils.eda.analyze_spike_comovement`).
 
 Setelah restock gugur, tersisa dua kemungkinan: hari ramai sungguhan (permintaan
 menyeluruh, kemasan hanya bagian yang tertangkap ambang) atau gerakan kemasan
@@ -157,7 +157,7 @@ terekam (B-1/B-2) dan ditangani jalur manual (B-3).
 
 Alasan itu tetap berlaku untuk **komponen pesanan**. Ia **tidak** berlaku untuk
 komponen pelanggan langsung akhir pekan. `day_of_week` dan `is_weekend` ada di
-56 kolom `FEATURE_COLS` (`utils/modeling_prep.py`) — pola akhir pekan justru
+56 kolom `FEATURE_COLS` (`utils/modelling/modeling_prep.py`) — pola akhir pekan justru
 dapat dan seharusnya dipelajari model. Untuk baris yang dipangkas, capping
 karena itu menghapus **sebagian sinyal yang sebenarnya dapat dipelajari**.
 
@@ -225,8 +225,8 @@ target.
 
 - `docs/batasan-penelitian.md` B-3 (catatan bertanggal 2026-08-24), B-1, B-2
 - `docs/todolist-proyek.md` A3 no. 3, G2, Fase D butir 0d
-- `utils/analyze_spike_recovery.py`, `utils/analyze_spike_comovement.py` —
+- `utils/eda/analyze_spike_recovery.py`, `utils/eda/analyze_spike_comovement.py` —
   keduanya hanya membaca `featured.parquet` dan mencetak tabel; bukan bagian
   pipeline, tidak menulis artefak
-- `utils/outlier_handling.py` — `SPIKE_RATIO_THRESHOLD = 5.0`, pengecualian
+- `utils/data_preprocessing/outlier_handling.py` — `SPIKE_RATIO_THRESHOLD = 5.0`, pengecualian
   jendela event
