@@ -528,3 +528,61 @@ class TestRunSearchOnly(unittest.TestCase):
             self._run(only=[0, 1], checkpoint_path=path)
             written = pd.read_csv(path)
             self.assertEqual(list(written["candidate_id"]), [0, 1])
+
+
+class TestRunSearchProvenance(unittest.TestCase):
+    """Sebuah baris shard adalah bukti. Angka yang tidak dapat ditelusuri ke
+    mesin dan versi kode yang melahirkannya tidak reprodusibel — dan mesin yang
+    menjalankan shard ini sifatnya sementara."""
+
+    def _candidates(self):
+        return [{**DEFAULTS, "alpha": a} for a in (1, 2)]
+
+    def _run(self, provenance, only=None, **kwargs):
+        return model_common.run_search(
+            _panel(), self._candidates(), make_fit_predict=_mean_fit_predict,
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES,
+            model_name="toy", feature_cols=FEATURES, verbose=False,
+            provenance=provenance, only=only, **kwargs)
+
+    def test_every_row_carries_the_provenance_columns(self):
+        results = self._run({"device": "cuda:0", "commit": "abc1234"})
+        self.assertEqual(list(results["device"]), ["cuda:0", "cuda:0"])
+        self.assertEqual(list(results["commit"]), ["abc1234", "abc1234"])
+
+    def test_none_adds_no_columns(self):
+        results = self._run(None)
+        self.assertNotIn("device", results.columns)
+
+    def test_resumed_rows_keep_the_machine_that_produced_them(self):
+        """Sebuah shard yang dilanjutkan di mesin lain harus menunjukkan kedua
+        mesin itu, bukan menimpa yang lama dengan yang sekarang."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "shard.csv")
+            self._run({"device": "cpu"}, only=[0], checkpoint_path=path)
+            results = self._run({"device": "cuda:0"}, only=[0, 1],
+                                checkpoint_path=path)
+            by_id = results.set_index("candidate_id")["device"]
+            self.assertEqual(by_id.loc[0], "cpu")
+            self.assertEqual(by_id.loc[1], "cuda:0")
+
+    def test_a_key_that_collides_with_a_searched_parameter_raises(self):
+        with self.assertRaisesRegex(ValueError, "bertabrakan"):
+            self._run({"alpha": 5})
+
+    def test_a_key_that_collides_with_candidate_id_raises(self):
+        with self.assertRaisesRegex(ValueError, "bertabrakan"):
+            self._run({"candidate_id": 5})
+
+
+class TestCurrentCommit(unittest.TestCase):
+    def test_returns_a_short_hash_inside_this_repository(self):
+        commit = model_common.current_commit()
+        self.assertRegex(commit, r"^[0-9a-f]{7,40}$")
+
+    def test_returns_the_default_outside_a_repository(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(
+                model_common.current_commit(default="tidak-diketahui",
+                                            cwd=folder),
+                "tidak-diketahui")

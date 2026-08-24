@@ -13,6 +13,7 @@ Random Forest's leaf-storage bound has no XGBoost analogue.
 
 import json
 import random
+import subprocess
 import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional
@@ -272,6 +273,7 @@ def run_search(
     checkpoint_path: Optional[str] = None,
     resume: bool = True,
     only: Optional[Iterable[int]] = None,
+    provenance: Optional[dict] = None,
     catch: tuple = (MemoryError, ValueError),
 ) -> pd.DataFrame:
     """Score every candidate on the search folds only.
@@ -297,6 +299,13 @@ def run_search(
     sehingga hasilnya dapat disatukan oleh `merge_shards()`.
     """
     selected = _selected(candidates, only)
+    provenance = provenance or {}
+    collisions = sorted({"candidate_id", *search_space} & set(provenance))
+    if collisions:
+        raise ValueError(
+            f"kunci provenance bertabrakan dengan kolom pencarian: "
+            f"{collisions}"
+        )
     frame = walk_forward.eligible_rows(df)
     rows = []
     completed = set()
@@ -314,7 +323,8 @@ def run_search(
         if candidate_id not in selected or candidate_id in completed:
             continue
         record = {"candidate_id": candidate_id,
-                  **{key: candidate[key] for key in sorted(search_space)}}
+                  **{key: candidate[key] for key in sorted(search_space)},
+                  **provenance}
         fit_predict, message = None, None
         started = time.perf_counter()
         try:
@@ -377,6 +387,31 @@ def _ordered(rows: list) -> pd.DataFrame:
     return (pd.DataFrame(rows)
             .sort_values("candidate_id")
             .reset_index(drop=True))
+
+
+def current_commit(default: str = "unknown",
+                   cwd: Optional[str] = None) -> str:
+    """Hash git pendek dari pohon kerja yang menjalankan proses ini.
+
+    Ditulis ke tiap baris shard karena sebuah baris shard adalah bukti: angka
+    yang tidak dapat ditelusuri ke versi kode yang melahirkannya tidak
+    reprodusibel, dan mesin cloud yang menjalankan shard ini sifatnya
+    sementara — ia tidak akan ada lagi saat angkanya dibaca.
+
+    Mengembalikan `default` alih-alih melempar ketika git tidak tersedia sama
+    sekali: kegagalan mencatat asal-usul tidak boleh menggagalkan pencarian
+    delapan jam yang selain itu baik-baik saja. Yang hilang tercatat sebagai
+    nilai `default` yang kasat mata, bukan sebagai sel kosong.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=True,
+            cwd=cwd or str(Path(__file__).resolve().parents[2]),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return default
+    return completed.stdout.strip() or default
 
 
 # A column no single-quantile checkpoint can have. Its absence is how a
