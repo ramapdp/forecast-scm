@@ -15,7 +15,7 @@ import json
 import random
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 import joblib
 import numpy as np
@@ -230,6 +230,35 @@ def summarise_candidate(results: pd.DataFrame, model_name: str, folds: tuple,
 CAPACITY_ATTRS = ("best_epochs", "best_iterations")
 
 
+def _selected(candidates: list, only: Optional[Iterable[int]]) -> set:
+    """Id kandidat yang menjadi tanggung jawab proses ini.
+
+    Alasan keberadaannya adalah pemecahan pekerjaan antar mesin. `run_search`
+    menomori kandidat lewat posisinya di `candidates`, jadi memotong daftar itu
+    di sisi pemanggil akan menomori ulang dan dua shard tidak akan pernah bisa
+    disatukan lewat id. `only` menjaga penomoran tetap absolut terhadap
+    `sample_search_space(seed=...)`, yang deterministik di mesin mana pun.
+
+    Seleksi di luar jangkauan atau kosong dilempar, bukan dijalankan sebagai
+    no-op: shard kosong selesai dalam sedetik dan menulis CSV kosong, yang dari
+    luar tidak dapat dibedakan dari shard yang berhasil. Lubangnya baru muncul
+    saat penggabungan, berjam-jam sesudahnya.
+    """
+    if only is None:
+        return set(range(len(candidates)))
+    selected = {int(value) for value in only}
+    out_of_range = sorted(value for value in selected
+                          if value < 0 or value >= len(candidates))
+    if out_of_range:
+        raise ValueError(
+            f"only memuat candidate_id di luar {len(candidates)} kandidat "
+            f"saat ini: {out_of_range}"
+        )
+    if not selected:
+        raise ValueError("only kosong — tidak ada kandidat untuk dijalankan")
+    return selected
+
+
 def run_search(
     df: pd.DataFrame,
     candidates: list,
@@ -242,6 +271,7 @@ def run_search(
     verbose: bool = True,
     checkpoint_path: Optional[str] = None,
     resume: bool = True,
+    only: Optional[Iterable[int]] = None,
     catch: tuple = (MemoryError, ValueError),
 ) -> pd.DataFrame:
     """Score every candidate on the search folds only.
@@ -261,7 +291,12 @@ def run_search(
     stale-checkpoint guard is the price: resuming across a changed search space
     or seed would blend candidates from two different experiments and hand back
     a winner that was never actually evaluated.
+
+    `only` memecah satu pencarian ke beberapa mesin: tiap mesin menjalankan
+    subset candidate_id-nya sendiri sementara penomorannya tetap absolut,
+    sehingga hasilnya dapat disatukan oleh `merge_shards()`.
     """
+    selected = _selected(candidates, only)
     frame = walk_forward.eligible_rows(df)
     rows = []
     completed = set()
@@ -276,7 +311,7 @@ def run_search(
                   flush=True)
 
     for candidate_id, candidate in enumerate(candidates):
-        if candidate_id in completed:
+        if candidate_id not in selected or candidate_id in completed:
             continue
         record = {"candidate_id": candidate_id,
                   **{key: candidate[key] for key in sorted(search_space)}}

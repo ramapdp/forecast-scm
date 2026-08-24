@@ -464,3 +464,67 @@ class TestTrainTarget(unittest.TestCase):
         with self.assertRaises(KeyError) as ctx:
             model_common.train_target(frame)
         self.assertIn("target_lead_time_cumulative_capped", str(ctx.exception))
+
+
+class TestRunSearchOnly(unittest.TestCase):
+    """Sharding: satu mesin menjalankan sebagian candidate_id tanpa menggeser
+    penomorannya, supaya dua shard bisa disatukan lewat id-nya nanti."""
+
+    def _candidates(self):
+        return [{**DEFAULTS, "alpha": a} for a in (1, 2, 3)]
+
+    def _run(self, only, **kwargs):
+        return model_common.run_search(
+            _panel(), self._candidates(), make_fit_predict=_mean_fit_predict,
+            search_space=SPACE, folds=(1,), quantiles=QUANTILES,
+            model_name="toy", feature_cols=FEATURES, verbose=False,
+            only=only, **kwargs)
+
+    def test_only_runs_the_named_candidates(self):
+        self.assertEqual(list(self._run(only=[0, 2])["candidate_id"]), [0, 2])
+
+    def test_none_runs_every_candidate(self):
+        self.assertEqual(list(self._run(only=None)["candidate_id"]), [0, 1, 2])
+
+    def test_ids_keep_their_absolute_position(self):
+        """Memotong daftar kandidat di sisi pemanggil akan menomori ulang;
+        `only` tidak boleh, atau dua shard tidak akan bisa disatukan."""
+        shard = self._run(only=[2])
+        whole = self._run(only=None)
+        expected = whole[whole["candidate_id"] == 2].iloc[0]
+        self.assertEqual(int(shard.iloc[0]["candidate_id"]), 2)
+        self.assertEqual(shard.iloc[0]["alpha"], expected["alpha"])
+        self.assertAlmostEqual(float(shard.iloc[0]["pinball"]),
+                               float(expected["pinball"]))
+
+    def test_an_id_out_of_range_raises(self):
+        """Salah tulis batas shard adalah kesalahan yang paling mungkin terjadi
+        dan paling mahal: ia baru ketahuan saat merge, berjam-jam kemudian."""
+        with self.assertRaisesRegex(ValueError, "di luar 3 kandidat"):
+            self._run(only=[1, 3])
+
+    def test_a_negative_id_raises(self):
+        with self.assertRaisesRegex(ValueError, "di luar 3 kandidat"):
+            self._run(only=[-1])
+
+    def test_an_empty_selection_raises(self):
+        """Shard kosong selesai dalam sedetik dan menulis CSV kosong — dari luar
+        ia tampak persis seperti shard yang berhasil."""
+        with self.assertRaisesRegex(ValueError, "kosong"):
+            self._run(only=[])
+
+    def test_only_skips_candidates_already_in_the_checkpoint(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "shard.csv")
+            first = self._run(only=[0], checkpoint_path=path)
+            second = self._run(only=[0, 1], checkpoint_path=path)
+            self.assertEqual(list(second["candidate_id"]), [0, 1])
+            self.assertEqual(float(second.iloc[0]["elapsed_seconds"]),
+                             float(first.iloc[0]["elapsed_seconds"]))
+
+    def test_a_candidate_outside_only_is_never_written(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "shard.csv")
+            self._run(only=[0, 1], checkpoint_path=path)
+            written = pd.read_csv(path)
+            self.assertEqual(list(written["candidate_id"]), [0, 1])
