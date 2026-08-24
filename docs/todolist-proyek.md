@@ -259,6 +259,12 @@ pra-reklasifikasi kategori, dengan kriteria kuantil-tunggal (pinball@0,9).
   yang rusak adalah rute 10 SKU itu di dalam model (kolom one-hot mati / level
   kategori tak terjangkau / baris embedding mati). Rinciannya di §0
   `pipeline-overview.md`. Akan **dilatih ulang**, bukan ditambal, di butir 0c.
+  **Bahaya "ter-load diam-diam" itu sudah ditutup 2026-08-24:** ketiganya
+  diganti nama menjadi `*_q90.single-quantile.bak.joblib`, sehingga
+  `MODEL_FILE` ketiga model tidak lagi resolve ke apa pun dan sebuah
+  `load_bundle()` yang keliru gagal keras alih-alih mengembalikan angka yang
+  meyakinkan. Berkasnya sendiri disimpan, sejalan dengan keputusan yang sama
+  untuk artefak pencarian di butir 0c.
 - [ ] ⚠️ **`hasil-modeling-{rf,xgb,lstm}.md` usang** — ditulis ulang dari nol di
   butir 0d, bukan diedit sebagian.
 
