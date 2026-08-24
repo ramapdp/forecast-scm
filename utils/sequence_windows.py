@@ -52,10 +52,12 @@ def build_index(
 
     # G2. A target channel inside a window would be a perfect predictor of
     # itself and would not change a single tensor shape.
-    if modeling_prep.TARGET_COL in dynamic_cols:
-        raise ValueError(
-            f"{modeling_prep.TARGET_COL} tidak boleh menjadi kolom dinamis"
-        )
+    for target_col in (modeling_prep.EVAL_TARGET_COL,
+                       modeling_prep.TRAIN_TARGET_COL):
+        if target_col in dynamic_cols:
+            raise ValueError(
+                f"{target_col} tidak boleh menjadi kolom dinamis"
+            )
 
     pair_cols = modeling_prep._resolve_pair_cols(panel, pair_cols)
     frame = panel.sort_values(pair_cols + [date_col]).reset_index(drop=True)

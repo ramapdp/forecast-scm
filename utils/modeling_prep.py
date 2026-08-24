@@ -25,7 +25,25 @@ PAIR_COLS = ["Kode Barang", "Nama Cabang"]
 SEGMENT_COL = "segment_id"
 SEGMENT_COLS = PAIR_COLS + [SEGMENT_COL]
 DATE_COL = "Tanggal"
-TARGET_COL = "target_lead_time_cumulative"
+
+# Two targets, and which one a caller wants is never obvious from context, so
+# there is deliberately no name called just `TARGET_COL` any more. Decision of
+# 2026-08-24 (pemilik proyek):
+#
+#   - trained on the capped target, because the capped portion is the closest
+#     available proxy for the pre-order component, and head office already
+#     handles pre-orders on a manual path (B-3). Demand the model cannot see
+#     the cause of is demand it should not be fitted to.
+#   - scored on the raw target, because that is the demand the outlet actually
+#     faced. A criterion computed on the same trimmed series the model was
+#     fitted to could be improved by trimming more, which is not a property a
+#     model-selection criterion may have.
+#
+# Everything inside a model's `fit_predict` — fitting, early stopping, target
+# scaling, log1p — uses TRAIN_TARGET_COL. Everything outside it — K1, K2, the
+# naive floor, every reported number — uses EVAL_TARGET_COL.
+TRAIN_TARGET_COL = "target_lead_time_cumulative_capped"
+EVAL_TARGET_COL = "target_lead_time_cumulative"
 LOOKBACK = 28
 
 
@@ -409,7 +427,7 @@ def drop_warmup_rows(
 def to_tabular(
     df: pd.DataFrame,
     feature_cols: list,
-    target_col: str = TARGET_COL,
+    target_col: str = TRAIN_TARGET_COL,
     lookback: int = LOOKBACK,
     pair_cols: list = None,
     date_col: str = DATE_COL,
@@ -479,7 +497,7 @@ def inverse_log_target(values: np.ndarray) -> np.ndarray:
 def to_sequences(
     df: pd.DataFrame,
     feature_cols: list,
-    target_col: str = TARGET_COL,
+    target_col: str = TRAIN_TARGET_COL,
     lookback: int = LOOKBACK,
     pair_cols: list = None,
     date_col: str = DATE_COL,

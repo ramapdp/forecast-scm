@@ -84,6 +84,31 @@ Ruang pencarian LSTM dipulihkan ke 144 dan protokol tiga seed ditambahkan
 (`lstm.run_seed_repeats()` -> `dataset/model_ready/lstm_seed_repeats.csv`).
 739 tes lolos. **Notebook diubah tetapi tidak dijalankan** — itu butir 0c.
 
+**Dua keputusan metodologis yang menutup prasyarat Fase 3 (2026-08-24,
+pemilik proyek).** Keduanya harus diambil sebelum butir 0c dijalankan, karena
+mengubahnya sesudah run berarti mengulang ~157–172 jam:
+
+1. **Target: latih di `..._capped`, nilai (K1) di target mentah.** Kode
+   sebelumnya memakai target mentah untuk keduanya, sementara konfirmasi pemilik
+   data 2026-08-17 menyimpulkan capped — kontradiksi yang tidak pernah
+   diselesaikan. Sekarang dibelah: `modeling_prep.TRAIN_TARGET_COL` vs
+   `EVAL_TARGET_COL` (nama `TARGET_COL` yang ambigu dihapus), satu seam label
+   latih `model_common.train_target()`, dan guard baru di
+   `walk_forward.eligible_rows()` + `prepare_forecast_data` untuk pola nilai
+   kosong yang tidak sepakat. Ketiga bundle kini mencatat
+   `train_target`/`eval_target`. 752 tes lolos. Ongkos yang dinyatakan terbuka:
+   selisih kedua target di Desember 2025 = 1.223/50.692 baris (2,41%) dan 44.470
+   unit (2,03% massa) — dibayar sama besar oleh ketiga model, jadi peringkat
+   tidak terpengaruh, hanya level absolut K1.
+2. **`QUANTILE_SET` tetap 19 titik.** Hemat ~38 jam dari grid 9 titik (T-14)
+   **ditolak**: kerapatan grid adalah dasar klaim hampiran CRPS dan grid 9 titik
+   membuang kedua ekor, termasuk 0,95 yang berpotensi dipakai alokasi
+   tersegmentasi. Lihat pertanyaan terbuka nomor 0 di
+   `2026-08-22-multi-quantile-evaluation-design.md`.
+
+Konsekuensinya: **perkiraan ongkos di bawah berlaku apa adanya** (~157–172 jam),
+dan tidak ada lagi keputusan tertunda yang bisa membatalkan hasil run.
+
 ## Prosedur Fase 3 (butir 0c) — menunggu izin terpisah
 
 Fase 3 adalah menjalankan ketiga notebook. Urutannya tidak bebas dan langkah

@@ -6,7 +6,7 @@ Ditulis untuk dikutip langsung di bab batasan/limitasi laporan.
 
 Dokumen ini menampung batasan yang **tidak bisa dihilangkan dengan menulis kode
 lebih baik**. Untuk pekerjaan yang masih bisa diselesaikan, lihat
-`docs/todolist-data-preprocessing.md`; untuk state pipeline, `docs/pipeline-overview.md`.
+`docs/todolist-proyek.md`; untuk state pipeline, `docs/pipeline-overview.md`.
 
 ---
 
@@ -91,6 +91,58 @@ sudah punya cara sendiri menanganinya.
   12,24%; bila 7 hari sebelumnya lonjakan, 11,77%. Artinya kecenderungan sebuah
   pair menerima pesanan besar bersifat persisten, meski pesanan individualnya tidak
   dapat diprediksi.
+
+**Konfirmasi lanjutan (2026-08-24): batas lingkup ini tidak dapat
+dioperasionalkan pada data yang ada.** Pemilik data ditanya apakah lonjakan yang
+berdiri sendiri (38,6% dari 7.552 baris yang di-cap — satu item melonjak tanpa
+item lain menyertainya di cabang-hari yang sama) merupakan pesanan atau bukan.
+Jawabannya bukan salah satu dari dua opsi yang ditanyakan: **di akhir pekan
+memang sering terjadi lonjakan, dan lonjakan itu datang lewat kedua jalur
+sekaligus — sebagian pesanan, sebagian pelanggan yang datang langsung.**
+
+Konsekuensinya untuk butir ini: `is_spike` terkonfirmasi menangkap **campuran**
+pesanan dan pelanggan langsung, **bukan** proksi pre-order sebagaimana
+diasumsikan konfirmasi 2026-08-17. Teks di atas yang menyebut `is_spike` sebagai
+"proksi terbaik yang tersedia untuk pesanan besar" **tidak dicabut** — ia memang
+masih proksi terbaik yang tersedia, dan angka-angka besarannya tetap berlaku apa
+adanya. Yang berubah adalah apa yang diketahui tentang isinya: bukan lagi
+"proksi yang belum tervalidasi", melainkan **proksi yang sudah dikonfirmasi
+bercampur**, dan campurannya tidak dapat dipisahkan dari data mana pun yang
+tersedia (B-1/B-2 menutup satu-satunya jalan pemisahan, yaitu tanggal pesan).
+
+Ini bukan kegagalan analisis, melainkan temuan tentang **batas data**. Batas
+lingkup "permintaan di luar pesanan" tetap benar sebagai perumusan bisnis;
+yang tidak ada adalah cara mengoperasionalkannya menjadi pemisahan baris.
+
+**Konsekuensi yang belum masuk pertimbangan sebelumnya.** Justifikasi capping
+selama ini adalah "komponen ini tidak dapat diprediksi". Alasan itu berlaku
+untuk komponen pesanan (B-1/B-2: buku pesanan tidak terekam), **tetapi tidak
+untuk lonjakan pelanggan langsung akhir pekan** — `day_of_week` dan `is_weekend`
+ada di 56 kolom `FEATURE_COLS`, jadi pola itu justru dapat dan seharusnya
+dipelajari model. Untuk baris yang dipangkas, capping karena itu menghapus
+sebagian sinyal yang sebenarnya **dapat dipelajari**.
+
+Dampaknya terbatas dan arahnya bisa diperkirakan. Karena ambang 5× bersifat
+relatif terhadap median pasangan, item bervolume besar praktis tidak terkena:
+Nasi Kebuli naik 2,04× pada hari-hari itu, jauh di bawah ambang, sehingga pola
+akhir pekannya tetap utuh di target latih (94 baris di-cap sepanjang dua tahun,
+median pasangan 86 unit/hari). Yang terpangkas adalah item bervolume kecil —
+83,6% baris yang di-cap berasal dari pasangan dengan median ≤10 unit/hari,
+terutama Rice Bowl 600 ml (1.186 baris) dan kelompok Loyang (2.538 baris).
+Prediksi yang bisa diuji: model kemungkinan **sistematis meramal terlalu rendah
+di akhir pekan untuk item bervolume kecil**. Pemeriksaannya dijadwalkan di
+`docs/todolist-proyek.md` Fase D butir 0d; kalau terkonfirmasi, angkanya masuk
+bab batasan menggantikan dugaan ini.
+
+Yang **tidak** berubah: keputusan target (latih di `capped`, K1 di mentah,
+ditutup 2026-08-24) tetap berlaku dan tidak dibuka kembali. Jawaban ini justru
+menguatkannya — menilai di target mentah tidak bergantung pada mekanisme capping,
+yang justru di sinilah terbukti cakupannya tidak sebersih asumsi awal.
+
+Rantai temuan lengkapnya, termasuk kedua langkah analisis yang mempersempit
+pertanyaan sampai bisa dijawab (hipotesis restock gugur; lonjakan Packaging
+"sendirian" ternyata disertai makanan naik ~2× median di persentil ~0,82),
+ada di `docs/analisis-lonjakan-permintaan.md`.
 
 **Implikasi untuk perumusan.** Metrik sebaiknya dilaporkan tiga kali berdampingan —
 terhadap target mentah (akuntabilitas penuh), terhadap target di-cap (lingkup

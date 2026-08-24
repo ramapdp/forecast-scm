@@ -140,9 +140,7 @@ def make_fit_predict(
         if params["one_hot"]:
             train_X, valid_X = expand_one_hot(train_X, valid_X)
 
-        y_train = train[modeling_prep.TARGET_COL].to_numpy(dtype=float)
-        if params["log_target"]:
-            y_train = np.log1p(y_train)
+        y_train = model_common.train_target(train, log_target=params["log_target"])
 
         model = build_estimator(params)
         model.fit(train_X.to_numpy(dtype=np.float32), y_train)
@@ -260,9 +258,7 @@ def fit_final(
     if params["one_hot"]:
         train_X, _ = expand_one_hot(train_X, train_X)
 
-    y_train = frame[modeling_prep.TARGET_COL].to_numpy(dtype=float)
-    if params["log_target"]:
-        y_train = np.log1p(y_train)
+    y_train = model_common.train_target(frame, log_target=params["log_target"])
 
     model = build_estimator(params)
     model.fit(train_X.to_numpy(dtype=np.float32), y_train)
@@ -273,6 +269,7 @@ def fit_final(
         "columns": list(train_X.columns),
         "quantiles": tuple(quantiles),
         "n_train": int(len(frame)),
+        **model_common.target_provenance(),
     }
 
 

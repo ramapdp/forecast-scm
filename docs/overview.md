@@ -29,6 +29,7 @@ terkendali, lewat ramalan permintaan kumulatif sampai pengiriman berikutnya.
 |---|---|
 | Granularitas | satu deret waktu per pasangan (`Kode Barang`, `Nama Cabang`), harian |
 | Target | `target_lead_time_cumulative` — total permintaan dari besok sampai kiriman berikutnya (3 atau 4 hari, bervariasi per baris menurut kawasan dan hari transaksi) |
+| Target latih vs nilai | **latih** di `..._capped`, **dinilai** di target mentah (keputusan 2026-08-24, §5 `metodologi-pemodelan-dan-pemilihan-model.md`) |
 | Strategi model | satu model global per algoritma, dilatih lintas seluruh deret, dengan identitas item/cabang/kategori sebagai fitur |
 | Validasi | walk-forward 5 fold (Juli–November 2025), test set Desember 2025 terkunci |
 | Kandidat model | Random Forest, XGBoost, LSTM |
@@ -134,7 +135,7 @@ Tiga terbaru adalah yang mengatur pekerjaan saat ini:
 
 **Operasional**
 
-`checklist-refresh-data-2026.md`, `todolist-data-preprocessing.md`,
+`checklist-refresh-data-2026.md`, `todolist-proyek.md`,
 `pertanyaan-data-owner.md`, `outlet_relocation_notes.md`
 
 ## 7. Berkas konfigurasi yang dipelihara manusia
@@ -160,8 +161,9 @@ memicu error, bukan diabaikan diam-diam).
 | Reklasifikasi kategori WIP-2 → FG | ✅ selesai, 10 SKU, lewat `EXPLICIT_CATEGORY_OVERRIDES` |
 | Gerbang konsistensi kategori | ✅ `utils/verify_category_consistency.py` |
 | Fase 1 — dokumentasi migrasi multi-kuantil | ✅ selesai |
-| Fase 2 — implementasi kode multi-kuantil | 🔄 berjalan (lapis 1–2 selesai, lapis 3 berjalan) |
-| Fase 3 — menjalankan ulang ketiga model | ⬜ menunggu izin, ~153–168 jam CPU |
+| Fase 2 — implementasi kode multi-kuantil | ✅ selesai 2026-08-24 (kontrak `fit_predict` multi-kuantil, notebook diubah tetapi belum dijalankan) |
+| Prasyarat metodologis Fase 3 (target latih/nilai, kerapatan grid) | ✅ ditutup 2026-08-24 |
+| Fase 3 — menjalankan ulang ketiga model | ⬜ menunggu izin, ~157–172 jam CPU |
 | Penulisan ulang `hasil-modeling-*.md` | ⬜ setelah Fase 3 |
 | Pembukaan test set Desember 2025 | ⬜ belum pernah dibuka, protokol §19 |
 | Alokasi kuantil tersegmentasi | ⬜ setelah pemenang ditetapkan |
@@ -193,7 +195,7 @@ Beberapa pola berulang yang menjelaskan kenapa kode ditulis seperti sekarang:
    akan mengarahkan model terlatih ke kategori yang keliru
    (`metodologi-preprocessing.md` §4.12(e)).
 6. **TDD.** Tes ditulis dan dipastikan gagal karena alasan yang benar
-   sebelum implementasi. 667 tes per 2026-08-24.
+   sebelum implementasi. 752 tes per 2026-08-24.
 
 ## 10. Batasan yang paling memengaruhi pembacaan hasil
 

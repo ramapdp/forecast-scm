@@ -66,6 +66,7 @@ class TestQuantileCoverage(unittest.TestCase):
 def _frame():
     return pd.DataFrame({
         "target_lead_time_cumulative": [10.0, 20.0, np.nan, 8.0],
+        "target_lead_time_cumulative_capped": [10.0, 20.0, np.nan, 8.0],
         "lag_1": [3.0, 5.0, 1.0, 2.0],
         "roll_mean_7": [4.0, 6.0, 1.0, 2.5],
         "lead_time_days": [2, 3, 1, 4],

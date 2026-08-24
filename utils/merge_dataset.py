@@ -63,7 +63,7 @@ SOURCE_FILES = [
     str(BASE_DIR / "dataset/csv/jan-des-25.csv"),
 ]
 
-OUTPUT_FILE = str(BASE_DIR / "dataset/dataset.csv")
+OUTPUT_FILE = str(BASE_DIR / "dataset/csv/dataset.csv")
 
 
 def main(source_paths=SOURCE_FILES, output_path=OUTPUT_FILE) -> None:

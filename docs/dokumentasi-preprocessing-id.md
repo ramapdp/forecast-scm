@@ -905,5 +905,5 @@ Bagian ini penting untuk bab "keterbatasan penelitian" di laporan.
 - `docs/superpowers/specs/2026-08-08-lead-time-integration-design.md`
 - `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md`
 - `docs/superpowers/specs/2026-08-15-outlet-lifecycle-handling-design.md`
-- `docs/todolist-data-preprocessing.md` — konfirmasi pemilik data
+- `docs/todolist-proyek.md` — konfirmasi pemilik data
 - `docs/outlet_relocation_notes.md` — catatan relokasi cabang

@@ -209,7 +209,7 @@ Nilai-nilai ini di-hardcode dalam narasi dan akan basi begitu cakupan data berub
 | `docs/batasan-penelitian.md` B-5 | target null 7,9% baris uji; periode efektif 1–29 Des 2025 |
 | `docs/batasan-penelitian.md` B-6 | 55.046 baris uji, 16.031 (29,1%) hari kirim |
 | `docs/batasan-penelitian.md` B-7 | daftar lima cabang batas-bawah (lihat B-1 di atas) |
-| `docs/todolist-data-preprocessing.md` 🟡 | 842 pair gagal ambang 60 hari; pinball 0,384 `roll_mean_7`; 40.281 unit shortfall; 7.552 baris di-cap |
+| `docs/todolist-proyek.md` 🟡 | 842 pair gagal ambang 60 hari; pinball 0,384 `roll_mean_7`; 40.281 unit shortfall; 7.552 baris di-cap |
 | `docs/pipeline-overview.md` | jumlah baris train/test, 205.513 baris pra-relokasi |
 
 Ukur ulang setelah pipeline selesai, jangan disalin dari edisi sebelumnya.
@@ -247,7 +247,11 @@ Ukur ulang setelah pipeline selesai, jangan disalin dari edisi sebelumnya.
   0,18% baris latih, sambil membuat metrik tidak sebanding antar-run karena dilusi. Solusinya
   fallback terpisah yang harus mengalahkan pinball **0,384**. Data 2026 mengecilkan kohort ini,
   tapi tidak menghapusnya — pair baru terus lahir tiap kali ada cabang atau SKU baru.
-- **Satu pertanyaan pemilik data masih layak diajukan:** dari baris yang di-cap, 38,6% melonjak
-  sendirian (bukan pola pesanan besar serentak). Kalau lonjakan tunggal itu ternyata permintaan
-  organik, capping memotong permintaan yang tidak ditutup jalur manual — dan sebagian dari 40.281
-  unit shortfall jadi stockout nyata, bukan pesanan yang sudah ditangani head office.
+- ~~**Satu pertanyaan pemilik data masih layak diajukan:** dari baris yang di-cap, 38,6% melonjak
+  sendirian (bukan pola pesanan besar serentak).~~ **Dijawab 2026-08-24.** Lonjakan sendirian
+  terbukti aditif (bukan restock) dan disertai makanan naik ~2× median-nya, lalu pemilik data
+  memastikan lonjakan akhir pekan datang lewat **kedua jalur** — sebagian pesanan, sebagian
+  pelanggan langsung, bercampur dan tidak dapat dipisahkan dari data ini. Jadi ya, sebagian
+  shortfall memang stockout nyata; besarannya yang belum terukur, dan itulah yang diuji di
+  `docs/todolist-proyek.md` Fase D butir 0d (bias akhir pekan pada segmen bervolume kecil).
+  Rantai temuannya: `docs/analisis-lonjakan-permintaan.md`; batasannya di B-3.

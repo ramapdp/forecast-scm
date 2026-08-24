@@ -24,6 +24,7 @@ def _panel(n_days=60, n_pairs=2, start="2025-01-01", seed=5):
             "feat_b": rng.normal(size=n_days),
             "cat_idx": rng.integers(0, 3, size=n_days),
             "target_lead_time_cumulative": np.abs(rng.normal(size=n_days)) * 10,
+            "target_lead_time_cumulative_capped": np.abs(rng.normal(size=n_days)) * 10,
         }))
     return pd.concat(parts, ignore_index=True)
 
@@ -180,3 +181,29 @@ class TestGather(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTargetChannelGuard(unittest.TestCase):
+    """G2 berlaku untuk kedua target.
+
+    Sejak target latih pindah ke `..._capped`, kolom itu jadi vektor kebocoran
+    yang persis sama dengan target mentah: ia adalah label baris itu sendiri.
+    """
+
+    def test_rejects_the_raw_target_as_a_dynamic_column(self):
+        with self.assertRaises(ValueError):
+            sequence_windows.build_index(
+                _panel(), feature_cols=FEATURES + ["target_lead_time_cumulative"],
+                lookback=7)
+
+    def test_rejects_the_capped_target_as_a_dynamic_column(self):
+        panel = _panel()
+        panel["target_lead_time_cumulative_capped"] = (
+            panel["target_lead_time_cumulative"] * 0.5
+        )
+        with self.assertRaises(ValueError) as ctx:
+            sequence_windows.build_index(
+                panel,
+                feature_cols=FEATURES + ["target_lead_time_cumulative_capped"],
+                lookback=7)
+        self.assertIn("target_lead_time_cumulative_capped", str(ctx.exception))

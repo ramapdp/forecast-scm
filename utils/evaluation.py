@@ -31,7 +31,7 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-TARGET_COL = "target_lead_time_cumulative"
+EVAL_TARGET_COL = "target_lead_time_cumulative"
 LEAD_TIME_COL = "lead_time_days"
 ITEM_COL = "Kode Barang"
 
@@ -376,7 +376,7 @@ def score(
 
 def evaluate_baselines(
     df: pd.DataFrame,
-    target_col: str = TARGET_COL,
+    target_col: str = EVAL_TARGET_COL,
     lead_time_col: str = LEAD_TIME_COL,
     quantiles: QuantileSet = QUANTILE_SET_A,
     group_col: Optional[str] = None,

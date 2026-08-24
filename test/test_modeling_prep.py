@@ -502,6 +502,7 @@ def _pair_frame(n_rows, item="I1", branch="B1", start="2024-01-01"):
         "Tanggal": pd.date_range(start, periods=n_rows, freq="D"),
         "feat_a": np.arange(n_rows, dtype=float),
         "target_lead_time_cumulative": np.arange(n_rows, dtype=float) * 2,
+        "target_lead_time_cumulative_capped": np.arange(n_rows, dtype=float) * 2,
         "fold_id": [np.nan] * n_rows,
     })
 
@@ -729,6 +730,7 @@ class TestSegmentAwareAdapters(unittest.TestCase):
             "Kode Barang": ["A"] * 12, "Nama Cabang": ["X"] * 12,
             "Tanggal": dates, "segment_id": [1] * 6 + [2] * 6,
             "feat": list(range(12)), "target_lead_time_cumulative": list(range(12)),
+            "target_lead_time_cumulative_capped": list(range(12)),
             "fold_id": [float("nan")] * 12,
         })
 
@@ -773,6 +775,7 @@ class TestNullTargetRows(unittest.TestCase):
     def _tail_nulls(self, n_rows=40, n_null=3):
         df = _pair_frame(n_rows)
         df.loc[df.index[-n_null:], "target_lead_time_cumulative"] = np.nan
+        df.loc[df.index[-n_null:], "target_lead_time_cumulative_capped"] = np.nan
         return df
 
     def test_tabular_drops_rows_whose_target_is_null(self):
@@ -807,6 +810,7 @@ class TestNullTargetRows(unittest.TestCase):
         happen on prediction rows only."""
         df = _pair_frame(40)
         df.loc[df.index[30], "target_lead_time_cumulative"] = np.nan
+        df.loc[df.index[30], "target_lead_time_cumulative_capped"] = np.nan
         out = modeling_prep.to_sequences(df, feature_cols=["feat_a"], lookback=28)
         self.assertEqual(len(out["y"]), 11)
         last_window = [float(v) for v in out["X"][-1][:, 0]]
@@ -853,3 +857,32 @@ class TestNullTargetRows(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _pair_frame_both_targets(n_rows, item="I1", branch="B1", start="2024-01-01"):
+    frame = _pair_frame(n_rows, item=item, branch=branch, start=start)
+    frame["target_lead_time_cumulative_capped"] = (
+        frame["target_lead_time_cumulative"] * 0.25
+    )
+    return frame
+
+
+class TestAdaptersTrainOnCappedTarget(unittest.TestCase):
+    """Kedua adapter memproduksi label latih, jadi keduanya membaca capped.
+
+    Skor tetap dihitung `walk_forward` dari target mentah; adapter tidak
+    pernah menyentuh jalur itu.
+    """
+
+    def test_to_tabular_y_comes_from_the_capped_target(self):
+        frame = _pair_frame_both_targets(40)
+        out = modeling_prep.to_tabular(frame, feature_cols=["feat_a"])
+        expected = frame["target_lead_time_cumulative_capped"].to_numpy()[28:]
+        np.testing.assert_allclose(out["y"].to_numpy(), expected)
+
+    def test_to_sequences_y_comes_from_the_capped_target(self):
+        frame = _pair_frame_both_targets(40)
+        frame["segment_id"] = 1
+        out = modeling_prep.to_sequences(frame, feature_cols=["feat_a"], lookback=28)
+        expected = frame["target_lead_time_cumulative_capped"].to_numpy()[28:]
+        np.testing.assert_allclose(out["y"], expected, rtol=1e-6)

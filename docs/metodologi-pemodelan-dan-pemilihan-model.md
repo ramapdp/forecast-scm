@@ -335,9 +335,39 @@ Perhatikan pembagian sumbernya — ini inti strategi anti-kebocoran:
 
 | Komponen | Dihitung dari | Alasan |
 |---|---|---|
-| Target (`target_h1..h7`, `target_lead_time_cumulative`) | `Kuantitas` **mentah** | Lonjakan adalah permintaan nyata yang model harus dinilai terhadapnya |
+| Target **penilaian** (`target_lead_time_cumulative`) | `Kuantitas` **mentah** | Lonjakan adalah permintaan nyata yang model harus dinilai terhadapnya |
+| Target **latih** (`target_lead_time_cumulative_capped`) | `Kuantitas_capped` | Porsi yang dipangkas adalah proksi pre-order, yang ditangani jalur manual (B-3) |
+| Target harian (`target_h1..h7`) | `Kuantitas` **mentah** | Dipertahankan untuk dekomposisi penjelas, tidak dilatih di penelitian ini |
 | Fitur lag & rolling | `Kuantitas_capped` | Satu hari ekstrem tidak boleh mendominasi input |
 | Statistik cabang | `Kuantitas_capped`, **hanya periode training** | Dibekukan lalu diterapkan ke kedua split |
+
+**Dua target, dan itu disengaja (keputusan pemilik proyek, 2026-08-24).** Model
+**dilatih** pada target capped dan **dinilai** pada target mentah. Baris ini
+sebelumnya menyebut satu target saja; perumusan lama itu lebih tua daripada
+konfirmasi pemilik data 2026-08-17 dan sudah tidak berlaku.
+
+- **Kenapa latih di capped.** Kantor pusat sudah menangani pesanan lewat jalur
+  manual, sehingga model dibutuhkan untuk permintaan *di luar* pesanan (B-3).
+  Komponen pre-order itu sendiri tidak dapat diprediksi dari data mana pun di
+  proyek ini — buku pesanan tidak pernah terekam (B-1, B-2) — jadi melatihnya
+  hanya menambah derau yang sebabnya tidak terlihat model. Baris yang dipangkas
+  adalah proksi terdekat yang tersedia untuk komponen itu.
+- **Kenapa nilai di mentah.** Permintaan yang dihadapi outlet adalah permintaan
+  mentah. Kriteria yang dihitung pada deret yang sudah dipangkas punya sifat
+  yang tidak boleh dimiliki kriteria pemilihan model: ia bisa diperbaiki dengan
+  memangkas lebih banyak.
+- **Ongkosnya dinyatakan, bukan disembunyikan.** Selisih kedua target di jendela
+  Desember 2025 adalah 1.223 dari 50.692 baris (2,41%) dan 44.470 unit (2,03%
+  massa permintaan). Ketiga model membayar ongkos itu sama besar, jadi peringkat
+  antar model tidak terpengaruh — yang terpengaruh adalah level absolut K1, dan
+  itu harus dibaca sebagai jarak terhadap permintaan nyata, bukan sebagai
+  kegagalan model.
+
+Pemisahannya dijaga di kode, bukan di niat: `modeling_prep.TRAIN_TARGET_COL` dan
+`modeling_prep.EVAL_TARGET_COL` (tidak ada lagi nama `TARGET_COL` yang ambigu),
+satu seam label latih di `model_common.train_target()` yang dipakai ketiga model,
+dan `walk_forward.eligible_rows()` menolak panel yang kedua targetnya tidak
+sepakat soal baris kosong.
 
 Rinciannya:
 
@@ -977,8 +1007,16 @@ K1 = np.mean([pinball(tau) for tau in QUANTILE_SET])
 Pada setiap titik τ, kekurangan dikali **τ** dan kelebihan dikali **1 − τ**.
 Rata-ratanya **tak berbobot**: setiap titik kuantil menyumbang sama besar.
 
+`actual` di rumus di atas adalah **`target_lead_time_cumulative` mentah**, bukan
+varian capped yang dipakai untuk melatih (§5). K1 mengukur jarak terhadap
+permintaan yang benar-benar dihadapi outlet.
+
 `QUANTILE_SET` saat ini di **Tahap A**: 19 titik merata
-`[0,05, 0,10, …, 0,90, 0,95]`. Ia berpindah otomatis ke Tahap B — grid yang
+`[0,05, 0,10, …, 0,90, 0,95]`. **Kerapatan 19 titik dipertahankan** (keputusan
+pemilik proyek, 2026-08-24) meskipun memperkecilnya ke 9 titik akan menghemat
+~38 jam komputasi di XGBoost: kerapatan grid adalah alasan rata-rata pinball
+boleh dibaca sebagai hampiran CRPS, sehingga memangkasnya melemahkan justifikasi
+kriteria utama itu sendiri — bukan sekadar menurunkan presisinya. Ia berpindah otomatis ke Tahap B — grid yang
 diturunkan dari sebaran critical ratio aktual — begitu B-10 mencapai ambang ≥80%
 volume dengan data biaya presisi. Definisi lengkap kedua tahap dan mekanisme
 peralihannya ada di

@@ -22,6 +22,7 @@ def _panel(periods=245):
             "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
             "Tanggal": date,
             "target_lead_time_cumulative": float(i % 7),
+            "target_lead_time_cumulative_capped": float(i % 7),
             "lead_time_days": 3.0, "lag_1": float(i % 5),
             "roll_mean_7": float(i % 4), "demand_segment": "smooth",
             "is_delivery_day": bool(i % 2),
@@ -313,6 +314,7 @@ class TestSplitEarlyStopping(unittest.TestCase):
             "Tanggal": pd.date_range("2025-01-01", periods=n, freq="D"),
             "feat_a": rng.normal(size=n),
             "target_lead_time_cumulative": np.abs(rng.normal(size=n)) * 10,
+            "target_lead_time_cumulative_capped": np.abs(rng.normal(size=n)) * 10,
             "lead_time_days": lead_time,
             "Kode Barang": "FGS-00001",
             "Nama Cabang": "KY001",
@@ -433,3 +435,32 @@ class TestRunSearchCost(unittest.TestCase):
             self.assertEqual(list(results["candidate_id"]), [0, 1, 2])
             self.assertTrue(results.loc[:1, "elapsed_seconds"].isna().all())
             self.assertEqual(results.loc[2, "best_epoch"], "4,6")
+
+
+class TestTrainTarget(unittest.TestCase):
+    """Satu seam untuk label latih, dipakai ketiga model.
+
+    Sebelumnya tiap model membaca kolom targetnya sendiri-sendiri, jadi
+    "latih di capped" harus benar di tiga tempat terpisah dan tidak ada yang
+    memeriksa ketiganya sepakat. Helper ini yang diperiksa, sekali.
+    """
+
+    def _frame(self):
+        return pd.DataFrame({
+            "target_lead_time_cumulative": [10.0, 20.0, 30.0],
+            "target_lead_time_cumulative_capped": [10.0, 20.0, 15.0],
+        })
+
+    def test_reads_the_capped_target(self):
+        values = model_common.train_target(self._frame())
+        np.testing.assert_allclose(values, [10.0, 20.0, 15.0])
+
+    def test_applies_log1p_when_asked(self):
+        values = model_common.train_target(self._frame(), log_target=True)
+        np.testing.assert_allclose(values, np.log1p([10.0, 20.0, 15.0]))
+
+    def test_refuses_a_frame_without_the_capped_target(self):
+        frame = self._frame().drop(columns=["target_lead_time_cumulative_capped"])
+        with self.assertRaises(KeyError) as ctx:
+            model_common.train_target(frame)
+        self.assertIn("target_lead_time_cumulative_capped", str(ctx.exception))

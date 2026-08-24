@@ -37,7 +37,8 @@ def eligible_rows(
     df: pd.DataFrame,
     lookback: int = modeling_prep.LOOKBACK,
     date_col: str = modeling_prep.DATE_COL,
-    target_col: str = modeling_prep.TARGET_COL,
+    target_col: str = modeling_prep.EVAL_TARGET_COL,
+    train_target_col: str = modeling_prep.TRAIN_TARGET_COL,
     test_start: pd.Timestamp = modeling_prep.TEST_START,
 ) -> pd.DataFrame:
     """Every row a model may see during walk-forward, all columns retained.
@@ -58,10 +59,37 @@ def eligible_rows(
     function reproduces them while keeping every column, because scoring needs
     `demand_segment`, `is_delivery_day` and the baseline inputs that the
     adapter drops. `test_matches_to_tabular_row_for_row` pins the two together.
+
+    Cut 3 now reads both targets. Since 2026-08-24 a model trains on the capped
+    target and is scored on the raw one, so a row missing either is a row the
+    two halves of the comparison would disagree about: the adapter would drop
+    it for a null label while the scorer still expected a prediction for it.
+    Both columns are built by the same `add_lead_time_target()` over the same
+    window, so in the real pipeline they go missing together — which is exactly
+    why a disagreement here means something upstream is wrong and is raised
+    rather than quietly reconciled.
     """
+    for column in (target_col, train_target_col):
+        if column not in df.columns:
+            raise KeyError(
+                f"kolom {column!r} tidak ada — walk-forward butuh target latih "
+                f"({train_target_col}) dan target penilaian ({target_col})"
+            )
+
+    missing_eval = df[target_col].isna()
+    missing_train = df[train_target_col].isna()
+    if not missing_eval.equals(missing_train):
+        n = int((missing_eval ^ missing_train).sum())
+        raise ValueError(
+            f"pola nilai kosong {target_col!r} dan {train_target_col!r} "
+            f"berbeda di {n} baris — keduanya dibangun dari jendela yang sama, "
+            f"jadi selisih ini menandakan cacat di prapemrosesan, bukan "
+            f"sesuatu yang boleh diselaraskan diam-diam di sini"
+        )
+
     frame = df[df[date_col] < test_start]
     frame = modeling_prep.drop_warmup_rows(frame, lookback=lookback, date_col=date_col)
-    frame = frame[frame[target_col].notna()]
+    frame = frame[frame[target_col].notna() & frame[train_target_col].notna()]
     return frame.reset_index(drop=True)
 
 
@@ -156,7 +184,10 @@ def run_fold(
         predictions[name] = evaluation.as_quantile_frame(baseline, quantiles,
                                                          index=valid.index)
 
-    actual = valid[modeling_prep.TARGET_COL]
+    # The raw target, always — never the capped one the model was fitted on.
+    # Scoring a model on the same trimmed series it learned would report a
+    # number the project cannot act on: the outlet faces raw demand.
+    actual = valid[modeling_prep.EVAL_TARGET_COL]
     rows = []
     for name, prediction in predictions.items():
         rows.extend(_scored_rows(actual, prediction, quantiles, {

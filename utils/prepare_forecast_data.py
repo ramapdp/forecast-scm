@@ -332,6 +332,30 @@ def build_featured_dataset(
     )
 
 
+def assert_targets_agree_on_nulls(
+    df: pd.DataFrame,
+    eval_col: str = "target_lead_time_cumulative",
+    train_col: str = "target_lead_time_cumulative_capped",
+) -> None:
+    """The two lead-time targets must go missing on exactly the same rows.
+
+    Since 2026-08-24 a model trains on the capped target and is scored on the
+    raw one, so these two columns define the training population and the
+    evaluation population respectively. Both come out of the same
+    `add_lead_time_target()` window, which is why a disagreement is a defect
+    upstream rather than something to reconcile here — and why it is worth
+    catching at the point the parquet is written instead of hours later, in a
+    fold, as a shape that does not line up.
+    """
+    missing_eval = df[eval_col].isna()
+    missing_train = df[train_col].isna()
+    disagree = int((missing_eval ^ missing_train).sum())
+    assert disagree == 0, (
+        f"pola nilai kosong {eval_col!r} dan {train_col!r} berbeda di "
+        f"{disagree} baris"
+    )
+
+
 def run_qa_checks(df: pd.DataFrame, closures: Optional[dict] = None) -> None:
     """Assertions that previously lived only in notebook/data-processing.ipynb.
 
@@ -355,6 +379,7 @@ def run_qa_checks(df: pd.DataFrame, closures: Optional[dict] = None) -> None:
             both["target_lead_time_cumulative_capped"]
             <= both["target_lead_time_cumulative"]
         ).all(), "target capped melebihi target mentah"
+        assert_targets_agree_on_nulls(df)
 
     assert (df["kota"] != "Unknown").all(), "Ditemukan cabang dengan kota 'Unknown'"
 

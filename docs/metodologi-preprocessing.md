@@ -913,7 +913,7 @@ Bab ini memuat keterbatasan yang melekat pada rancangan prapemrosesan dan tidak 
 | `docs/dokumentasi-preprocessing-id.md` | Catatan rekayasa terperinci, memuat riwayat keputusan desain beserta alternatif yang ditolak |
 | `docs/pipeline-overview.md` | Ikhtisar keempat belas tahap dalam bahasa Inggris |
 | `docs/batasan-penelitian.md` | Uraian lengkap batasan penelitian, butir B-1 hingga B-9 |
-| `docs/todolist-data-preprocessing.md` | Daftar konfirmasi pemilik data beserta statusnya |
+| `docs/todolist-proyek.md` | Daftar konfirmasi pemilik data beserta statusnya |
 | `docs/outlet_relocation_notes.md` | Catatan relokasi cabang beserta tingkat kepastian tanggalnya |
 | `docs/superpowers/specs/2026-07-18-merge-dataset-design.md` | Spesifikasi tahap penggabungan |
 | `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md` | Spesifikasi rekayasa fitur |

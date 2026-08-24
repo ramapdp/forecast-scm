@@ -201,8 +201,7 @@ def build_estimator(
 
 
 def _target(frame: pd.DataFrame, params: dict) -> np.ndarray:
-    values = frame[modeling_prep.TARGET_COL].to_numpy(dtype=float)
-    return np.log1p(values) if params["log_target"] else values
+    return model_common.train_target(frame, log_target=params["log_target"])
 
 
 def _as_matrix(prediction, n_rows: int, n_quantiles: int) -> np.ndarray:
@@ -355,6 +354,7 @@ def fit_final(
         "log_target": params["log_target"],
         "best_iteration": best_iteration,
         "quantiles": quantiles,
+        **model_common.target_provenance(),
         "n_train": int(len(frame)),
     }
 

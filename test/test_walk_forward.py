@@ -19,6 +19,7 @@ def _panel(n_days=245, pairs=(("I1", "B1"), ("I2", "B1")), start="2025-05-01"):
                 "segment_id": 1,
                 "Tanggal": date,
                 "target_lead_time_cumulative": float(i % 7),
+                "target_lead_time_cumulative_capped": float(i % 7),
                 "lead_time_days": 3.0,
                 "lag_1": float(i % 5),
                 "roll_mean_7": float(i % 4),
@@ -45,7 +46,9 @@ class TestEligibleRows(unittest.TestCase):
 
     def test_drops_rows_with_a_null_target(self):
         panel = _panel()
-        panel.loc[panel["Tanggal"] == pd.Timestamp("2025-07-15"), "target_lead_time_cumulative"] = np.nan
+        blank = panel["Tanggal"] == pd.Timestamp("2025-07-15")
+        panel.loc[blank, "target_lead_time_cumulative"] = np.nan
+        panel.loc[blank, "target_lead_time_cumulative_capped"] = np.nan
         result = walk_forward.eligible_rows(panel)
         self.assertEqual(len(result[result["Tanggal"] == pd.Timestamp("2025-07-15")]), 0)
 
@@ -409,3 +412,53 @@ class TestCoverageByQuantile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTargetSeparation(unittest.TestCase):
+    """Latih di `..._capped`, nilai di target mentah (keputusan 2026-08-24).
+
+    Kedua target hidup berdampingan di panel yang sama, jadi satu-satunya yang
+    menjaga keduanya tidak tertukar adalah tes ini: sebuah model yang meramal
+    target capped dengan sempurna harus tetap mendapat error, karena yang
+    dinilai adalah permintaan mentah.
+    """
+
+    def _panel_with_both_targets(self):
+        panel = _panel()
+        panel["target_lead_time_cumulative_capped"] = (
+            panel["target_lead_time_cumulative"] * 0.5
+        )
+        return panel
+
+    def test_scores_against_the_raw_target_not_the_capped_one(self):
+        panel = self._panel_with_both_targets()
+        frame = walk_forward.eligible_rows(panel)
+        valid = frame[frame["fold_id"] == 1]
+
+        def fit_predict(train, valid_rows):
+            capped = valid_rows["target_lead_time_cumulative_capped"].to_numpy(float)
+            return np.repeat(capped[:, None], 3, axis=1)
+
+        result = walk_forward.run_fold(frame, 1, fit_predict, model_name="m",
+                                       quantiles=(0.1, 0.5, 0.9), prepared=True)
+        row = result[(result["model"] == "m") & result["group_col"].isna()
+                     & np.isclose(result["quantile"], 0.5)]
+        expected = float((valid["target_lead_time_cumulative"]
+                          - valid["target_lead_time_cumulative_capped"]).abs().mean())
+        self.assertAlmostEqual(float(row["mae"].iloc[0]), expected, places=9)
+        self.assertGreater(expected, 0.0)
+
+    def test_requires_the_capped_target_column(self):
+        panel = self._panel_with_both_targets().drop(
+            columns=["target_lead_time_cumulative_capped"])
+        with self.assertRaises(KeyError) as ctx:
+            walk_forward.eligible_rows(panel)
+        self.assertIn("target_lead_time_cumulative_capped", str(ctx.exception))
+
+    def test_refuses_when_the_two_targets_disagree_about_missing_rows(self):
+        panel = self._panel_with_both_targets()
+        mask = panel["Tanggal"] == pd.Timestamp("2025-07-15")
+        panel.loc[mask, "target_lead_time_cumulative_capped"] = np.nan
+        with self.assertRaises(ValueError) as ctx:
+            walk_forward.eligible_rows(panel)
+        self.assertIn("pola nilai kosong", str(ctx.exception))

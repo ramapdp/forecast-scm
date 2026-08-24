@@ -2,6 +2,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from utils import prepare_forecast_data
@@ -1025,3 +1026,37 @@ class TestSegmentQaChecks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTargetPairQA(unittest.TestCase):
+    """Kedua target harus kosong di baris yang sama.
+
+    Keduanya dibangun `add_lead_time_target` dari jendela yang sama, jadi
+    perbedaan pola kosong berarti ada yang salah di hulu — dan kalau lolos ke
+    tahap pemodelan, ia muncul sebagai populasi latih dan populasi nilai yang
+    diam-diam berbeda.
+    """
+
+    def _frame(self):
+        return pd.DataFrame({
+            "Kode Barang": ["I1"] * 4,
+            "Nama Cabang": ["B1"] * 4,
+            "Tanggal": pd.date_range("2024-01-01", periods=4, freq="D"),
+            "Kuantitas": [1.0, 2.0, 3.0, 4.0],
+            "Kuantitas_capped": [1.0, 2.0, 3.0, 4.0],
+            "kota": ["Bogor"] * 4,
+            "kawasan": [1] * 4,
+            "segment_id": [1] * 4,
+            "target_lead_time_cumulative": [5.0, 6.0, np.nan, np.nan],
+            "target_lead_time_cumulative_capped": [5.0, 6.0, np.nan, np.nan],
+        })
+
+    def test_matching_null_patterns_pass(self):
+        prepare_forecast_data.assert_targets_agree_on_nulls(self._frame())
+
+    def test_a_row_missing_only_the_capped_target_is_caught(self):
+        frame = self._frame()
+        frame.loc[0, "target_lead_time_cumulative_capped"] = np.nan
+        with self.assertRaises(AssertionError) as ctx:
+            prepare_forecast_data.assert_targets_agree_on_nulls(frame)
+        self.assertIn("pola nilai kosong", str(ctx.exception))

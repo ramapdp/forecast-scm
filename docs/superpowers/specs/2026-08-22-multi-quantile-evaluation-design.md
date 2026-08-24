@@ -197,6 +197,23 @@ dipilih 2026-08-18, di atas data pra-reclass. Lihat §Part 2
 
 ## Pertanyaan terbuka
 
+0. **Kerapatan grid Tahap A (19 titik vs 9)** — **DITUTUP (2026-08-24, pemilik
+   proyek): tetap 19 titik.** T-14 menemukan pengganda ongkos XGBoost x15,2
+   (`multi_strategy="one_output_per_tree"` membangun 19 pohon per ronde
+   boosting), dan memperkecil grid ke 9 titik `[0,1 … 0,9]` terukur menurunkan
+   pengganda itu ke x7,0 — hemat ~38 jam dari total ~157–172 jam Fase 3. Hemat
+   itu **ditolak** karena yang dipotong bukan parameter eksperimen melainkan
+   dasar kesimpulannya: kerapatan grid seragam adalah alasan rata-rata pinball
+   boleh dibaca sebagai hampiran CRPS (Bröcker 2012), dan grid 9 titik juga
+   membuang kedua ekor (0,05 dan 0,95) — padahal alokasi tersegmentasi
+   berpotensi mengirim sebagian segmen di atas 0,9, sehingga model tidak akan
+   pernah dinilai di titik yang nanti dipakai. Konsisten pula dengan keputusan
+   anggaran LSTM di butir 2: menolak hemat 67 jam demi validitas atribusi lalu
+   menerima hemat 38 jam dengan mengorbankan validitas metrik adalah dua posisi
+   yang bertabrakan. Kalau waktu benar-benar mengikat, yang dipotong adalah
+   jumlah kandidat pencarian — itu dapat dilaporkan sebagai keterbatasan
+   anggaran; kerapatan grid tidak, karena ia menyentuh setiap angka di laporan.
+
 1. **Bagaimana pembobotan rata-rata di K1** — saat ini diusulkan tak
    berbobot (setiap titik kuantil kontribusinya sama), tapi bisa
    dipertimbangkan pembobotan lebih besar ke arah 0,9 (karena itu komitmen

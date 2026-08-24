@@ -18,6 +18,7 @@ def _frame(n=200, seed=0, target_scale=1.0):
         "feat_b": rng.normal(size=n),
         "cat_idx": rng.integers(0, 3, size=n),
         "target_lead_time_cumulative": np.abs(feat_a * 10 + 20) * target_scale,
+        "target_lead_time_cumulative_capped": np.abs(feat_a * 10 + 20) * target_scale,
     })
 
 
@@ -315,6 +316,7 @@ class TestFitFinal(unittest.TestCase):
         frame = _dated_frame(n=400)
         blank = frame["Tanggal"].between("2025-06-01", "2025-06-05")
         frame.loc[blank, "target_lead_time_cumulative"] = np.nan
+        frame.loc[blank, "target_lead_time_cumulative_capped"] = np.nan
         bundle = rf.fit_final(frame, self._params(), feature_cols=FEATURES,
                               n_estimators=20)
         clean = _dated_frame(n=400)
@@ -380,6 +382,7 @@ class TestRunSearchCheckpoint(unittest.TestCase):
                 "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
                 "Tanggal": date,
                 "target_lead_time_cumulative": float(i % 7),
+                "target_lead_time_cumulative_capped": float(i % 7),
                 "lead_time_days": 3.0, "lag_1": float(i % 5),
                 "roll_mean_7": float(i % 4), "demand_segment": "smooth",
                 "is_delivery_day": bool(i % 2),
@@ -431,6 +434,7 @@ class TestRunSearchResume(unittest.TestCase):
                 "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
                 "Tanggal": date,
                 "target_lead_time_cumulative": float(i % 7),
+                "target_lead_time_cumulative_capped": float(i % 7),
                 "lead_time_days": 3.0, "lag_1": float(i % 5),
                 "roll_mean_7": float(i % 4), "demand_segment": "smooth",
                 "is_delivery_day": bool(i % 2),
@@ -513,3 +517,22 @@ class TestRunSearchResume(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBundleRecordsItsTargets(unittest.TestCase):
+    """Bundle menyimpan target latihnya sendiri.
+
+    Sejak target latih (`..._capped`) berbeda dari target penilaian (mentah),
+    sebuah artefak yang tidak mencatat keduanya tidak dapat dibaca ulang tanpa
+    menebak — dan menebak salah menghasilkan angka yang terlihat wajar.
+    """
+
+    def test_bundle_names_the_training_and_evaluation_targets(self):
+        bundle = rf.fit_final(_dated_frame(),
+                              {"n_estimators": 20, "max_depth": 6,
+                               "min_samples_leaf": 5, "max_samples_leaf": 20,
+                               "random_state": 0},
+                              feature_cols=FEATURES, n_estimators=20)
+        self.assertEqual(bundle["train_target"],
+                         "target_lead_time_cumulative_capped")
+        self.assertEqual(bundle["eval_target"], "target_lead_time_cumulative")

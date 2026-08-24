@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import joblib
+import numpy as np
 import pandas as pd
 
 from . import evaluation, modeling_prep, purging, walk_forward
@@ -77,6 +78,42 @@ def split_early_stopping(
             f"tidak ada baris tersisa untuk fit"
         )
     return fit_rows, es_rows
+
+
+def train_target(
+    frame: pd.DataFrame,
+    log_target: bool = False,
+    column: str = modeling_prep.TRAIN_TARGET_COL,
+) -> np.ndarray:
+    """The label every model fits on: the capped target, optionally logged.
+
+    One seam rather than three. Each model used to read its own target column
+    inline, which meant "train on the capped target" had to be got right in
+    three separate modules with nothing checking they agreed — and two of the
+    three disagreeing would still produce a full set of plausible numbers.
+
+    Scoring deliberately does not come through here; `walk_forward.run_fold()`
+    reads `EVAL_TARGET_COL` directly.
+    """
+    if column not in frame.columns:
+        raise KeyError(
+            f"kolom target latih {column!r} tidak ada di frame — model dilatih "
+            f"pada target capped sejak 2026-08-24"
+        )
+    values = frame[column].to_numpy(dtype=float)
+    return np.log1p(values) if log_target else values
+
+
+def target_provenance() -> dict:
+    """The two target names, for a bundle to carry with it.
+
+    A bundle that does not say which target trained it cannot be read back
+    without guessing, and guessing wrong produces numbers that look ordinary.
+    """
+    return {
+        "train_target": modeling_prep.TRAIN_TARGET_COL,
+        "eval_target": modeling_prep.EVAL_TARGET_COL,
+    }
 
 
 def expand_one_hot(

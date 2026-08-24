@@ -158,6 +158,7 @@ def _tiny_index(n=80, seed=3):
         "feat_b": rng.normal(size=n),
         "cat_idx": rng.integers(0, 3, size=n),
         "target_lead_time_cumulative": np.abs(feat * 5 + 10),
+        "target_lead_time_cumulative_capped": np.abs(feat * 5 + 10),
     })
     index = sequence_windows.build_index(
         panel, feature_cols=["feat_a", "feat_b", "cat_idx"], lookback=7)
@@ -297,6 +298,7 @@ def _fold_panel(n_days=200, n_pairs=2, seed=7):
             "demand_segment": "smooth",
             "is_delivery_day": True,
             "target_lead_time_cumulative": np.abs(feat * 5 + 10),
+        "target_lead_time_cumulative_capped": np.abs(feat * 5 + 10),
         }))
     panel = pd.concat(parts, ignore_index=True)
     return modeling_prep.assign_folds(panel)

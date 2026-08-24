@@ -425,7 +425,7 @@ def fit_epochs(
 
 
 def _target(frame, params: dict) -> np.ndarray:
-    values = frame[modeling_prep.TARGET_COL].to_numpy(dtype="float64")
+    values = model_common.train_target(frame)
     return (np.log1p(values) if params["log_target"] else values).astype("float32")
 
 
@@ -655,6 +655,7 @@ def fit_final(
         # head is unrecoverable from `state_dict` alone, so without this a
         # reloaded model returns nineteen unlabelled numbers.
         "quantiles": quantiles,
+        **model_common.target_provenance(),
         "lookback": lookback,
         "n_train": int(len(frame)),
     }

@@ -20,6 +20,7 @@ def _dated_frame(n=400, seed=3, lead_time=3.0, start="2025-01-01"):
         "feat_b": rng.normal(size=n),
         "cat_idx": rng.integers(0, 3, size=n),
         "target_lead_time_cumulative": np.abs(feat_a * 10 + 20),
+        "target_lead_time_cumulative_capped": np.abs(feat_a * 10 + 20),
         "lead_time_days": lead_time,
         "Kode Barang": "FGS-00001",
         "Nama Cabang": "KY001",
@@ -356,6 +357,7 @@ class TestWalkForwardIntegration(unittest.TestCase):
                 "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
                 "Tanggal": date,
                 "target_lead_time_cumulative": float(i % 7),
+                "target_lead_time_cumulative_capped": float(i % 7),
                 "lead_time_days": 3.0, "lag_1": float(i % 5),
                 "roll_mean_7": float(i % 4), "demand_segment": "smooth",
                 "is_delivery_day": bool(i % 2),
@@ -433,6 +435,7 @@ class TestFitFinal(unittest.TestCase):
         frame = _dated_frame(400)
         blank = frame["Tanggal"].between("2025-06-01", "2025-06-05")
         frame.loc[blank, "target_lead_time_cumulative"] = np.nan
+        frame.loc[blank, "target_lead_time_cumulative_capped"] = np.nan
         bundle = self._bundle(frame)
         reference = self._bundle(_dated_frame(400))
         self.assertEqual(bundle["n_train"], reference["n_train"] - int(blank.sum()))
@@ -531,6 +534,7 @@ class TestSearchWrappers(unittest.TestCase):
                 "Kode Barang": "I1", "Nama Cabang": "B1", "segment_id": 1,
                 "Tanggal": date,
                 "target_lead_time_cumulative": float(i % 7),
+                "target_lead_time_cumulative_capped": float(i % 7),
                 "lead_time_days": 3.0, "lag_1": float(i % 5),
                 "roll_mean_7": float(i % 4), "demand_segment": "smooth",
                 "is_delivery_day": bool(i % 2),
