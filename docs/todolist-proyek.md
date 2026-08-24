@@ -339,9 +339,25 @@ Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
   sehingga window index 1,5 juta baris dibangun sebelum guard terbaca —
   ongkosnya menit, bukan detik; guard-nya kode yang sama dan
   `lstm_search_results.csv` sama-sama tidak punya kolom itu.
-- [ ] Baru hapus `rf_search_results.csv`, `xgb_search_results.csv`,
-  `lstm_search_results.csv`, **dan `rf_best_params.json`** (berasal dari run
-  2026-08-18 di atas data pra-reclass).
+- [x] ~~Baru **hapus**~~ **Diganti nama, bukan dihapus (2026-08-24, pemilik
+  proyek).** Sembilan artefak run kuantil-tunggal diberi akhiran
+  `.single-quantile.bak.<ext>` di `dataset/model_ready/`: ketiga
+  `*_search_results.csv`, ketiga `*_best_params.json`, dan ketiga
+  `*_walk_forward_results.csv`. Cakupannya diperluas dari yang semula tertulis
+  (tiga CSV + `rf_best_params.json`) karena keenam berkas lain sama-sama lahir
+  di bawah kriteria lama, dan yang tertinggal di folder itu akan terbaca
+  sebagai "parameter terbaik" oleh siapa pun yang membukanya sebelum run baru
+  selesai.
+
+  Efeknya ke pipeline identik dengan penghapusan — `SEARCH_FILE`,
+  `BEST_PARAMS_FILE`, dan `RESULTS_FILE` ketiga model diverifikasi tidak lagi
+  ada, jadi pencarian mulai dari nol. Yang dibeli dengan 25 KB itu adalah
+  satu-satunya catatan pinball@0,9 **per kandidat** yang masih tersisa:
+  ketiga `hasil-modeling-*.md` yang meringkasnya akan ditulis ulang dari nol
+  di butir 0d, sehingga tanpa berkas ini pertanyaan "apakah peringkat kandidat
+  berubah setelah pindah ke K1?" — yang wajar muncul saat menulis bab hasil —
+  tidak akan punya jawaban lagi. Angkanya tetap **tidak boleh** disandingkan
+  dengan K1 baru sebagai perbandingan langsung (T-10).
 - [ ] Random Forest: benchmark → pencarian 18 kandidat (`SEARCH_FOLDS = (3, 5)`)
   → walk-forward 5 fold → fit final. (~4,8 jam)
 - [ ] XGBoost: benchmark → pencarian 30 kandidat → walk-forward → fit final.
