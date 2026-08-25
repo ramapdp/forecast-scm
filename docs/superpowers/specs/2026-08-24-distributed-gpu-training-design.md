@@ -151,6 +151,89 @@ Yang boleh dipotong pada situasi itu adalah **jumlah kandidat**, yang oleh
 proyek ini sudah dinyatakan dapat dilaporkan sebagai batas anggaran — tidak
 seperti kerapatan grid 19 titik, yang tidak boleh disentuh.
 
+### 3bis. Hasil Tahap 0 untuk XGBoost (dijalankan 2026-08-25)
+
+Empat dari lima probe tertutup. Yang dijalankan: `candidate_id 0` penuh
+(`SEARCH_FOLDS = (3, 5)`, 19 kuantil) di Mac `cpu` dan di Kaggle `cuda:0`,
+keduanya dari commit `ce84707`.
+
+| | Mac `cpu` | Kaggle `cuda:0` |
+|---|---:|---:|
+| K1 (pinball rata-rata 19 τ) | 2,960221 | 2,963888 |
+| wall time | 19.958,7 s (5,54 j) | 2.508,9 s (0,70 j) |
+| `best_epoch` (fold 3, fold 5) | 1448, 1766 | 1244, 1388 |
+
+- **(a) Guard checkpoint — lolos** (2026-08-24, butir 0c todolist).
+- **(b) Smoke test CUDA multi-kuantil — lolos.** Baris hasilnya membawa
+  `coverage_gap` dan `crossing_rate`, jadi 19 `quantile_alpha` di
+  `reg:quantileerror` memang berjalan di device cuda, bukan diam-diam jatuh ke
+  satu kuantil.
+- **(c) Pengganda terukur: ×7,96** — di atas estimasi ~6× yang dipakai Bagian
+  2. Angka ini **lantai, bukan plafon**: sesi mencetak
+  `Falling back to prediction using DMatrix due to mismatched devices`, jadi
+  prediksi masih melintasi host↔device tanpa perlu. Sengaja tidak diperbaiki
+  di tengah probe — memperbaikinya mengubah wall time yang sedang diukur.
+- **(d) Paritas device: selisih K1 = 0,124%**, terhadap ambang 2% — lolos
+  dengan jarak 16×. Penyerahan "diperingkat di GPU, di-refit di CPU" (Bagian 1)
+  karenanya sah, dan tercatat sebagai angka.
+  Yang perlu dibaca bersamanya: selisih itu **bukan** noise floating point,
+  melainkan early stopping yang berhenti ~15% lebih awal di GPU (1244/1388
+  lawan 1448/1766). Mekanismenya jelas, arahnya wajar, dan besarnya jauh di
+  bawah ambang — tetapi ia berarti dua device tidak menghasilkan model yang
+  identik, hanya model yang peringkatnya sama.
+- **(e) Versi paket — cocok.** Kaggle: `xgboost 2.1.4`, `numpy 2.0.2`,
+  `pandas 2.3.3`, `scikit-learn 1.6.1` — identik dengan pin lokal. Inilah yang
+  membuat (d) terbaca sebagai selisih hardware, bukan selisih library.
+  Satu perbedaan yang tetap dicatat, bukan disembunyikan: **Python 3.12.13 di
+  Kaggle lawan 3.9.6 di Mac.** Ia di luar daftar pin, dan tidak menyentuh
+  numerik XGBoost (library terkompilasi, versi sama) — tapi ia perbedaan
+  lingkungan nyata dan tidak boleh hilang dari catatan.
+
+**Yang masih terbuka: akuntansi kuota T4×2** (Bagian 4, pertanyaan terbuka 3).
+Sesi ini hanya memakai `cuda:0`, jadi asumsi "sesi 2-GPU berongkos kuota sama
+dengan sesi 1-GPU" — pengungkit terbesar di seluruh rencana — masih belum
+punya bukti.
+
+#### Koreksi anggaran yang dituntut angka ini
+
+Estimasi CPU di `2026-08-22-model-comparison-refactor-migration.md`
+(§"Perkiraan ongkos Fase 3") menyebut pencarian XGBoost **64,6 jam**.
+Candidate 0 sendirian memakan **5,54 jam**. Dibobot ke seluruh 30 kandidat
+menurut `learning_rate` (jumlah ronde ≈ 1/lr), `max_depth`, dan ongkos ekspansi
+`encoding`, pencarian CPU sebenarnya ~**120 jam** — estimasi lama meleset
+sekitar 2×.
+
+Ini **tidak** menggeser jadwal GPU, tapi menggeser satu risiko:
+
+- Sisi GPU: total berbobot ~**15 GPU-jam** → **~7,6 jam per GPU** di T4×2,
+  muat dalam satu commit 12 jam. Batas atasnya (andai tiap kandidat semahal
+  candidate 0) adalah 10,5 jam per GPU — **tidak** muat. Rentang itu terlalu
+  lebar untuk dikomit buta; dijepit lebih dulu oleh dua kandidat probe, lihat
+  di bawah.
+- **Risiko 7.1 jadi lebih mahal dari yang dianggarkan.** Aturan "tiap baris NaN
+  dari shard GPU wajib diulang di CPU" tetap berlaku, tetapi ongkosnya bukan
+  jam melainkan **belasan jam per kandidat** untuk kasus terburuk
+  (`one_hot` + `max_depth=10`). Ada 7 kandidat `one_hot` — id 1, 3, 7, 13, 19,
+  22, 24 — dan tiga di antaranya (1, 13, 19) berkedalaman 10. Kalau beberapa di
+  antaranya OOM, jalur CPU-fallback berhenti menjadi bantalan dan menjadi
+  jalur kritis.
+
+Dua kandidat probe yang menjepit rentang itu, dijalankan sebelum shard penuh:
+`candidate_id 1` (depth 10 + `one_hot` — persis kasus risiko 7.1) dan
+`candidate_id 14` (depth 4, lr 0,10, `ordinal` — ujung termurah). Ongkosnya
+~1 jam dan ia menjawab pertanyaan terbuka 2 sekaligus.
+
+#### Pembagian shard yang direncanakan
+
+Seimbang menurut **ongkos berbobot, bukan jumlah kandidat** — ~7,6 jam per sisi:
+
+- `cuda:0` → `FORECAST_SHARD=3-6,9,12-14,17-21,27-28`
+- `cuda:1` → `FORECAST_SHARD=0-2,7-8,10-11,15-16,22-26,29`
+
+Candidate 0 sengaja dibiarkan di dalam daftar: `resume=True` melewatinya karena
+sudah ada di checkpoint, sehingga cakupan `0…29` tetap utuh untuk
+`merge_shards()` tanpa satu jam pun terbuang.
+
 ### 4. Pengungkit T4×2: dua GPU dengan harga satu jam kuota
 
 Kuota GPU Kaggle dihitung dari **wall time sesi**, bukan jumlah akselerator:

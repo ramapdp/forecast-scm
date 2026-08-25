@@ -375,6 +375,28 @@ Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
   berubah setelah pindah ke K1?" — yang wajar muncul saat menulis bab hasil —
   tidak akan punya jawaban lagi. Angkanya tetap **tidak boleh** disandingkan
   dengan K1 baru sebagai perbandingan langsung (T-10).
+- [x] **Tahap 0 probe device untuk XGBoost — 4 dari 5 tertutup (2026-08-25).**
+  `candidate_id 0` dijalankan penuh (`SEARCH_FOLDS = (3, 5)`, 19 kuantil) di Mac
+  `cpu` dan Kaggle `cuda:0`, commit `ce84707` di keduanya. **Paritas device:
+  selisih K1 0,124%** (2,960221 lokal lawan 2,963888 GPU) terhadap ambang 2% —
+  jadi peringkat kandidat yang lahir di GPU berlaku di CPU tempat pemenangnya
+  di-refit. **Pengganda: ×7,96** (5,54 jam → 0,70 jam), di atas estimasi ~6×.
+  Versi paket cocok persis (`xgboost 2.1.4`, `numpy 2.0.2`, `pandas 2.3.3`,
+  `scikit-learn 1.6.1`); Python 3.12.13 di Kaggle lawan 3.9.6 lokal dicatat
+  sebagai perbedaan lingkungan yang diketahui. Rinciannya, termasuk mengapa
+  selisih 0,124% itu early stopping dan bukan noise, ada di §3bis
+  `2026-08-24-distributed-gpu-training-design.md`.
+  **Masih terbuka:** akuntansi kuota T4×2 (sesi ini hanya memakai `cuda:0`).
+  **Angka paritas ini harus ikut dibawa ke `docs/hasil-modeling-xgb.md` saat
+  butir 0d menulis ulang dokumen itu** — sekarang belum ditaruh di sana karena
+  seluruh isi dokumen itu masih pinball@0,9 dari run lama.
+- [x] **Koreksi estimasi ongkos CPU XGBoost: 64,6 jam → ~120 jam.** Candidate 0
+  sendirian memakan 5,54 jam di Mac; dibobot ke 30 kandidat, angka lama meleset
+  ~2×. Jadwal GPU tidak bergeser (~15 GPU-jam, ~7,6 jam per GPU di T4×2), tetapi
+  **risiko 7.1 jadi lebih mahal**: mengulang satu kandidat `one_hot` +
+  `max_depth=10` yang OOM di GPU berongkos belasan jam di CPU, bukan beberapa
+  jam. Tujuh kandidat `one_hot` (id 1, 3, 7, 13, 19, 22, 24), tiga di antaranya
+  berkedalaman 10.
 - [ ] Random Forest: benchmark → pencarian 18 kandidat (`SEARCH_FOLDS = (3, 5)`)
   → walk-forward 5 fold → fit final. (~4,8 jam)
 - [ ] XGBoost: benchmark → pencarian 30 kandidat → walk-forward → fit final.
