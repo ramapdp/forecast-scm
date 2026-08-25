@@ -5,7 +5,7 @@ bisnis yang diselesaikan, keputusan besar yang sudah diambil, alur pipeline,
 dan status setiap bagian. Untuk detail masing-masing bagian, dokumen ini
 merujuk ke dokumen lain, tidak mengulang isinya.
 
-Terakhir diperbarui: 2026-08-24.
+Terakhir diperbarui: 2026-08-26.
 
 ---
 
@@ -109,6 +109,7 @@ Detail lengkap: `metodologi-preprocessing.md` (metodologi) dan
 | `overview.md` | dokumen ini |
 | `batasan-penelitian.md` | B-1…B-11, batasan yang tidak bisa dihilangkan dengan menulis kode lebih baik. Wajib dibaca sebelum menafsirkan hasil apa pun |
 | `pipeline-overview.md` | status dan struktur pipeline |
+| `temuan-eda.md` | temuan EDA atas `dataset.csv`: konteks bisnis, 13 kesimpulan, open questions, checklist pra-modeling. Narasi ini dulu ada di `notebook/eda.ipynb` |
 
 **Metodologi**
 
@@ -120,11 +121,20 @@ Detail lengkap: `metodologi-preprocessing.md` (metodologi) dan
 
 **Hasil (angka, bukan rencana)**
 
-`hasil-modeling-rf.md`, `hasil-modeling-xgb.md`, `hasil-modeling-lstm.md`
+`hasil-modeling-rf.md` — satu-satunya dokumen hasil yang berlaku (multi-kuantil,
+2026-08-25).
 
-> ⚠ Ketiganya memuat angka dari run kuantil-tunggal (18–20 Agustus) di atas
-> data pra-reklasifikasi kategori. **Sudah usang, menunggu ditulis ulang**
-> setelah Fase 3.
+> ⚠ Dokumen hasil XGBoost dan LSTM **sudah diarsipkan** ke `bak/` pada
+> 2026-08-26: angkanya dari run kuantil-tunggal (19–20 Agustus) di atas data
+> pra-reklasifikasi kategori, dan tidak sebanding dengan K1. Sampai Fase 3
+> kedua model itu dijalankan, tidak ada dokumen hasil yang berlaku untuk
+> keduanya — angka lama hanya boleh dibaca sebagai catatan sejarah di
+> `bak/hasil-modeling-xgb.single-quantile.bak.md` dan
+> `bak/hasil-modeling-lstm.single-quantile.bak.md`.
+>
+> Isi `docs/bak/`: dokumen hasil yang sudah digantikan atau ditinggalkan.
+> Arsip artefaknya ada di `dataset/model_ready/bak/` (9 berkas) dan
+> `models/bak/` (3 bundle).
 
 **Spec desain** (`superpowers/specs/`, urut kronologis)
 
@@ -148,12 +158,12 @@ memicu error, bukan diabaikan diam-diam).
 |---|---|---|
 | `event_driven_items.csv` | penanda SKU acara/aqiqah | 70 SKU, 3 dikonfirmasi pemilik data |
 | `outlet_mapping.csv` | kawasan + jadwal kirim per cabang | lengkap |
-| `outlet_closures.csv` | interval tutup per cabang | 3 baris |
-| `outlet_name_overrides.csv` | resolusi nama/kota cabang | 10 baris |
+| `outlet_closures.csv` | interval tutup per cabang | 7 baris |
+| `outlet_name_overrides.csv` | resolusi nama/kota cabang | 19 baris |
 | `shelf_life_rank_by_category.csv` | peringkat masa simpan per kategori (proksi B-10) | terisi, estimasi umum, menunggu tinjauan tim SCM |
 | `item_cost_margin.csv` | biaya/margin per SKU + `shelf_life_rank_override` | 70 baris, kolom biaya **masih kosong** (B-10) |
 
-## 8. Status per 2026-08-24
+## 8. Status per 2026-08-26
 
 | Bagian | Status |
 |---|---|
@@ -161,17 +171,20 @@ memicu error, bukan diabaikan diam-diam).
 | Reklasifikasi kategori WIP-2 → FG | ✅ selesai, 10 SKU, lewat `EXPLICIT_CATEGORY_OVERRIDES` |
 | Gerbang konsistensi kategori | ✅ `utils/eda/verify_category_consistency.py` |
 | Fase 1 — dokumentasi migrasi multi-kuantil | ✅ selesai |
-| Fase 2 — implementasi kode multi-kuantil | ✅ selesai 2026-08-24 (kontrak `fit_predict` multi-kuantil, notebook diubah tetapi belum dijalankan) |
+| Fase 2 — implementasi kode multi-kuantil | ✅ selesai 2026-08-24 (kontrak `fit_predict` multi-kuantil; status jalannya ada di baris Fase 3 di bawah) |
 | Prasyarat metodologis Fase 3 (target latih/nilai, kerapatan grid) | ✅ ditutup 2026-08-24 |
-| Fase 3 — menjalankan ulang ketiga model | ⬜ menunggu izin, ~157–172 jam CPU |
-| Penulisan ulang `hasil-modeling-*.md` | ⬜ setelah Fase 3 |
+| Fase 3 — Random Forest | ✅ selesai 2026-08-25, K1 = 2,8621 (5 fold) / 2,8508 (fold bersih 1/2/4) |
+| Fase 3 — XGBoost | 🔶 baru probe Tahap 0 (kandidat 0, CPU, 19.959 detik); pencarian penuh belum jalan |
+| Fase 3 — LSTM | ⬜ belum jalan |
+| Penulisan ulang `hasil-modeling-*.md` | 🔶 `-rf.md` selesai 2026-08-25; `-xgb.md` dan `-lstm.md` setelah Fase 3 masing-masing |
 | Pembukaan test set Desember 2025 | ⬜ belum pernah dibuka, protokol §19 |
 | Alokasi kuantil tersegmentasi | ⬜ setelah pemenang ditetapkan |
 | Data biaya/margin per SKU | ⬜ terbuka (B-10), 0% volume terisi |
 
-**Model di `models/*.joblib` sudah usang** — dilatih di atas data
-pra-reklasifikasi dengan kriteria kuantil-tunggal. Jangan dipakai untuk
-inferensi sampai dilatih ulang di Fase 3.
+**`models/random_forest_q90.joblib` sudah versi Fase 3** (2026-08-25, 19 titik
+kuantil, 1.349.011 baris latih). Berkas `models/*.single-quantile.bak.joblib`
+adalah arsip pra-reklasifikasi berkriteria kuantil-tunggal — jangan dipakai
+untuk inferensi. XGBoost dan LSTM belum punya model Fase 3.
 
 ## 9. Prinsip kerja yang dipegang di repo ini
 
@@ -195,7 +208,16 @@ Beberapa pola berulang yang menjelaskan kenapa kode ditulis seperti sekarang:
    akan mengarahkan model terlatih ke kategori yang keliru
    (`metodologi-preprocessing.md` §4.12(e)).
 6. **TDD.** Tes ditulis dan dipastikan gagal karena alasan yang benar
-   sebelum implementasi. 752 tes per 2026-08-24.
+   sebelum implementasi. 842 tes per 2026-08-26.
+7. **Notebook berdiri sendiri, `utils/` tempat kode diuji.** Sejak 2026-08-26
+   tiap notebook memuat sendiri fungsi yang dijalankannya, tanpa
+   `from utils... import`; `utils/` + `test/` adalah tempat kode ditulis dan
+   diuji, lalu disalin verbatim ke notebook. Tiap notebook ditutup sel opsional
+   yang membandingkan salinannya dengan sumber di `utils/` dan menyebut fungsi
+   yang menyimpang. Sel markdown dibatasi pada judul bagian; penjelasan hidup di
+   docstring dan komentar. Notebook modeling dikecualikan sebagian — hanya kode
+   modelnya yang diinline, mesin bersama tetap diimpor. Aturan lengkapnya di
+   bagian "Notebook convention" `CLAUDE.md`.
 
 ## 10. Batasan yang paling memengaruhi pembacaan hasil
 
