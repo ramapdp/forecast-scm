@@ -1,18 +1,25 @@
-"""Random Forest at the 0.9 service level.
+"""Model Random Forest kuantil untuk peramalan permintaan.
 
-sklearn's own forest cannot do this. It minimizes squared or absolute error,
-both of which target the middle of the distribution, and a forecast that is
-right in the middle stocks out roughly half the time by construction. A
-quantile regression forest keeps the training targets that reach each leaf and
-reads the 0.9 quantile off that empirical distribution instead.
+**Apa yang disediakan modul ini.** Satu model kandidat lengkap dengan empat
+tahap pemakaiannya: `make_fit_predict()` (fungsi latih-dan-prediksi yang
+disuntikkan ke mesin evaluasi), `sample_search_space()` + `run_search()`
+(pencarian hyperparameter), `fit_final()` (pelatihan model akhir), dan
+`predict_bundle()` (inferensi dari model tersimpan).
 
-That storage is what makes this model's cost unusual. quantile-forest holds it
-in a dense int64 array of shape
-(n_estimators, max_node_count, n_outputs, max_samples_leaf), so the memory bill
-is fixed by the hyperparameters before a single tree is grown — see
-estimate_leaf_memory_bytes(). Deep trees with tiny leaves are unaffordable
-here, which happens to agree with the statistics: a leaf holding one sample
-cannot estimate a 0.9 quantile at all.
+**Mengapa bukan Random Forest biasa.** Random Forest sklearn meminimalkan
+galat kuadrat atau absolut; keduanya menaksir *pusat* distribusi, sehingga
+ramalannya kehabisan stok kira-kira separuh waktu. *Quantile regression
+forest* menyimpan seluruh nilai target yang jatuh di tiap leaf, lalu membaca
+kuantil yang diminta dari distribusi empiris tersebut — sehingga satu model
+yang sama dapat menjawab 19 titik kuantil sekaligus.
+
+**Konsekuensi biayanya.** Penyimpanan nilai per-leaf itu berbentuk array padat
+berukuran `(n_estimators, max_node_count, n_outputs, max_samples_leaf)`,
+sehingga kebutuhan memorinya sudah tertentu dari hyperparameter *sebelum* satu
+pohon pun dibangun — lihat `estimate_leaf_memory_bytes()`. Pohon dalam dengan
+leaf sangat kecil karenanya tidak terjangkau di sini, dan pembatasan itu
+kebetulan sejalan dengan alasan statistiknya: leaf berisi satu sampel tidak
+dapat menaksir kuantil sama sekali.
 """
 
 from pathlib import Path
@@ -24,29 +31,33 @@ from quantile_forest import RandomForestQuantileRegressor
 
 from . import evaluation, model_common, modeling_prep, purging, walk_forward
 
-# The service level the business ships at (B-9), read by the production
-# allocation layer. Deliberately *not* the same thing as QUANTILES below: one
-# is a commitment to outlets, the other is the grid the comparison scores on,
-# and naming them alike is how the two quietly become one number again.
+# Service level yang dijanjikan ke bisnis (B-9), dibaca lapisan alokasi
+# produksi. Sengaja *bukan* besaran yang sama dengan QUANTILES di bawah: yang
+# satu komitmen ke outlet, yang lain grid tempat perbandingan model dinilai.
+# Menyamakan namanya adalah cara keduanya diam-diam menjadi satu angka lagi.
 QUANTILE = 0.9
 
-# The evaluation grid, taken from evaluation.py rather than restated here so a
-# Tahap A -> Tahap B switch cannot leave this module scoring the old grid.
+# Grid evaluasi, diambil dari evaluation.py alih-alih ditulis ulang di sini,
+# supaya peralihan Tahap A -> Tahap B tidak menyisakan modul ini menilai di
+# grid yang lama.
 QUANTILES = evaluation.QUANTILE_SET_A
 
-# Leaf storage above this is refused before the fit starts. Discovering the
-# limit through the OOM killer twenty minutes into a fit is the alternative.
+# Kebutuhan penyimpanan leaf di atas ambang ini ditolak sebelum fit dimulai.
+# Alternatifnya adalah menemukan batas itu lewat OOM killer, dua puluh menit
+# setelah fit berjalan.
 MEMORY_BUDGET_BYTES = 3 * 1024 ** 3
 
-# Re-exported so this module's callers — its test suite and modeling_rf.ipynb —
-# keep working unchanged after the extraction. The definitions live in
-# model_common.py because XGBoost and the LSTM need them too.
+# Diekspor ulang supaya pemanggil modul ini — test suite dan modeling_rf.ipynb
+# — tetap jalan tanpa diubah setelah ekstraksi. Definisinya tinggal di
+# model_common.py karena XGBoost dan LSTM juga memakainya.
 IDX_COLS = model_common.IDX_COLS
 assert_no_nan = model_common.assert_no_nan
 expand_one_hot = model_common.expand_one_hot
 select_best = model_common.select_best
 load_bundle = model_common.load_bundle
 
+# Titik awal yang dipakai benchmark, dan dasar bagi setiap kandidat pencarian:
+# kunci yang tidak ditarik acak diisi dari sini.
 DEFAULT_PARAMS = {
     "n_estimators": 200,
     "max_depth": 16,
@@ -59,12 +70,15 @@ DEFAULT_PARAMS = {
     "random_state": 42,
 }
 
-# n_estimators is absent on purpose: forest quality is monotone in tree count,
-# so searching it spends budget on a question with a known answer. It is pinned
-# during the search and raised for the final fit.
+# Ruang pencarian: 1.152 kombinasi (3 x 4 x 3 x 4 x 2 x 2 x 2).
 #
-# max_depth=None and min_samples_leaf below 20 are absent for the reason in the
-# module docstring.
+# `n_estimators` sengaja tidak ada di sini. Mutu forest monoton terhadap jumlah
+# pohon, jadi mencarinya membelanjakan anggaran untuk pertanyaan yang jawabannya
+# sudah diketahui; ia dipatok selama pencarian dan dinaikkan saat fit final.
+#
+# `max_depth=None` dan `min_samples_leaf` di bawah 20 juga tidak ada, dengan
+# alasan yang dijelaskan di docstring modul: keduanya melanggar budget memori
+# sekaligus merusak taksiran kuantil.
 SEARCH_SPACE = {
     "max_depth": [12, 16, 20],
     "min_samples_leaf": [20, 50, 100, 200],
@@ -75,20 +89,25 @@ SEARCH_SPACE = {
     "one_hot": [False, True],
 }
 
+# Kunci yang diteruskan ke estimator; sisanya (`log_target`, `one_hot`)
+# ditangani modul ini sendiri, bukan oleh quantile-forest.
 ESTIMATOR_KEYS = ("n_estimators", "max_depth", "min_samples_leaf",
                   "max_samples_leaf", "max_features", "max_samples",
                   "random_state")
 
 
 def estimate_leaf_memory_bytes(params: dict, n_train: int) -> int:
-    """Upper bound on quantile-forest's leaf-value array, in bytes.
+    """Menaksir batas atas memori penyimpanan leaf, dalam byte.
 
-    bytes = n_estimators x node_count x max_samples_leaf x 8
+    Dipakai menyaring kandidat sebelum data dimuat, sehingga konfigurasi yang
+    tidak terjangkau ditolak tanpa membangun pohon.
 
-    node_count is bounded twice: by depth, since a tree of depth d holds at
-    most 2^(d+1) nodes, and by leaf size, since n rows split into leaves of at
-    least L rows give at most 2n/L nodes including internal ones. The tighter
-    bound wins.
+        byte = n_estimators x jumlah_node x max_samples_leaf x 8
+
+    Jumlah node dibatasi dua kali: oleh kedalaman, karena pohon berkedalaman d
+    memuat paling banyak 2^(d+1) node; dan oleh ukuran leaf, karena n baris
+    yang terbagi ke leaf berisi minimal L baris menghasilkan paling banyak
+    2n/L node termasuk node internal. Batas yang lebih ketat yang dipakai.
     """
     fraction = params.get("max_samples") or 1.0
     n_bootstrap = n_train * fraction
@@ -99,6 +118,7 @@ def estimate_leaf_memory_bytes(params: dict, n_train: int) -> int:
 
 
 def build_estimator(params: dict) -> RandomForestQuantileRegressor:
+    """Menyusun estimator quantile-forest dari satu set hyperparameter."""
     kwargs = {key: params[key] for key in ESTIMATOR_KEYS if key in params}
     return RandomForestQuantileRegressor(n_jobs=-1, **kwargs)
 
@@ -109,17 +129,23 @@ def make_fit_predict(
     quantiles: tuple = QUANTILES,
     memory_budget: int = MEMORY_BUDGET_BYTES,
 ) -> Callable[[pd.DataFrame, pd.DataFrame], np.ndarray]:
-    """The callable walk_forward.run_fold() injects.
+    """Membentuk fungsi latih-dan-prediksi yang disuntikkan ke mesin evaluasi.
 
-    Feature selection, one-hot expansion and the target transform all live in
-    here rather than in the runner, because they are model choices — the very
-    things the three-way comparison is supposed to expose.
+    Fungsi yang dikembalikan menerima `(train, valid)` dan mengembalikan matriks
+    prediksi berukuran `(len(valid), len(quantiles))`. Di dalamnya, berurutan:
+    cek NaN, penyaringan budget memori, pemilihan fitur, ekspansi one-hot bila
+    diminta, transformasi target, fit, prediksi seluruh grid kuantil, lalu
+    pembalikan transformasi dan pemotongan nilai negatif.
 
-    Returns `(len(valid), len(quantiles))`. The whole grid comes out of a
-    single fit: the leaves already hold the training distribution, so every
-    extra point costs one more read of a distribution that has been stored
-    anyway — which is why this model needed no re-search when the criterion
-    became multi-quantile, and the other two did.
+    Pemilihan fitur, ekspansi one-hot, dan transformasi target sengaja tinggal
+    di sini alih-alih di `walk_forward`, karena ketiganya adalah *pilihan
+    model* — persis hal yang seharusnya diperbandingkan antar ketiga kandidat.
+
+    Seluruh grid kuantil keluar dari satu kali fit: leaf sudah memuat distribusi
+    training, sehingga setiap titik tambahan hanya berongkos satu pembacaan lagi
+    atas distribusi yang memang sudah tersimpan. Itulah sebabnya model ini tidak
+    perlu dicari ulang saat kriteria berpindah ke multi-kuantil, sementara dua
+    model lainnya perlu.
     """
     params = {**DEFAULT_PARAMS, **(params or {})}
     feature_cols = feature_cols or modeling_prep.FEATURE_COLS
@@ -144,25 +170,29 @@ def make_fit_predict(
 
         model = build_estimator(params)
         model.fit(train_X.to_numpy(dtype=np.float32), y_train)
-        # One call rather than a loop: passing the whole grid traverses the
-        # leaves once, where nineteen calls would traverse them nineteen times
-        # for identical answers.
+        # Satu panggilan, bukan perulangan: mengoper seluruh grid menelusuri
+        # leaf sekali, sementara sembilan belas panggilan akan menelusurinya
+        # sembilan belas kali untuk jawaban yang sama persis.
         prediction = model.predict(valid_X.to_numpy(dtype=np.float32),
                                    quantiles=list(quantiles))
         prediction = np.asarray(prediction, dtype=float).reshape(len(valid_X),
                                                                  len(quantiles))
         if params["log_target"]:
             prediction = modeling_prep.inverse_log_target(prediction)
-        # A negative shipment quantity is not a thing.
+        # Kuantitas kirim negatif tidak punya makna fisik.
         return np.clip(prediction, 0.0, None)
 
     return fit_predict
 
 
+# Fold tempat kandidat dinilai. Hanya dua dari lima, karena pencarian bertugas
+# memeringkat kandidat, bukan melaporkan hasil; laporannya datang dari
+# walk-forward lima fold dengan fold 1/2/4 sebagai potongan yang bersih dari
+# pengaruh seleksi.
 SEARCH_FOLDS = (3, 5)
 
-# Enough training rows to size the memory screen realistically before the data
-# is loaded — fold 5 trains on roughly this many rows.
+# Jumlah baris training yang cukup representatif untuk menakar penyaringan
+# memori sebelum data dimuat — fold 5 melatih di kisaran angka ini.
 TYPICAL_N_TRAIN = 1_280_000
 
 
@@ -173,11 +203,12 @@ def sample_search_space(
     memory_budget: int = MEMORY_BUDGET_BYTES,
     space: Optional[dict] = None,
 ) -> list:
-    """Distinct, within-budget parameter sets drawn at random.
+    """Menarik acak sejumlah kandidat hyperparameter yang unik dan terjangkau.
 
-    The budget screen is what makes this wrapper worth keeping: quantile-forest
-    sizes its leaf-value array from the hyperparameters before a single tree is
-    grown, so an unaffordable candidate can be refused without loading data.
+    Penyaringan budget-lah yang membuat pembungkus ini layak ada: quantile-forest
+    menentukan ukuran array nilai per-leaf dari hyperparameter sebelum satu pohon
+    pun dibangun, sehingga kandidat yang tidak terjangkau dapat ditolak tanpa
+    memuat data sama sekali.
     """
     def screen(candidate: dict) -> bool:
         return estimate_leaf_memory_bytes(candidate, n_train) <= memory_budget
@@ -205,7 +236,13 @@ def run_search(
     only: Optional[Iterable[int]] = None,
     provenance: Optional[dict] = None,
 ) -> pd.DataFrame:
-    """Score every Random Forest candidate on the search folds."""
+    """Menilai setiap kandidat di fold pencarian, satu baris hasil per kandidat.
+
+    Protokolnya milik `model_common.run_search()` — termasuk checkpoint yang
+    ditulis tiap kandidat selesai dan guard yang menolak melanjutkan dari
+    checkpoint yang lahir di ruang pencarian atau grid kuantil berbeda —
+    sehingga ketiga model dinilai lewat mesin yang sama persis.
+    """
     return model_common.run_search(
         df, candidates, make_fit_predict=make_fit_predict,
         search_space=SEARCH_SPACE, folds=folds, quantiles=quantiles,
@@ -221,8 +258,9 @@ BEST_PARAMS_FILE = str(BASE_DIR / "dataset/model_ready/rf_best_params.json")
 SEARCH_FILE = str(BASE_DIR / "dataset/model_ready/rf_search_results.csv")
 RESULTS_FILE = str(BASE_DIR / "dataset/model_ready/rf_walk_forward_results.csv")
 
-# Raised from the searched 200. Forest quality is monotone in tree count, so
-# the final model buys the variance reduction the search could not afford.
+# Dinaikkan dari 200 yang dipakai saat pencarian. Mutu forest monoton terhadap
+# jumlah pohon, jadi model akhir membeli pengurangan varians yang tidak
+# terjangkau saat 18 kandidat harus dinilai berurutan.
 FINAL_N_ESTIMATORS = 400
 
 
@@ -235,20 +273,29 @@ def fit_final(
     date_col: str = modeling_prep.DATE_COL,
     test_start: pd.Timestamp = modeling_prep.TEST_START,
 ) -> dict:
-    """Fit on every eligible row before December, purged at that boundary.
+    """Melatih model akhir pada seluruh baris layak sebelum Desember.
 
-    Eligibility comes from `walk_forward.eligible_rows`, not from a date filter
-    written here. The rows this model is finally trained on have to be the rows
-    it was scored on, and the scoring cuts are not just the date: the first 28
-    days of each segment have no usable lag window, and the last few days have
-    no target at all, because the lead-time sum runs past the end of the data.
-    Selecting rows independently here silently trained the shipped model on a
-    different population than the reported metrics describe — and, since the
-    target cut was missing, on labels that were NaN.
+    Mengembalikan *bundle*: model terlatih beserta hyperparameter, daftar dan
+    urutan kolom training, grid kuantil, jumlah baris, dan provenance target —
+    segala yang dibutuhkan `predict_bundle()` untuk mengulang perlakuan yang
+    sama saat inferensi.
 
-    The bundle records the exact training column order alongside the model. A
-    forest reloaded next week against columns in a different order does not
-    fail — it predicts confidently from the wrong features, which is worse.
+    Kelayakan baris datang dari `walk_forward.eligible_rows()`, bukan dari
+    penyaringan tanggal yang ditulis di sini. Baris yang melatih model akhir
+    harus sama dengan baris yang menilainya, dan pemotongan saat penilaian
+    bukan hanya soal tanggal: 28 hari pertama tiap segmen belum punya jendela
+    lag yang penuh, dan beberapa hari terakhir tidak punya target sama sekali
+    karena penjumlahan lead-time melewati ujung data. Menyeleksi baris secara
+    terpisah di sini pernah membuat model yang dikirim dilatih pada populasi
+    yang berbeda dari yang dilaporkan metriknya — dan, karena pemotongan target
+    ikut hilang, pada label yang bernilai NaN.
+
+    `purging.lookahead_safe_mask()` memotong di batas Desember supaya tidak ada
+    baris training yang targetnya menjangkau ke dalam test set.
+
+    Bundle mencatat urutan kolom training bersama modelnya. Forest yang dimuat
+    ulang pekan depan dengan urutan kolom berbeda tidak gagal — ia meramal
+    dengan percaya diri dari fitur yang salah, dan itu lebih buruk.
     """
     params = {**DEFAULT_PARAMS, **params, "n_estimators": n_estimators}
     feature_cols = feature_cols or modeling_prep.FEATURE_COLS
@@ -277,11 +324,11 @@ def fit_final(
 
 
 def predict_bundle(bundle: dict, frame: pd.DataFrame) -> np.ndarray:
-    """Predict with a fitted bundle, forcing the recorded column order.
+    """Meramal dengan bundle terlatih, memaksa urutan kolom yang tercatat.
 
-    The grid comes from the bundle, not from this module's constant. A forest
-    reloaded after the Tahap A -> Tahap B switch has to answer at the points it
-    was reported on, not at whatever grid is current.
+    Grid kuantilnya dibaca dari bundle, bukan dari konstanta modul ini. Forest
+    yang dimuat ulang setelah peralihan Tahap A -> Tahap B harus menjawab di
+    titik-titik tempat ia dilaporkan, bukan di grid apa pun yang sedang berlaku.
     """
     params = bundle["params"]
     quantiles = tuple(bundle["quantiles"])
@@ -300,8 +347,10 @@ def predict_bundle(bundle: dict, frame: pd.DataFrame) -> np.ndarray:
 
 
 def save_bundle(bundle: dict, path: str = MODEL_FILE) -> None:
+    """Menyimpan bundle model akhir ke berkas joblib."""
     model_common.save_bundle(bundle, path)
 
 
 def save_best_params(params: dict, path: str = BEST_PARAMS_FILE) -> None:
+    """Menyimpan hyperparameter pemenang pencarian ke berkas JSON."""
     model_common.save_best_params(params, path)

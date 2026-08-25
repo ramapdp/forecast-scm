@@ -13,7 +13,11 @@ ditutup tidak diulang di sini — sudah tercatat di
 `docs/metodologi-preprocessing.md`, `docs/dokumentasi-preprocessing-id.md`, dan
 riwayat git berkas ini.
 
-**Terakhir diverifikasi: 2026-08-24** — 816 tes lolos
+**Terakhir diverifikasi: 2026-08-25** — Random Forest butir 0c selesai
+dijalankan penuh (benchmark → pencarian 18 kandidat → walk-forward 5 fold →
+fit final, ~5,6 jam wall clock) dan `docs/hasil-modeling-rf.md` ditulis ulang;
+run lama diarsipkan sebagai `docs/hasil-modeling-rf.single-quantile.bak.md`.
+Verifikasi 2026-08-24 sebelumnya — 816 tes lolos
 (`.venv/bin/python3 -m unittest discover -p "test_*.py"` → `Ran 816 tests … OK`),
 `QUANTILE_SET_A` (19 titik) sudah terpasang di `utils/modelling/evaluation.py`,
 `walk_forward.py`, `model_common.py`, dan ketiga adapter model.
@@ -30,8 +34,8 @@ hasilnya usang / perlu dibaca dengan syarat · 🔒 diblokir oleh pihak lain
 |---|---|---|
 | **A** | Data prep & preprocessing (CSV mentah → `train/test.parquet`) | ✅ selesai, artefak terverifikasi |
 | **B** | Prapemrosesan pemodelan + mesin evaluasi bersama (`modeling_prep`, `walk_forward`, `model_common`, `evaluation`) | ✅ selesai |
-| **C** | Tiga model kandidat: Random Forest, XGBoost, LSTM | ✅ terimplementasi · ⚠️ seluruh angka hasilnya usang |
-| **D** | Migrasi evaluasi multi-kuantil (butir 0a–0d) | 🔄 0a ✅, 0b ✅, 0c ⬜ 🔒, 0d ⬜ |
+| **C** | Tiga model kandidat: Random Forest, XGBoost, LSTM | ✅ terimplementasi · ✅ RF punya angka berlaku (2026-08-25) · ⚠️ angka XGB & LSTM masih usang |
+| **D** | Migrasi evaluasi multi-kuantil (butir 0a–0d) | 🔄 0a ✅, 0b ✅, 0c 🔄 (RF ✅, XGB ⬜, LSTM ⬜), 0d 🔄 (RF ✅) |
 | **E** | Pembekuan pemenang + pembukaan test set Desember 2025 | ⬜ menunggu D |
 | **F** | Pekerjaan lanjutan: alokasi kuantil tersegmentasi, dekomposisi harian, SHAP | ⬜ menunggu E |
 | **G** | Hygiene rutin + item yang masih menunggu pemilik data | 🔄 berjalan terus |
@@ -239,8 +243,9 @@ di-sign-off". Semuanya sudah dikonfirmasi dan di-wire; rinciannya ada di
 
 ## Fase C — Tiga model kandidat ⚠️
 
-Ketiganya **terimplementasi dan pernah dijalankan penuh**, tetapi seluruh angka
-hasilnya sudah usang: dijalankan 18–20 Agustus 2026 di atas data
+Ketiganya **terimplementasi dan pernah dijalankan penuh**. Random Forest sudah
+dijalankan ulang 2026-08-25 di atas data dan kriteria yang berlaku; **angka
+XGBoost dan LSTM masih usang** — dijalankan 19–20 Agustus 2026 di atas data
 pra-reklasifikasi kategori, dengan kriteria kuantil-tunggal (pinball@0,9).
 
 - [x] `utils/modelling/model_random_forest.py` — quantile forest (`quantile-forest`).
@@ -265,8 +270,18 @@ pra-reklasifikasi kategori, dengan kriteria kuantil-tunggal (pinball@0,9).
   `load_bundle()` yang keliru gagal keras alih-alih mengembalikan angka yang
   meyakinkan. Berkasnya sendiri disimpan, sejalan dengan keputusan yang sama
   untuk artefak pencarian di butir 0c.
-- [ ] ⚠️ **`hasil-modeling-{rf,xgb,lstm}.md` usang** — ditulis ulang dari nol di
-  butir 0d, bukan diedit sebagian.
+  **`models/random_forest_q90.joblib` sudah berlaku kembali (2026-08-25):**
+  dilatih ulang di atas `model_input.parquet` pasca-reklasifikasi, 1.349.011
+  baris, 56 kolom, 19 titik kuantil, 826 MB. Yang masih usang tinggal XGB dan
+  LSTM. Catatan nama: berkasnya masih bernama `..._q90` meski isinya 19 titik —
+  sengaja tidak diganti di tengah migrasi supaya jalur `MODEL_FILE` tidak
+  bergeser; penggantian namanya masuk hygiene Fase G, bukan blocker.
+- [ ] ⚠️ **`hasil-modeling-{xgb,lstm}.md` usang** — ditulis ulang dari nol di
+  butir 0d, bukan diedit sebagian. **`hasil-modeling-rf.md` sudah selesai
+  (2026-08-25)**; versi lamanya diarsipkan sebagai
+  `docs/hasil-modeling-rf.single-quantile.bak.md` dengan spanduk arsip di
+  kepalanya, bukan dihapus — alasan yang sama dengan artefak `.bak` di
+  `dataset/model_ready/`, dan §4.3 dokumen baru memang memakainya.
 
 ---
 
@@ -314,9 +329,12 @@ checklist eksekusi: `2026-08-22-model-comparison-refactor-migration.md`.
 ### 0c — Menjalankan ulang ketiga notebook ⬜ 🔒 menunggu izin
 
 Anggaran berlaku: **RF 18, XGBoost 30, LSTM 30 kandidat** (ruang 144 + 3 seed
-pada pemenang). Perkiraan ongkos: **~157–172 jam ≈ 6,5–7,2 hari komputasi
-nonstop**, rinciannya per model per tahap di §"Perkiraan ongkos Fase 3"
-`2026-08-22-model-comparison-refactor-migration.md`.
+pada pemenang). Perkiraan ongkos: **~213–228 jam ≈ 8,9–9,5 hari komputasi
+nonstop berurutan** sesudah koreksi 2026-08-25 (angka lama ~157–172 jam
+meleset pada bagian XGBoost-nya). Rincian lama per model per tahap di
+§"Perkiraan ongkos Fase 3" `2026-08-22-model-comparison-refactor-migration.md`;
+angka XGBoost di sana **sudah tidak berlaku** — lihat §3bis dan §0
+`2026-08-24-distributed-gpu-training-design.md`.
 
 **Mekanisme eksekusi terdistribusi sudah terpasang (2026-08-24).** Pencarian
 dapat dipecah antar mesin lewat `model_common.run_search(..., only=[...],
@@ -397,19 +415,99 @@ Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
   `max_depth=10` yang OOM di GPU berongkos belasan jam di CPU, bukan beberapa
   jam. Tujuh kandidat `one_hot` (id 1, 3, 7, 13, 19, 22, 24), tiga di antaranya
   berkedalaman 10.
-- [ ] Random Forest: benchmark → pencarian 18 kandidat (`SEARCH_FOLDS = (3, 5)`)
-  → walk-forward 5 fold → fit final. (~4,8 jam)
-- [ ] XGBoost: benchmark → pencarian 30 kandidat → walk-forward → fit final.
-  (~70 jam; pengganda 19 kuantil terukur **×15,2** karena `multi_strategy`
-  bawaannya membangun 19 pohon per ronde boosting — T-14.)
+- [x] **Keputusan 2026-08-25 (pemilik proyek): seluruh Fase 3 dijalankan di CPU
+  Mac lokal — XGBoost dan LSTM tidak jadi dikirim ke GPU sewaan.** RF memang
+  sudah lokal di rencana mana pun. Rencana GPU terdistribusi karenanya
+  **superseded pada bagian alokasi mesinnya**; hasil probe Tahap 0, aturan dua
+  lapis, dan seam kode (`only=`, `provenance=`, `merge_shards()`,
+  `run_config`) tetap berlaku dan tetap tidak-aktif secara default. Alasan
+  lengkap dan tabel ongkosnya di §0 `2026-08-24-distributed-gpu-training-design.md`.
+
+  Yang dibeli: tidak ada penyerahan device sama sekali (bandingkan rencana GPU
+  yang memperingkat kandidat di GPU lalu me-refit pemenangnya di CPU), K3 dalam
+  bacaan paling ketat karena ketiga model diukur di CPU yang sama dan langsung
+  sebanding dengan run 2026-08-18/19/20, dan komentar `SATU MODEL = SATU DEVICE`
+  di sel 1 `modeling_xgb.ipynb` tidak perlu diperlonggar. Untuk LSTM tidak ada
+  kecepatan lokal yang ditinggalkan: **MPS sudah diukur kalah 2× dari CPU** di
+  mesin ini (0,392 lawan 0,193 s/batch, §3 `docs/hasil-modeling-lstm.md`).
+
+  Yang dibayar — perkiraan sisa Fase 3, **berurutan, tidak boleh paralel**
+  (dua model yang berebut core menghasilkan wall time yang mengukur kontensi,
+  bukan model — lubang K3 yang sama, hanya di dalam satu mesin):
+
+  | Model | Perkiraan | Dasar |
+  |---|---:|---|
+  | Random Forest | ~4,8 jam | estimasi migrasi, belum dikoreksi |
+  | XGBoost (29 kandidat sisa + WF + final) | **~125 jam** | candidate 0 terukur 5,54 jam |
+  | LSTM | ~83–98 jam | estimasi migrasi, **belum diverifikasi** |
+  | **Total** | **~213–228 jam ≈ 8,9–9,5 hari** | |
+
+- [x] **Candidate 0 XGBoost tidak perlu diulang.** Baris CPU-nya dari probe
+  Tahap 0 diganti nama menjadi `dataset/model_ready/xgb_search_results.csv`
+  (2026-08-25) dan diverifikasi lolos `_assert_checkpoint_matches()` terhadap
+  ruang pencarian saat ini, sehingga `resume=True` melewatinya — 5,54 jam
+  hemat. Baris **GPU** candidate 0 dari Kaggle sengaja **tidak** ikut:
+  mencampur dua device dalam satu pencarian persis yang dihindari keputusan di
+  atas. Ia tinggal sebagai bukti probe (3d).
+
+- [ ] **Verifikasi estimasi LSTM sebelum mengomit 83–98 jam.** Angka XGBoost
+  meleset ~1,87× dari estimasi, dan estimasi LSTM belum diuji sama sekali. Ia
+  **tidak** boleh dikoreksi dengan mengalikan 1,87× — dasarnya lebih kuat
+  (rerata tujuh kandidat yang mencatat `elapsed_seconds`, pengganda 19 kuantil
+  ×1,00). Cara termurah: **baca `elapsed_seconds` kandidat LSTM pertama dan
+  bandingkan dengan 3.412 s** sebelum melanjutkan ke 29 sisanya.
+- [x] **Random Forest — SELESAI 2026-08-25.** Benchmark → pencarian 18 kandidat
+  (`SEARCH_FOLDS = (3, 5)`) → walk-forward 5 fold → fit final, keempatnya
+  tuntas, 0 kandidat gagal. **Wall clock ~5,6 jam** (benchmark 9,7 mnt →
+  pencarian 3,85 jam → WF ~45 mnt → fit final ~48 mnt) lawan estimasi ~4,8 jam:
+  meleset **+17%**, jauh lebih jinak daripada XGBoost yang meleset ~1,87×.
+  `device=cpu`, commit `5325b55`.
+
+  **K1 = 2,8508** di potongan fold bersih 1/2/4 (kriteria resmi), lawan 4,8603
+  milik `naive_roll_mean_7` — 41% lebih baik. Gabungan 5 fold 2,8621. **G0
+  lolos**: RF menang pinball@0,9 di kelima fold, margin 40,5%–48,7%. Pemenang
+  pencarian kandidat 1 (`max_depth=20`, `min_samples_leaf=20`,
+  `max_features=1.0`, `one_hot=False`, `log_target=False`). Angka lengkapnya di
+  `docs/hasil-modeling-rf.md`.
+
+  Dua hal yang lahir dari run ini dan berlaku lintas model, jadi dicatat di sini
+  dan bukan hanya di dokumen hasil RF:
+
+  1. **Peringkat kandidat nyaris tidak berubah setelah pindah ke K1** —
+     Spearman ρ = 0,975, Kendall τ = 0,895 terhadap peringkat pinball@0,9 di
+     `rf_search_results.single-quantile.bak.csv` (ke-18 kandidat identik id per
+     id, diverifikasi kolom demi kolom). Pemenangnya **tetap berubah** (17 → 1)
+     karena di kriteria lama keduanya terpisah 0,0004; di K1 jaraknya 0,0177.
+     Inilah imbalan dari keputusan mengganti nama artefak lama alih-alih
+     menghapusnya. **Jangan digeneralkan ke XGB/LSTM** — keduanya punya
+     mekanisme yang berinteraksi dengan jumlah titik kuantil (`multi_strategy`,
+     kepala keluaran multi-titik), RF tidak.
+  2. **Ongkos 19 titik kuantil di RF hanya ×1,47** (benchmark konfigurasi sama:
+     6,6 → 9,7 menit), karena seluruh titik dibaca dari daun yang sama.
+     Bandingkan XGBoost ×15,2. Ini menegaskan estimasi ongkos ketiga model
+     memang tidak boleh diturunkan dari satu pengganda bersama.
+- [ ] XGBoost: benchmark → pencarian 30 kandidat (**candidate 0 sudah selesai
+  dan akan dilewati `resume=True`**, jadi 29 sisa) → walk-forward → fit final.
+  (**~125 jam**, dikoreksi 2026-08-25 dari ~70 jam; pengganda 19 kuantil
+  terukur **×15,2** karena `multi_strategy` bawaannya membangun 19 pohon per
+  ronde boosting — T-14. Estimasi lama bertumpu pada 510 s/kandidat dari empat
+  kandidat terakhir run 2026-08-19; candidate 0 yang benar-benar diukur memakan
+  19.958,7 s.)
 - [ ] LSTM: benchmark → pencarian 30 kandidat pada ruang 144 → pengulangan 3
-  seed pada pemenang → walk-forward → fit final. (~83–98 jam)
+  seed pada pemenang → walk-forward → fit final. (~83–98 jam, **belum
+  diverifikasi** — jepit dengan `elapsed_seconds` kandidat pertama lawan
+  3.412 s sebelum melanjutkan. Device: **CPU**, karena MPS sudah diukur kalah
+  2×.)
 - [ ] Catat selama run: wall clock per tahap per model; `crossing_rate` XGB &
   LSTM (RF harus 0 secara struktural — kalau tidak, ada bug); selisih baris
   seed 42 di `lstm_seed_repeats.csv` terhadap baris pemenang di
   `lstm_search_results.csv` (harus nol, kalau tidak yang terukur bukan varians
   seed melainkan nondeterminisme); rentang K1 antar seed dibaca bersama jarak
   K1 antar model.
+  **RF tercatat 2026-08-25:** wall clock per tahap ada di butir RF di atas dan
+  §7 `hasil-modeling-rf.md`; `crossing_rate = 0,0000` di **seluruh** baris
+  pencarian, benchmark, dan walk-forward — cek strukturalnya lolos. Sisa butir
+  ini menunggu XGB dan LSTM.
 - [ ] **Jangan**: menyandingkan K1 baru dengan pinball@0,9 = 6,56 dari dokumen
   hasil lama (bukan besaran yang sama, T-10); menjalankan
   `resolve_quantile_set()` dengan cakupan biaya di atas ambang tanpa critical
@@ -419,14 +517,54 @@ Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
   metodologi — kerapatan grid adalah alasan rata-rata pinball mendekati CRPS.
   Tidak diubah tanpa keputusan eksplisit.
 
-### 0d — Menulis ulang dokumen hasil ⬜ setelah 0c
+### 0d — Menulis ulang dokumen hasil 🔄 (RF selesai)
 
-- [ ] `docs/hasil-modeling-rf.md` ditulis ulang dari nol.
+Dokumen hasil ditulis **per model begitu model itu selesai**, bukan ditahan
+sampai ketiganya rampung (keputusan pemilik proyek 2026-08-25). Yang tetap
+ditahan sampai ketiganya selesai adalah §16/§18 metodologi, karena keduanya
+memeringkat model satu sama lain.
+
+- [x] `docs/hasil-modeling-rf.md` **ditulis ulang dari nol (2026-08-25)** — 9
+  bagian, seluruh angkanya dari `rf_search_results.csv`,
+  `rf_walk_forward_results.csv`, dan output notebook. Versi lama diarsipkan ke
+  `docs/hasil-modeling-rf.single-quantile.bak.md`. Yang baru di dokumen ini
+  dibanding kerangka lama: §4.3 perbandingan peringkat lama vs K1, §5.0 gerbang
+  G0 terpisah, §5.2 K2 di seluruh 19 titik, dan §7 ongkos sebagai bahan K3.
 - [ ] `docs/hasil-modeling-xgb.md` ditulis ulang dari nol.
 - [ ] `docs/hasil-modeling-lstm.md` ditulis ulang dari nol (termasuk wall clock
   sebenarnya sebagai ongkos terukur, bukan sebagai kegagalan plafon 8 jam).
 - [ ] §16 (posisi hasil) dan §18 (penerapan tangga keputusan) di
-  `metodologi-pemodelan-dan-pemilihan-model.md`.
+  `metodologi-pemodelan-dan-pemilihan-model.md`. **Ditahan sampai ketiga model
+  selesai** — keduanya memeringkat model satu sama lain, jadi tidak bisa ditulis
+  per model seperti dokumen hasil.
+- [ ] 🆕 **Nyatakan ulang K2 terhadap lantai `share_nol` sebelum ia dipakai
+  memutuskan apa pun** (temuan run RF 2026-08-25, §5.2
+  `hasil-modeling-rf.md`). Target tak-negatif dan prediksi tak-negatif membuat
+  setiap baris ber-target nol otomatis tercakup (`0 ≤ 0`), dan **41,95% baris
+  validasi targetnya nol**, jadi tidak ada model tak-negatif apa pun yang bisa
+  mencetak `coverage(τ) < 0,4195` — berapa pun τ-nya. Akibatnya tabel pola K2
+  yang membaca "simpangan searah di hampir seluruh τ" sebagai alasan kuat untuk
+  tersisih akan **menandai setiap model di dataset ini**, termasuk yang
+  kalibrasinya sempurna, semata karena ada 17 titik τ di bawah 0,42.
+
+  RF menyimpang +0,3806 di τ=0,05, tetapi simpangan **minimum yang mungkin**
+  dicapai siapa pun di sana adalah 0,3695 — RF hanya 0,011 di atas lantai.
+  Usulan perbaikan: bandingkan `coverage(τ)` dengan `max(τ, share_nol)`, bukan
+  dengan τ telanjang. Setelah dikoreksi begitu, yang tersisa pada RF adalah
+  over-coverage **+0,18 di sekitar τ=0,40–0,45** — bias nyata yang tidak
+  dijelaskan massa nol, dan itulah yang semestinya dinilai K2.
+
+  **Kerjakan sebelum XGB/LSTM selesai, bukan sesudah**: menulis aturan
+  penyisihan setelah melihat angka ketiga model persis jenis keputusan yang
+  ingin dihindari §21.
+- [ ] 🆕 **Uji hipotesis efek ikatan (ties) pada coverage** — murah, dan
+  menentukan apakah over-coverage +0,18 di median itu bias model atau artefak
+  metrik. Target 99,55% bilangan bulat dan 70,3% bernilai ≤ 5, jadi prediksi dan
+  aktual sering bernilai sama persis, dan coverage yang memakai `≤` menghitung
+  setiap ikatan sebagai tercakup. Cara termurah: hitung ulang coverage dengan
+  `<` tegas di atas satu contoh prediksi yang disimpan; selisih kedua angka itu
+  adalah besar efek ikatan. Belum dikerjakan — dicatat sebagai hipotesis, bukan
+  temuan.
 - [ ] **Periksa bias akhir pekan pada segmen bervolume kecil** — apakah error di
   Sabtu dan Minggu condong ke arah **kurang** (under-forecast) dibanding hari
   lain, khususnya untuk pasangan dengan median rendah? Ini menguji prediksi yang
@@ -547,15 +685,22 @@ Ini **bukan** izin menjalankan 0c; ia hanya menghapus kode sebagai penghalang.
 2. ~~**Putuskan kerapatan `QUANTILE_SET`**~~ — selesai 2026-08-24: tetap 19
    titik, hemat ~38 jam ditolak karena yang dipotong adalah dasar kesimpulan,
    bukan parameter eksperimen.
-3. **Jalankan butir 0c** (Fase D) begitu izin komputasi diberikan, dengan
-   langkah 0 yang sengaja dibuat gagal dijalankan lebih dulu. **Kedua penghalang
-   metodologis di atas sudah tertutup**, jadi tidak ada lagi keputusan yang, bila
-   diambil sesudah run, memaksa run diulang.
-4. **Butir 0d → Fase E** — tulis ulang dokumen hasil, bekukan pemenang, baru
-   buka test set Desember. Sekali saja.
-5. **Fase F** setelah pemenang ditetapkan; alokasi tersegmentasi menunggu data
+3. ~~**Jalankan butir 0c**~~ — **berjalan.** Random Forest selesai 2026-08-25
+   (~5,6 jam, K1 = 2,8508 fold bersih, G0 lolos, `crossing_rate` 0 di seluruh
+   baris) dan dokumen hasilnya sudah ditulis ulang. **Sisa: XGBoost (~125 jam)
+   lalu LSTM (~83–98 jam), berurutan, tidak boleh paralel.**
+4. **Jepit estimasi LSTM sebelum mengomit 83–98 jam** — baca `elapsed_seconds`
+   kandidat LSTM pertama dan bandingkan dengan 3.412 s. Run RF menambah alasan
+   untuk tidak menebak: pengganda 19 kuantil terukur ×1,47 di RF dan ×15,2 di
+   XGBoost, jadi tidak ada satu pengganda bersama yang bisa dipakai untuk LSTM.
+5. **Nyatakan ulang K2 terhadap lantai `share_nol`** (butir 🆕 di 0d) — kerjakan
+   **sekarang**, selagi XGB dan LSTM belum menghasilkan angka, supaya aturan
+   penyisihan tidak ditulis setelah melihat siapa yang akan tersisih.
+6. **Sisa butir 0d → Fase E** — tulis ulang dua dokumen hasil yang tersisa dan
+   §16/§18, bekukan pemenang, baru buka test set Desember. Sekali saja.
+7. **Fase F** setelah pemenang ditetapkan; alokasi tersegmentasi menunggu data
    biaya/margin, jadi kejar G2 secara paralel sejak sekarang.
-6. **Fase G** berjalan terus, tidak menunggu apa pun.
+8. **Fase G** berjalan terus, tidak menunggu apa pun.
 
 ---
 
