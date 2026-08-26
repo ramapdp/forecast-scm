@@ -227,6 +227,13 @@ Kalau `quantile-forest` gagal dipasang di Windows, abaikan saja — ia hanya
 dipakai Random Forest, yang tidak dijalankan di PC. Pasang sisanya dan
 lanjutkan.
 
+`ipykernel` ada di `requirements.txt` sejak 2026-08-26 dan tidak boleh
+dilewatkan: `run_cells.py` menjalankan notebook lewat kernel bernama `python3`,
+dan kernelspec itu dipasang oleh ipykernel — bukan oleh nbconvert maupun
+nbclient, yang tidak bergantung padanya sama sekali. Tanpa ia, perintah apa pun
+di Langkah 4d dan seterusnya berhenti dengan
+`jupyter_client.kernelspec.NoSuchKernel: No such kernel named python3`.
+
 ---
 
 ## Langkah 4 — Verifikasi, sebelum satu jam pun dikomitkan
@@ -474,6 +481,7 @@ jumlah ronde yang dipilih early stopping.
 
 | Pesan | Artinya | Tindakan |
 |---|---|---|
+| `NoSuchKernel: No such kernel named python3` | `ipykernel` belum terpasang; ia yang memasang kernelspec `python3`, bukan nbconvert | `.venv\Scripts\pip install ipykernel` |
 | `RuntimeError: Root repo tidak ditemukan dari ...` | folder `dataset\csv` belum dibuat | Langkah 2 |
 | `cuda dilewati: CUDA tidak tersedia di mesin ini` (LSTM sel 17) | torch CPU-only | Langkah 3 |
 | `device: cpu` di keluaran sel 10 | `FORECAST_DEVICE` belum diset di jendela ini | Langkah 5 |
