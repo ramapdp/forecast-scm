@@ -117,6 +117,8 @@ python3 -m venv .venv
 - Run the pipeline via the notebooks (cleansing, then split): `jupyter nbconvert --to notebook --execute --inplace --allow-errors notebook/data_processing.ipynb notebook/train_test_split.ipynb`
 - Run the Random Forest modeling notebook (benchmark, search, final walk-forward; takes hours): `.venv/bin/python3 -m nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 notebook/modeling_rf.ipynb`
 - Run the XGBoost modeling notebook (benchmark, search, final walk-forward; takes hours): `.venv/bin/python3 -m nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 notebook/modeling_xgb.ipynb`
+- Run **part** of a modeling notebook, one kernel, saving after every cell: `.venv/bin/python3 run_cells.py notebook/modeling_xgb.ipynb 2-10,14` (`--list` prints the cell indices). Exists because `nbconvert --execute` only knows "the whole notebook", while the search runs for days and the walk-forward has no checkpoint at all — one process means one kill at hour 120 erases both. `run_xgb_all.sh` chains the three XGBoost stages through it.
+- Phase 3 is split across two machines since 2026-08-26: hyperparameter search for XGBoost and LSTM on a Windows PC with an RTX 3060, walk-forward and final fit on this Mac. Which cells go where, and what breaks if they are swapped, is in `docs/runbook-pencarian-gpu-windows.md`.
 - Run all tests: `.venv/bin/python3 -m unittest discover -p "test_*.py" -v`
 - Run one module's tests: `.venv/bin/python3 -m unittest test.test_normalize_items -v`
 

@@ -2,11 +2,14 @@
 
 ## Status
 
-**SUPERSEDED untuk alokasi mesin (2026-08-25, keputusan pemilik proyek):
-ketiga model dijalankan di CPU Mac lokal, ujung ke ujung.** Alasan dan
-ongkosnya di §0 di bawah. Yang di-supersede hanya Bagian 2 (alokasi per mesin)
-dan segala yang bergantung padanya — Bagian 4 (pengungkit T4×2), Bagian 6
-(persistensi Kaggle/Colab), Bagian 7.1–7.3, dan bagian Colab Pro.
+**Alokasi mesin sudah dua kali diputuskan ulang. Yang berlaku sekarang adalah
+§0bis (2026-08-26): pencarian XGBoost dan LSTM di PC Windows ber-RTX 3060,
+walk-forward dan fit final tetap di Mac.** §0 (2026-08-25, seluruh Fase 3 di
+CPU Mac) berlaku hanya sampai 2026-08-26 dan disimpan karena koreksi ongkos di
+dalamnya masih dipakai. Yang di-supersede sejak awal: Bagian 2 (alokasi per
+mesin), Bagian 4 (pengungkit T4×2), Bagian 6 (persistensi Kaggle/Colab),
+Bagian 7.3, dan bagian Colab Pro — ketiganya bicara tentang mesin sewaan, dan
+tidak ada mesin sewaan di rencana mana pun sekarang.
 
 **Yang tetap berlaku dan tidak boleh dibaca sebagai usang:**
 
@@ -18,6 +21,7 @@ dan segala yang bergantung padanya — Bagian 4 (pengungkit T4×2), Bagian 6
 - **Bagian 1 — aturan dua lapis.** Ia sekarang dipatuhi secara maksimal, bukan
   ditinggalkan: bukan hanya walk-forward dan fit final yang di satu mesin,
   melainkan seluruh Fase 3.
+- **Bagian 7.1 — risiko OOM VRAM.** Diukur dan ditutup di §0bis.
 - **Bagian 5 — seam kode.** `only=`, `provenance=`, `merge_shards()`, dan
   `run_config` sudah ter-merge dan ter-tes. Semuanya tidak-aktif secara default
   (tanpa env var, tiap notebook berperilaku persis seperti sebelum jalur cloud
@@ -106,6 +110,64 @@ ketidakpastian 83–98 jam.
   `dataset/model_ready/xgb_search_results.csv` (2026-08-25) sehingga
   `resume=True` melewatinya. Diverifikasi lolos `_assert_checkpoint_matches()`
   terhadap ruang pencarian saat ini — 5,54 jam yang tidak perlu diulang.
+
+## 0bis. Keputusan 2026-08-26: pencarian di PC Windows + RTX 3060
+
+Pemilik proyek memindahkan **tahap pencarian** kedua model yang tersisa ke PC
+Windows lokal ber-RTX 3060. Walk-forward dan fit final ketiga model tetap di
+Mac. Ini bukan pembatalan §0 melainkan pengembalian ke aturan dua lapis Bagian
+1 apa adanya — dengan satu perbedaan yang membuatnya lebih baik daripada
+rencana Kaggle/Colab: mesinnya milik sendiri, jadi tidak ada plafon 12 jam per
+sesi, tidak ada kuota 30 GPU-jam/minggu, dan tidak ada persistensi yang harus
+diakali.
+
+Pemicunya angka: pencarian XGBoost berjalan 8,5 jam di Mac dan baru
+menyelesaikan 2 dari 30 kandidat, konsisten dengan koreksi ~120 jam di §3bis.
+
+### Apa yang berubah dari §0
+
+- **Peringkat kandidat lahir di GPU, pemenang di-refit di CPU.** Penyerahan
+  yang §0 tolak, kini diterima lagi — dengan dasar yang sama yang mengesahkan
+  rencana Kaggle: paritas terukur 0,124% terhadap ambang 2% (probe 3d).
+- **Kedua kandidat yang sudah dinilai di CPU dibuang** (keputusan pemilik
+  proyek, 2026-08-26). §3bis merencanakan sebaliknya — membiarkan candidate 0
+  di checkpoint supaya tidak ada jam yang terbuang — tetapi ongkos mengulangnya
+  di GPU hanya ~0,9 GPU-jam dari ~15, dan proyek ini sudah berkali-kali memilih
+  keterbandingan di atas kecepatan untuk taruhan yang jauh lebih besar.
+  Berkasnya disimpan sebagai `xgb_search_results.cpu-partial.bak.csv`, dan
+  kandidat 1 karenanya menjadi titik paritas CPU↔GPU **kedua** yang dimiliki
+  proyek ini — sebelumnya hanya ada satu.
+- **Pengulangan tiga seed LSTM ikut ke PC**, sesuai alokasi Bagian 2 dan bukan
+  ke Mac. Sel 26 `modeling_lstm.ipynb` memeriksa bahwa baris seed 42 identik
+  dengan baris pemenang di `lstm_search_results.csv`; menjalankannya di device
+  lain membuat pemeriksaan itu pasti berbunyi karena selisih paritas, sehingga
+  penjagaannya hilang justru saat ia paling dibutuhkan.
+
+### Risiko 7.1 (OOM VRAM pada `one_hot`) — ditutup dengan pengukuran
+
+Ekspansi one-hot ternyata hanya **162 kolom**: `Kode Barang_idx` 70 level,
+`Nama Cabang_idx` 59, sisanya di bawah 20. Matriks penuhnya 1,3 juta × 237
+kolom ≈ 0,3 GB — dua digit di bawah VRAM 3060. Tujuh kandidat `one_hot`
+(id 1, 3, 7, 13, 19, 22, 24) karena itu tidak memerlukan jalur CPU-fallback,
+dan aturan "tiap baris NaN dari shard GPU wajib diulang di CPU" tidak punya
+kasus untuk dijalankan. Risiko ini lahir dari taksiran, bukan dari hitungan;
+hitungannya menutupnya.
+
+### Perubahan kode yang dituntut Windows
+
+- `model_common.peak_rss_bytes()` — `resource` tidak ada di Windows, dan sel
+  benchmark LSTM (17) berdiri di jalur kritis pencarian karena sel 19
+  mengambil `sec_per_epoch` darinya. Satu `ImportError` di situ memblokir
+  seluruh Tahap B LSTM. Fungsi ini juga membetulkan salah satuan yang sudah
+  ada sebelumnya: `ru_maxrss` bersatuan kilobyte di Linux tetapi byte di macOS.
+- `modeling_lstm.ipynb` sel 23 dipecah dua — pemilihan pemenang terpisah dari
+  walk-forward, supaya `best` tersedia di PC untuk sel pengulangan seed tanpa
+  membayar walk-forward, dan tersedia lagi di Mac tanpa membayar pencarian.
+- `modeling_lstm.ipynb` sel 26 membaca kembali `lstm_seed_repeats.csv` kalau
+  sudah lengkap. `run_seed_repeats()` tidak punya resume dan menimpa
+  keluarannya, sementara §13 di Mac membutuhkan `spread` darinya.
+
+Langkah operasionalnya ada di `docs/runbook-pencarian-gpu-windows.md`.
 
 ## Purpose
 

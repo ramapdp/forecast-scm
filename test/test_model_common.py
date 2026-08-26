@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
@@ -275,6 +276,40 @@ class TestRunSearchCheckpoint(unittest.TestCase):
             path = str(Path(folder) / "checkpoint.csv")
             results = self._run(path)
             self.assertEqual(list(results["candidate_id"]), [0, 1, 2])
+
+    def test_a_kill_mid_write_leaves_the_previous_checkpoint_intact(self):
+        """Checkpoint ditulis ulang utuh tiap kandidat, bukan ditambahi.
+
+        Jadi penulisan yang mati di tengah tidak kehilangan satu kandidat —
+        ia kehilangan semua kandidat sebelumnya. Di sini penulisan kandidat
+        ketiga sengaja meninggalkan berkas terpotong lalu melempar; yang
+        diuji adalah bahwa berkas terpotong itu tidak pernah menjadi
+        checkpoint yang terbaca.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            real_to_csv, calls = pd.DataFrame.to_csv, []
+
+            def dying_to_csv(self, path_or_buf=None, **kwargs):
+                calls.append(path_or_buf)
+                if len(calls) == 3:
+                    Path(path_or_buf).write_text("candidate_id,alp")
+                    raise OSError("proses dimatikan saat menulis")
+                return real_to_csv(self, path_or_buf, **kwargs)
+
+            with mock.patch.object(pd.DataFrame, "to_csv", dying_to_csv):
+                with self.assertRaises(OSError):
+                    self._run(path)
+
+            survivor = pd.read_csv(path)
+            self.assertEqual(list(survivor["candidate_id"]), [0, 1])
+
+    def test_no_temporary_file_survives_a_finished_search(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "checkpoint.csv")
+            self._run(path)
+            self.assertEqual([item.name for item in Path(folder).iterdir()],
+                             ["checkpoint.csv"])
 
     def test_a_checkpoint_from_a_different_space_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -681,3 +716,35 @@ class TestMergeShards(unittest.TestCase):
             merged = model_common.merge_shards([path_a, path_b],
                                                self._candidates(), SPACE)
             self.assertEqual(list(merged["device"]), ["cuda:0", "cpu", "cpu"])
+
+
+class TestPeakRss(unittest.TestCase):
+    """Angka memori benchmark, dibaca sama di ketiga OS.
+
+    Tiga notebook modeling mencetak angka ini di sel benchmark-nya. `resource`
+    tidak ada di Windows dan satuan `ru_maxrss`-nya berbeda antara macOS dan
+    Linux, jadi yang diuji di sini justru perbedaan platformnya — bukan
+    pembacaannya.
+    """
+
+    def test_this_machine_reports_a_plausible_byte_count(self):
+        reading = model_common.peak_rss_bytes()
+        if reading is None:
+            self.skipTest("resource tidak tersedia di platform ini")
+        self.assertGreater(reading, 16 * 1024 ** 2)
+
+    def test_macos_kilobytes_are_not_invented(self):
+        fake = mock.Mock(**{"getrusage.return_value": mock.Mock(ru_maxrss=2_000_000)})
+        with mock.patch.object(model_common, "_resource", fake), \
+                mock.patch("sys.platform", "darwin"):
+            self.assertEqual(model_common.peak_rss_bytes(), 2_000_000)
+
+    def test_linux_kilobytes_become_bytes(self):
+        fake = mock.Mock(**{"getrusage.return_value": mock.Mock(ru_maxrss=2_000_000)})
+        with mock.patch.object(model_common, "_resource", fake), \
+                mock.patch("sys.platform", "linux"):
+            self.assertEqual(model_common.peak_rss_bytes(), 2_048_000_000)
+
+    def test_windows_reports_nothing_rather_than_raising(self):
+        with mock.patch.object(model_common, "_resource", None):
+            self.assertIsNone(model_common.peak_rss_bytes())

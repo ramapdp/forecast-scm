@@ -12,8 +12,10 @@ Random Forest's leaf-storage bound has no XGBoost analogue.
 """
 
 import json
+import os
 import random
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional
@@ -26,6 +28,36 @@ from . import evaluation, modeling_prep, purging, walk_forward
 
 # The encoded categoricals, the only columns one-hot expansion touches.
 IDX_COLS = [col for col in modeling_prep.FEATURE_COLS if col.endswith("_idx")]
+
+
+# Windows tidak punya `resource` sama sekali. Diimpor di sini, sekali, supaya
+# kegagalannya jadi satu nilai yang bisa dibaca dan diuji — bukan ImportError
+# di tengah sel benchmark tiga notebook.
+try:
+    import resource as _resource
+except ImportError:
+    _resource = None
+
+
+# ── BENCHMARK READINGS ────────────────────────────────────────────────────────────
+
+def peak_rss_bytes():
+    """Puncak RSS proses ini dalam byte, atau None kalau OS tidak menyediakannya.
+
+    Ada karena satu baris yang sama dulu ditulis tiga kali di tiga sel
+    benchmark, dan salah di dua dari tiga OS: `resource` tidak ada di Windows
+    (ImportError yang memblokir seluruh sel), dan `ru_maxrss` bersatuan
+    kilobyte di Linux tetapi byte di macOS — sehingga angka yang sama dicetak
+    1.024x terlalu kecil tanpa satu pun tanda bahwa ia salah.
+
+    None, bukan 0 atau pengecualian: memori adalah bagian K3 dan K3 diukur di
+    Mac, jadi mesin yang tidak bisa melaporkannya harus tetap menyelesaikan
+    benchmark-nya. Pemanggil mencetak "n/a" dan meneruskan.
+    """
+    if _resource is None:
+        return None
+    value = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
+    return int(value) if sys.platform == "darwin" else int(value) * 1024
 
 
 # ── INPUT VALIDATION ──────────────────────────────────────────────────────────────
@@ -357,8 +389,7 @@ def run_search(
                   flush=True)
         rows.append(record)
         if checkpoint_path is not None:
-            Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-            _ordered(rows).to_csv(checkpoint_path, index=False)
+            _write_checkpoint(_ordered(rows), checkpoint_path)
     return _ordered(rows)
 
 
@@ -387,6 +418,23 @@ def _ordered(rows: list) -> pd.DataFrame:
     return (pd.DataFrame(rows)
             .sort_values("candidate_id")
             .reset_index(drop=True))
+
+
+def _write_checkpoint(frame: pd.DataFrame, path: str) -> None:
+    """Tulis checkpoint lewat berkas sementara, lalu ganti nama secara atomik.
+
+    `to_csv` langsung ke tujuan menulis di tempat. Berkas ini ditulis ulang
+    **utuh** setiap kandidat, bukan ditambahi, jadi proses yang mati di tengah
+    penulisan tidak kehilangan satu kandidat — ia kehilangan seluruh kandidat
+    sebelumnya, dan pada pencarian berhari-hari itu bisa berarti puluhan jam.
+    `os.replace` pada volume yang sama bersifat atomik, sehingga checkpoint
+    yang terbaca selalu checkpoint yang lengkap.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    frame.to_csv(tmp, index=False)
+    os.replace(tmp, target)
 
 
 def current_commit(default: str = "unknown",
