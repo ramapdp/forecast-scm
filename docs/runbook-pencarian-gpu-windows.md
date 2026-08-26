@@ -143,12 +143,77 @@ ValueError, sel benchmark LSTM mencetak `cuda dilewati`, dan pencarian berjalan
 berhari-hari di CPU PC. Ganti `cu126` dengan versi CUDA yang cocok menurut
 [pytorch.org](https://pytorch.org/get-started/locally/) untuk driver PC-nya.
 
-Dua hal lain:
+### Dua prasyarat sistem, di luar pip
 
-- **Visual C++ Redistributable** harus terpasang — XGBoost butuh DLL-nya.
-  Sudah ada kalau Visual Studio terpasang; kalau tidak, unduh dari Microsoft.
-- **CUDA Toolkit tidak perlu dipasang.** Wheel xgboost dan torch sudah membawa
-  runtime CUDA-nya sendiri. Yang perlu hanyalah driver NVIDIA yang cukup baru.
+Keduanya punya cek versi (menjelaskan **kenapa** rusak) dan cek fungsional
+(menjawab **apakah** rusak). Cek fungsionalnya ada di Langkah 4 dan lebih kuat
+— kalau 4a dan 4b lolos, kedua prasyarat ini sudah terpenuhi menurut definisi,
+berapa pun angka versinya. Yang di bawah ini dipakai saat 4a atau 4b gagal.
+
+**A. Visual C++ Redistributable (x64, 2015–2022)**
+
+Yang harus ada tiga DLL: `vcruntime140.dll`, `vcruntime140_1.dll`, dan
+`msvcp140.dll`. Yang biasanya hilang adalah **`vcruntime140_1.dll`** — ia baru
+ikut sejak redistributable 2019, jadi PC yang hanya pernah memasang versi 2015
+punya dua DLL pertama dan tidak punya yang ini. Baik `xgboost.dll` maupun
+`torch` menautnya.
+
+```powershell
+"vcruntime140.dll","vcruntime140_1.dll","msvcp140.dll" | ForEach-Object {
+    "{0,-22} {1}" -f $_, (Test-Path "$env:SystemRoot\System32\$_")
+}
+Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" `
+    -ErrorAction SilentlyContinue | Select-Object Installed, Version
+```
+
+Ketiganya harus `True`, dan registrinya `Installed : 1`. Kalau ada yang
+`False`, pasang `vc_redist.x64.exe` dari
+<https://aka.ms/vs/17/release/vc_redist.x64.exe>, lalu ulangi.
+
+Cek fungsionalnya satu baris:
+
+```powershell
+.venv\Scripts\python -c "import xgboost; print(xgboost.__version__)"
+```
+
+Berhasil mencetak `2.1.4` berarti DLL-nya sudah teresolusi seluruhnya.
+`OSError: [WinError 126] The specified module could not be found` atau
+`XGBoostError` saat memuat pustaka berarti belum.
+
+**B. Driver NVIDIA**
+
+CUDA Toolkit **tidak perlu dipasang** — wheel xgboost dan torch sudah membawa
+runtime CUDA-nya sendiri. Yang harus ada hanyalah driver, dan cukup baru:
+lantai untuk CUDA 12.x di Windows adalah **527.41**. Arsitektur GPU-nya tidak
+pernah jadi soal — RTX 3060 itu Ampere (SM 8.6), didukung penuh oleh setiap
+rilis CUDA 11 dan 12; yang bisa salah hanya umur drivernya.
+
+```powershell
+nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+nvidia-smi
+```
+
+Baris pertama mencetak mis. `NVIDIA GeForce RTX 3060, 566.36` — angka kedua
+harus ≥ 527.41. Kalau perintahnya sendiri tidak dikenali, drivernya belum
+terpasang sama sekali.
+
+Satu hal yang sering disalahbaca: kolom `CUDA Version: 12.x` di pojok kanan
+atas keluaran `nvidia-smi` **bukan** CUDA yang terpasang, melainkan CUDA
+tertinggi yang sanggup dilayani driver ini. Ia tidak perlu sama dengan CUDA
+wheel torch (`cu126`) — minor version compatibility membuat runtime 12.6
+berjalan di atas driver yang mendukung 12.0. Yang perlu dicocokkan hanya
+lantainya.
+
+Cek fungsionalnya:
+
+```powershell
+.venv\Scripts\python -c "import torch; print(torch.version.cuda, torch.cuda.is_available())"
+```
+
+Harus mencetak dua nilai, mis. `12.6 True`. **`None` di nilai pertama berarti
+wheel yang terpasang CPU-only** — itu soal Langkah 3, bukan soal driver, dan
+tidak akan tertolong dengan memperbarui driver. `12.6 False` barulah soal
+driver: wheel-nya benar, tetapi driver menolak atau terlalu tua.
 
 Kalau `quantile-forest` gagal dipasang di Windows, abaikan saja — ia hanya
 dipakai Random Forest, yang tidak dijalankan di PC. Pasang sisanya dan
