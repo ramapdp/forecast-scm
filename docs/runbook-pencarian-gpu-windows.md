@@ -24,8 +24,8 @@ Perkiraan total di PC: **~30 jam** (XGB ~15 jam, LSTM ~14 jam, pengulangan seed
 | `modeling_lstm.ipynb` | `2-21,23,26` | `2-34` |
 
 Sel markdown yang kebetulan masuk rentang dilewati diam-diam, jadi rentangnya
-boleh ditulis apa adanya. `python run_cells.py notebook\modeling_xgb.ipynb
---list` mencetak peta sel kalau perlu dicocokkan.
+boleh ditulis apa adanya. `.venv\Scripts\python run_cells.py
+notebook\modeling_xgb.ipynb --list` mencetak peta sel kalau perlu dicocokkan.
 
 Yang perlu dipahami sebelum mulai: sel pencarian di Mac (`14` dan `21`) **tidak
 menghitung ulang apa pun** selama checkpoint dari PC sudah lengkap — ia hanya
@@ -93,15 +93,40 @@ berbeda.
 
 ## Langkah 3 — Pasang Python dan dependensi
 
-Pakai **Python 3.12** (Kaggle menjalankan probe 2026-08-25 di 3.12.13 dan
-menghasilkan daftar kandidat yang identik dengan Mac Python 3.9 — jadi versi
-ini sudah terbukti tidak menggeser penomoran `candidate_id`).
+Pakai **Python 3.12**. Ini plafon, bukan preferensi: `numpy==2.0.2` hanya
+menerbitkan wheel Windows sampai cp312 — tidak ada cp313, apalagi cp314.
+`scikit-learn==1.6.1` dan `torch==2.8.0` berhenti di cp313.
+
+| Pin di `requirements.txt` | Wheel Windows yang tersedia |
+|---|---|
+| `numpy==2.0.2` | cp39, cp310, cp311, **cp312** |
+| `scikit-learn==1.6.1` | cp39 … cp313 |
+| `torch==2.8.0` | cp39 … cp313 |
+| `pandas==2.3.3` | cp39 … cp314 |
+| `xgboost==2.1.4` | `py3-none-win_amd64` (versi apa pun) |
+
+Di Python 3.13/3.14, pip tidak menemukan wheel numpy, jatuh ke sdist, dan
+build-nya gagal — numpy 2.0.2 terbit jauh sebelum perubahan C API 3.14. Godaan
+berikutnya, melepas pin versinya, justru yang harus ditolak: probe 2026-08-25
+mencatat versi paket Kaggle identik dengan pin lokal, **dan itulah** yang
+membuat selisih K1 0,124% terbaca sebagai selisih hardware alih-alih selisih
+library. Versi Python boleh berbeda dari Mac (Kaggle 3.12.13 lawan Mac 3.9.6
+menghasilkan daftar kandidat yang identik — `random.Random(42)` stabil lintas
+versi); versi library tidak boleh.
+
+Python 3.14 yang sudah terpasang tidak perlu dicopot. Pasang 3.12
+berdampingan dan tunjuk ia lewat py launcher:
 
 ```powershell
-python -m venv .venv
+py -3.12 --version          # harus mencetak Python 3.12.x
+py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install --upgrade pip
 .venv\Scripts\pip install -r requirements.txt
 ```
+
+Setelah venv dibuat, `.venv\Scripts\python` sudah menunjuk 3.12 — sisa
+dokumen ini memakai itu dan tidak pernah memanggil `python` polos, supaya
+interpreter sistem tidak pernah ikut campur.
 
 Lalu **ganti torch**, dan ini bukan opsional:
 
