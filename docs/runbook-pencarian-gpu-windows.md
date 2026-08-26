@@ -1,4 +1,4 @@
-# Runbook — menjalankan Tahap B (pencarian) di PC Windows + RTX 3060
+# Runbook — menjalankan Tahap B (pencarian) di PC Windows + RTX 4060 Ti 8 GB
 
 Dokumen ini adalah prosedur, bukan desain. Alasan di balik pembagian mesinnya
 ada di Bagian 1 dan §0bis
@@ -7,9 +7,9 @@ hanya langkah-langkahnya, berurutan, untuk dijalankan sekali dari awal sampai
 selesai.
 
 Keputusan pemilik proyek **2026-08-26**: pencarian hyperparameter XGBoost dan
-LSTM dijalankan di PC Windows ber-RTX 3060; walk-forward dan fit final tetap
-di Mac. Random Forest tidak ikut sama sekali — ketiga tahapnya sudah selesai di
-Mac (run 2026-08-25), dan `quantile-forest` murni CPU.
+LSTM dijalankan di PC Windows ber-RTX 4060 Ti 8 GB; walk-forward dan fit
+final tetap di Mac. Random Forest tidak ikut sama sekali — ketiga tahapnya
+sudah selesai di Mac (run 2026-08-25), dan `quantile-forest` murni CPU.
 
 Perkiraan total di PC: **~30 jam** (XGB ~15 jam, LSTM ~14 jam, pengulangan seed
 ~1,5 jam), berurutan.
@@ -185,15 +185,16 @@ Berhasil mencetak `2.1.4` berarti DLL-nya sudah teresolusi seluruhnya.
 CUDA Toolkit **tidak perlu dipasang** — wheel xgboost dan torch sudah membawa
 runtime CUDA-nya sendiri. Yang harus ada hanyalah driver, dan cukup baru:
 lantai untuk CUDA 12.x di Windows adalah **527.41**. Arsitektur GPU-nya tidak
-pernah jadi soal — RTX 3060 itu Ampere (SM 8.6), didukung penuh oleh setiap
-rilis CUDA 11 dan 12; yang bisa salah hanya umur drivernya.
+pernah jadi soal — RTX 4060 Ti itu Ada Lovelace (SM 8.9), didukung penuh
+sejak CUDA 11.8 dan oleh seluruh CUDA 12.x; yang bisa salah hanya umur
+drivernya.
 
 ```powershell
 nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
 nvidia-smi
 ```
 
-Baris pertama mencetak mis. `NVIDIA GeForce RTX 3060, 566.36` — angka kedua
+Baris pertama mencetak mis. `NVIDIA GeForce RTX 4060 Ti, 581.29` — angka kedua
 harus ≥ 527.41. Kalau perintahnya sendiri tidak dikenali, drivernya belum
 terpasang sama sekali.
 
@@ -203,6 +204,13 @@ tertinggi yang sanggup dilayani driver ini. Ia tidak perlu sama dengan CUDA
 wheel torch (`cu126`) — minor version compatibility membuat runtime 12.6
 berjalan di atas driver yang mendukung 12.0. Yang perlu dicocokkan hanya
 lantainya.
+
+Driver di PC ini melaporkan `CUDA Version: 13.1` — jauh di atas lantai, dan
+itu tidak menuntut apa pun. Driver NVIDIA kompatibel mundur terhadap runtime
+CUDA yang lebih lama, jadi wheel `cu126` berjalan apa adanya. Jangan tergoda
+mengejar wheel CUDA 13: torch 2.8.0 tidak menerbitkannya, dan menaikkan
+versi torch berarti melepas pin yang membuat hasil PC sebanding dengan hasil
+Mac.
 
 Cek fungsionalnya:
 
@@ -232,7 +240,7 @@ menutup satu cara run 30 jam bisa terbuang.
 .venv\Scripts\python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-Harus mencetak `True NVIDIA GeForce RTX 3060`. Kalau `False`, Langkah 3 belum
+Harus mencetak `True NVIDIA GeForce RTX 4060 Ti`. Kalau `False`, Langkah 3 belum
 tuntas — torch-nya masih CPU-only.
 
 **4b. XGBoost multi-kuantil benar-benar berjalan di CUDA**
@@ -321,7 +329,13 @@ Get-Content dataset\model_ready\xgb_run_B_search.log -Wait -Tail 20
 ### Periksa kandidat pertama — ini gerbangnya
 
 Kandidat 0 adalah kandidat yang sama yang diukur **19.958 detik (5,54 jam)** di
-CPU Mac. Di RTX 3060 ia seharusnya selesai dalam **~40 menit**.
+CPU Mac. Di RTX 4060 Ti ia seharusnya selesai dalam **~40 menit**.
+
+Angka itu diturunkan dari pengganda ×7,96 yang diukur di T4 Kaggle, bukan di
+kartu ini. 4060 Ti unggul jauh di compute (22 lawan 8,1 TFLOPS FP32) tetapi
+busnya lebih sempit (288 lawan 320 GB/s), dan pemindaian matriks terkuantisasi
+XGBoost sensitif terhadap bandwidth — L2 32 MB-nya yang menutup selisih itu.
+Jadi ~40 menit adalah patokan yang wajar, bukan prediksi.
 
 - ~40 menit → pengganda ×8 berlaku, ~15 jam untuk 30 kandidat. Lanjutkan.
 - 2 jam → pengganda hanya ×3; totalnya ~40 jam. Masih jauh lebih baik daripada
@@ -369,7 +383,7 @@ pencarian GPU membuat pemeriksaan itu **pasti** mencetak
 
 ### Periksa kandidat pertama, sekali lagi
 
-Dasar CPU LSTM adalah **3.412 detik per kandidat**. Di 3060 harapkan
+Dasar CPU LSTM adalah **3.412 detik per kandidat**. Di 4060 Ti harapkan
 ~700 detik. Kalau ia mendekati 3.400 detik, sel benchmark memilih `cpu` —
 periksa keluaran sel 19 di log:
 

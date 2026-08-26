@@ -3,7 +3,7 @@
 ## Status
 
 **Alokasi mesin sudah dua kali diputuskan ulang. Yang berlaku sekarang adalah
-§0bis (2026-08-26): pencarian XGBoost dan LSTM di PC Windows ber-RTX 3060,
+§0bis (2026-08-26): pencarian XGBoost dan LSTM di PC Windows ber-RTX 4060 Ti 8 GB,
 walk-forward dan fit final tetap di Mac.** §0 (2026-08-25, seluruh Fase 3 di
 CPU Mac) berlaku hanya sampai 2026-08-26 dan disimpan karena koreksi ongkos di
 dalamnya masih dipakai. Yang di-supersede sejak awal: Bagian 2 (alokasi per
@@ -111,10 +111,10 @@ ketidakpastian 83–98 jam.
   `resume=True` melewatinya. Diverifikasi lolos `_assert_checkpoint_matches()`
   terhadap ruang pencarian saat ini — 5,54 jam yang tidak perlu diulang.
 
-## 0bis. Keputusan 2026-08-26: pencarian di PC Windows + RTX 3060
+## 0bis. Keputusan 2026-08-26: pencarian di PC Windows + RTX 4060 Ti 8 GB
 
 Pemilik proyek memindahkan **tahap pencarian** kedua model yang tersisa ke PC
-Windows lokal ber-RTX 3060. Walk-forward dan fit final ketiga model tetap di
+Windows lokal ber-RTX 4060 Ti 8 GB. Walk-forward dan fit final ketiga model tetap di
 Mac. Ini bukan pembatalan §0 melainkan pengembalian ke aturan dua lapis Bagian
 1 apa adanya — dengan satu perbedaan yang membuatnya lebih baik daripada
 rencana Kaggle/Colab: mesinnya milik sendiri, jadi tidak ada plafon 12 jam per
@@ -143,15 +143,47 @@ menyelesaikan 2 dari 30 kandidat, konsisten dengan koreksi ~120 jam di §3bis.
   lain membuat pemeriksaan itu pasti berbunyi karena selisih paritas, sehingga
   penjagaannya hilang justru saat ia paling dibutuhkan.
 
-### Risiko 7.1 (OOM VRAM pada `one_hot`) — ditutup dengan pengukuran
+### Risiko 7.1 (OOM VRAM pada `one_hot`) — dihitung, dan ongkos salahnya dibatasi
 
 Ekspansi one-hot ternyata hanya **162 kolom**: `Kode Barang_idx` 70 level,
 `Nama Cabang_idx` 59, sisanya di bawah 20. Matriks penuhnya 1,3 juta × 237
-kolom ≈ 0,3 GB — dua digit di bawah VRAM 3060. Tujuh kandidat `one_hot`
-(id 1, 3, 7, 13, 19, 22, 24) karena itu tidak memerlukan jalur CPU-fallback,
-dan aturan "tiap baris NaN dari shard GPU wajib diulang di CPU" tidak punya
-kasus untuk dijalankan. Risiko ini lahir dari taksiran, bukan dari hitungan;
-hitungannya menutupnya.
+kolom. Anggaran VRAM-nya, dihitung terhadap 8 GB kartu ini:
+
+| Alokasi | Perkiraan |
+|---|---:|
+| ELLPACK (matriks terkuantisasi, ~16 bit/sel) | ~0,6 GB |
+| Gradien + Hessian, 19 keluaran | ~0,2 GB |
+| Cache prediksi | ~0,1 GB |
+| Cache histogram (≤1.024 node, satu target) | ~0,5 GB |
+| **Puncak** | **~1,5 GB** |
+
+Yang membuatnya muat bukan ukuran datanya melainkan `multi_strategy`
+bawaan XGBoost, `one_output_per_tree`: grid 19 titik dibangun sebagai 19 pohon
+**berkeluaran tunggal** per ronde (persis yang dicatat T-14), sehingga
+histogramnya satu target — bukan sembilan belas. Kalau ia satu pohon
+multi-keluaran, baris histogram di tabel itu naik 19× dan 8 GB menjadi
+pertanyaan sungguhan.
+
+Ini aritmetika, bukan pengukuran, dan aritmetika tentang alokator sebuah
+pustaka tidak sekuat angka. Yang menjadikannya cukup: kandidat yang kehabisan
+memori tidak menggagalkan run — `run_search(catch=(MemoryError, ValueError,
+XGBoostError))` mencatatnya sebagai baris NaN beserta pesannya dan lanjut.
+Jadi biayanya satu baris, bukan tiga puluh, dan tandanya terbaca di kolom
+`error`. Tujuh kandidat `one_hot` (id 1, 3, 7, 13, 19, 22, 24) adalah yang
+perlu diawasi, dan tiga di antaranya berkedalaman 10 (id 1, 13, 19) — id 1
+kebetulan kandidat kedua yang dijalankan, jadi jawabannya datang dalam satu jam
+pertama, bukan di jam ke-tiga puluh.
+
+Yang **berubah** dari Bagian 7.1 aslinya adalah obatnya, bukan risikonya.
+Aturan lama berbunyi "tiap baris NaN dari shard GPU wajib diulang di CPU", dan
+di bawah keputusan satu-device 2026-08-26 aturan itu tidak lagi bisa dijalankan
+apa adanya: mengulang satu kandidat di CPU justru menyisipkan kembali percampuran
+device yang seluruh keputusan ini hindari. Jadi kalau OOM benar-benar terjadi,
+ia **keputusan pemilik proyek**, bukan perbaikan mekanis — pilihannya antara
+menerima satu baris CPU di tengah 29 baris GPU, mengulang pencarian dengan
+`max_bin` lebih kecil (mengubah model, dan karenanya mengubah seluruh 30
+kandidat), atau memindahkan pencarian ke kartu ber-VRAM lebih besar. Ketiganya
+berongkos, dan tidak satu pun boleh diputuskan diam-diam di tengah run.
 
 ### Perubahan kode yang dituntut Windows
 
