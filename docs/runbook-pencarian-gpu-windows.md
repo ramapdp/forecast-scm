@@ -305,16 +305,53 @@ powercfg /change hibernate-timeout-ac 0
 menghentikan proses; checkpoint memang menyelamatkan kandidat yang sudah
 selesai, tapi kandidat yang sedang berjalan hilang.
 
+Set device-nya **permanen di level user**, bukan per jendela:
+
 ```powershell
-$env:FORECAST_DEVICE = "cuda"
+[Environment]::SetEnvironmentVariable("FORECAST_DEVICE", "cuda", "User")
 ```
 
-Variabel ini **hanya hidup selama jendela PowerShell itu**. Kalau nanti membuka
-jendela baru, set lagi — dan verifikasi lewat 4d sebelum menjalankan apa pun
-yang panjang. `FORECAST_DEVICE` wajib untuk XGBoost karena
-`DEFAULT_DEVICE = "cpu"`; untuk LSTM ia sebenarnya opsional (sel 19 memilih
-device tercepat dari benchmarknya sendiri), tetapi membiarkannya terset tidak
-merugikan.
+Lalu **tutup jendela PowerShell itu dan buka yang baru** — jendela yang sudah
+terbuka tidak pernah memungut nilai baru. Cara ini dipilih karena pekerjaannya
+berjalan berhari-hari dan hampir pasti melintasi beberapa jendela; `$env:` yang
+hanya hidup satu sesi adalah cara paling mudah menjalankan 15 jam pencarian di
+CPU tanpa sadar.
+
+Kalau lebih suka per sesi, gabungkan set dan jalankan dalam **satu baris**,
+supaya keduanya tidak mungkin terpisah jendela:
+
+```powershell
+$env:FORECAST_DEVICE = "cuda"; .venv\Scripts\python run_cells.py notebook\modeling_xgb.ipynb 2-10
+```
+
+### Verifikasi — yang dilihat Python, bukan yang diketik shell
+
+```powershell
+.venv\Scripts\python -c "import os; print(repr(os.environ.get('FORECAST_DEVICE')))"
+```
+
+Harus mencetak `'cuda'`. `None` berarti belum sampai, apa pun yang tampak sudah
+diketik. Lalu ulangi Langkah 4d — barisnya harus berbunyi `device: cuda`.
+
+Tiga cara ia gagal diam-diam, semuanya tanpa pesan error:
+
+| Yang diketik | Di PowerShell | Di cmd.exe |
+|---|---|---|
+| `$env:FORECAST_DEVICE = "cuda"` | **benar** | error sintaks (kelihatan) |
+| `set FORECAST_DEVICE=cuda` | **gagal diam-diam** | benar |
+| `export FORECAST_DEVICE=cuda` | error (kelihatan) | error (kelihatan) |
+
+Baris tengah itu jebakannya: di PowerShell, `set` adalah alias `Set-Variable`,
+jadi `set FORECAST_DEVICE=cuda` membuat variabel **PowerShell** bernama
+`FORECAST_DEVICE=cuda` — bukan variabel environment. Ia tidak mengeluh, dan
+Python tidak pernah melihatnya.
+
+Penyebab keempat yang sama seringnya: variabelnya diset di satu jendela dan
+perintahnya dijalankan di jendela lain.
+
+`FORECAST_DEVICE` wajib untuk XGBoost karena `DEFAULT_DEVICE = "cpu"`. Untuk
+LSTM ia opsional — sel 19 memilih device tercepat dari benchmarknya sendiri —
+tetapi membiarkannya terset tidak merugikan.
 
 ---
 
@@ -484,7 +521,7 @@ jumlah ronde yang dipilih early stopping.
 | `NoSuchKernel: No such kernel named python3` | `ipykernel` belum terpasang; ia yang memasang kernelspec `python3`, bukan nbconvert | `.venv\Scripts\pip install ipykernel` |
 | `RuntimeError: Root repo tidak ditemukan dari ...` | folder `dataset\csv` belum dibuat | Langkah 2 |
 | `cuda dilewati: CUDA tidak tersedia di mesin ini` (LSTM sel 17) | torch CPU-only | Langkah 3 |
-| `device: cpu` di keluaran sel 10 | `FORECAST_DEVICE` belum diset di jendela ini | Langkah 5 |
+| `device: cpu` di keluaran sel 10 | `FORECAST_DEVICE` tidak sampai ke Python — jendela lain, atau `set` dipakai di PowerShell | Langkah 5, mulai dari perintah verifikasi |
 | `checkpoint ... berasal dari run kuantil tunggal` | CSV pra-2026-08-24 ikut tersalin | hapus CSV itu, ia bukan K1 |
 | `checkpoint ... tidak cocok dengan ruang pencarian` | PC di commit yang berbeda dari yang melahirkan checkpoint | samakan commit-nya |
 | `Falling back to prediction using DMatrix due to mismatched devices` | prediksi melintasi host↔device | **normal, bukan error** — ia sebabnya ×7,96 disebut lantai, bukan plafon |
