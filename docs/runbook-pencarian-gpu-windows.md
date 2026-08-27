@@ -42,12 +42,19 @@ Dari root repo di Mac:
 cd ~/Project/Personal/forecast-scm
 mkdir -p /tmp/kirim-ke-pc
 cp dataset/model_ready/model_input.parquet /tmp/kirim-ke-pc/
+cp dataset/model_ready/category_mapping.json /tmp/kirim-ke-pc/
 git log -1 --format=%h            # catat hash ini, PC harus di commit yang sama
 ```
 
 `model_input.parquet` berukuran ~42 MB. Ia **tidak** ada di git (`dataset/`
 gitignored), jadi harus disalin manual — flashdisk, jaringan lokal, atau cloud
 drive, terserah.
+
+`category_mapping.json` (~5 KB) **wajib ikut** meski jauh lebih kecil — ia
+keluaran kedua `modeling_prep.build_model_input()`, ditulis bersamaan dengan
+`model_input.parquet` tapi sebagai berkas terpisah. LSTM membacanya lewat
+`modeling_prep.load_category_mapping()` untuk ukuran embedding tiap kategori;
+tanpanya sel benchmark LSTM gagal `FileNotFoundError` di tengah jalan.
 
 Yang **tidak** disalin: `xgb_search_results.csv`. Kedua kandidat yang sudah
 dinilai di CPU Mac sengaja dibuang supaya seluruh peringkat lahir di satu
@@ -76,6 +83,7 @@ Lalu bangun tata letak `dataset/` yang dibutuhkan:
 mkdir dataset\csv
 mkdir dataset\model_ready
 copy <lokasi>\model_input.parquet dataset\model_ready\
+copy <lokasi>\category_mapping.json dataset\model_ready\
 ```
 
 `dataset\csv` sengaja dibuat **kosong**. Sel pertama tiap notebook memanggil
@@ -524,6 +532,7 @@ jumlah ronde yang dipilih early stopping.
 | `device: cpu` di keluaran sel 10 | `FORECAST_DEVICE` tidak sampai ke Python — jendela lain, atau `set` dipakai di PowerShell | Langkah 5, mulai dari perintah verifikasi |
 | `checkpoint ... berasal dari run kuantil tunggal` | CSV pra-2026-08-24 ikut tersalin | hapus CSV itu, ia bukan K1 |
 | `checkpoint ... tidak cocok dengan ruang pencarian` | PC di commit yang berbeda dari yang melahirkan checkpoint | samakan commit-nya |
+| `FileNotFoundError: ... category_mapping.json` (LSTM sel 17) | hanya `model_input.parquet` yang disalin di Langkah 1/2, `category_mapping.json` (keluaran kedua `build_model_input()`, dibaca `load_category_mapping()` untuk ukuran embedding) ikut tertinggal | salin `dataset/model_ready/category_mapping.json` dari Mac ke lokasi sama di PC, ulangi Langkah 7 dari sel 17 |
 | `Falling back to prediction using DMatrix due to mismatched devices` | prediksi melintasi host↔device | **normal, bukan error** — ia sebabnya ×7,96 disebut lantai, bukan plafon |
 | `!!! sel N GAGAL setelah X mnt` | satu sel melempar exception | baca traceback di log; kandidat yang sudah selesai aman di checkpoint |
 | baris dengan `pinball` kosong dan `error` terisi | satu kandidat ditolak XGBoost/kehabisan memori | dicatat dan dilewati dengan sengaja; baca `error` sebelum memilih pemenang |
