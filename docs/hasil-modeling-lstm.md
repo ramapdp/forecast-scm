@@ -375,11 +375,12 @@ konsisten dengan konvergensi yang kurang baik pada inisialisasi ini.
 
 **Bacaan yang benar sekarang**: dua data point (n=2) tidak cukup untuk
 interval kepercayaan yang ketat, tapi cukup untuk menunjukkan bahwa K1 seed
-42 (2,8818, dipakai di seluruh dokumen ini dan di bagian 16/18 metodologi)
+42 (2,8818, dipakai di seluruh dokumen ini dan di bagian 1.6/1.8
+`docs/detail-tahap-perbandingan-model.md`)
 **bukan** representasi LSTM yang stabil — ia mendarat di ujung yang
 menguntungkan dari sebaran yang lebar. Rata-rata dua seed (2,9775) juga tetap
-kalah dari RF melebihi ambang 2%. Konsekuensinya untuk bagian 16/18 ada di
-`metodologi-pemodelan-dan-pemilihan-model.md`.
+kalah dari RF melebihi ambang 2%. Konsekuensinya untuk bagian 1.6/1.8 ada di
+`docs/detail-tahap-perbandingan-model.md`.
 
 ### 5.2 K2 — kalibrasi di seluruh 19 titik kuantil, dan `crossing_rate`
 
@@ -448,7 +449,7 @@ berarti** — hipotesis 1 (efek ikatan/near-tie) yang terbukti di sini, arah
 yang berlawanan dengan XGBoost. **`crossing_rate` LSTM boleh dibaca sebagai
 tidak bermasalah secara praktis** untuk keputusan stok; rearrangement
 post-hoc tidak mendesak diperlukan seperti pada XGBoost. Detail keputusan di
-bagian 18 `metodologi-pemodelan-dan-pemilihan-model.md`.
+bagian 1.8 `docs/detail-tahap-perbandingan-model.md`.
 
 ### 5.3 Per `demand_segment`
 
@@ -595,8 +596,8 @@ di tengah kehilangan seluruhnya (komentar notebook, sel "Walk-forward final").
   "hampir seri dengan RF" menjadi "kalah dari RF dan XGBoost sekaligus"
   (bagian 5.1b). Ini batasan paling penting di dokumen ini — angka kepala di
   bagian 1 harus dibaca sebagai satu titik dari sebaran lebar, bukan
-  performa "LSTM" yang stabil, dan bagian 16/18
-  `metodologi-pemodelan-dan-pemilihan-model.md` sudah direvisi mengikuti ini.
+  performa "LSTM" yang stabil, dan bagian 1.6/1.8
+  `docs/detail-tahap-perbandingan-model.md` sudah direvisi mengikuti ini.
 - ~~`crossing_rate` = 0,4345 belum dijelaskan~~ — **diuji 2026-08-29** (bagian
   5.2): hampir seluruhnya derau numerik (rate ambruk ke 1,1% di toleransi gap
   0,1), bukan defek struktural seperti XGBoost. Tidak lagi batasan aktif.
@@ -609,6 +610,6 @@ di tengah kehilangan seluruhnya (komentar notebook, sel "Walk-forward final").
   kuantil-tunggal lama** (bagian 4.3) — beda dari RF/XGBoost, ruang
   pencarian LSTM sendiri berubah, bukan cuma kriterianya.
 - **Perbandingan lintas model (RF/XGBoost/LSTM) belum final** — angka mentah
-  ketiganya sudah ada, tapi bagian 16/18
-  `metodologi-pemodelan-dan-pemilihan-model.md` masih menunggu jawaban atas
+  ketiganya sudah ada, tapi bagian 1.6/1.8
+  `docs/detail-tahap-perbandingan-model.md` masih menunggu jawaban atas
   `crossing_rate` (XGBoost & LSTM) dan derau seed (LSTM) di atas.

@@ -54,7 +54,7 @@ atas RF (0% struktural). Diuji 2026-08-29: sebagian besar defek sungguhan
 membaik dari 2,9433 ke **2,9115** (−1,08%) dan `crossing_rate` turun ke
 **0,0000**, tapi gap ke RF (2,8508) hanya menyempit dari 3,24% ke **2,13%** —
 masih di atas ambang keputusan 2%, jadi urutan RF > XGBoost **tidak
-berbalik**. Lihat bagian 16/18 `metodologi-pemodelan-dan-pemilihan-model.md`
+berbalik**. Lihat bagian 1.6/1.8 `docs/detail-tahap-perbandingan-model.md`
 untuk bagaimana ini masuk ke keputusan pemenang.
 
 Di τ=0,9 — titik yang dijanjikan ke bisnis (B-9) — coverage 0,902 terhadap
@@ -394,8 +394,8 @@ terbukti, bukan hipotesis 1 (efek ikatan) — bandingkan LSTM
 
 **Konsekuensi**: opsi baku post-hoc rearrangement kuantil (Chernozhukov et
 al., 2010) **relevan dan disarankan** sebelum baris XGBoost dipakai untuk
-keputusan stok — bukan cuma opsi teoretis. Detail keputusan di bagian 18
-`metodologi-pemodelan-dan-pemilihan-model.md`.
+keputusan stok — bukan cuma opsi teoretis. Detail keputusan di bagian 1.8
+`docs/detail-tahap-perbandingan-model.md`.
 
 ### 5.3 Per `demand_segment`
 
@@ -637,7 +637,7 @@ dan melanjutkan dari sana kalau dijalankan ulang (`resume=True`), dijaga
   di XGBoost daripada di RF.
 - **Perbandingan lintas model (RF/XGBoost/LSTM) sudah adil, tapi pemenang
   belum resmi dibekukan** — prasyarat wajib (rearrangement XGBoost) sudah
-  terjawab 2026-08-30, RF tetap unggul. Bagian 16/18
-  `metodologi-pemodelan-dan-pemilihan-model.md` masih menunggu persetujuan
+  terjawab 2026-08-30, RF tetap unggul. Bagian 1.6/1.8
+  `docs/detail-tahap-perbandingan-model.md` masih menunggu persetujuan
   eksplisit pemilik proyek sebelum tangga keputusan ditutup dalam sebuah
   commit (Fase E, `docs/todolist-proyek.md`).

@@ -38,7 +38,7 @@ walk-forward. Ini bukan kabar baik yang mengejutkan melainkan cek struktural
 yang lolos: setiap titik kuantil forest adalah persentil dari satu distribusi
 empiris daun yang sama, jadi inversi mustahil secara konstruksi. Nilai bukan-nol
 di kolom ini akan berarti ada bug, bukan ada kelemahan model
-(kriteria K2 `metodologi-pemodelan-dan-pemilihan-model.md`).
+(kriteria K2 `docs/detail-tahap-perbandingan-model.md` bagian 1.7).
 
 Di τ=0,9 — titik yang benar-benar dijanjikan ke bisnis (B-9) — coverage 0,928
 terhadap target 0,90, dengan fill rate 0,959. Sisi bisnisnya, di 345.547 baris
@@ -388,7 +388,7 @@ definisi kuantil) tetap definisi yang paling defensif untuk dipakai.
 Rinciannya di `docs/todolist-proyek.md` (butir 🆕 "Uji hipotesis efek ikatan").
 
 **Yang harus diputuskan sebelum Fase E.** Tabel pola K2 di
-`metodologi-pemodelan-dan-pemilihan-model.md` membaca "simpangan searah di
+`docs/detail-tahap-perbandingan-model.md` bagian 1.7 membaca "simpangan searah di
 hampir seluruh τ" sebagai alasan kuat untuk tersisih. Sebagaimana tertulis,
 aturan itu akan menandai **setiap** model di dataset ini, termasuk yang
 kalibrasinya sempurna, karena lantai 0,4195 memaksa simpangan searah di semua

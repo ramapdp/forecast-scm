@@ -29,7 +29,7 @@ terkendali, lewat ramalan permintaan kumulatif sampai pengiriman berikutnya.
 |---|---|
 | Granularitas | satu deret waktu per pasangan (`Kode Barang`, `Nama Cabang`), harian |
 | Target | `target_lead_time_cumulative` — total permintaan dari besok sampai kiriman berikutnya (3 atau 4 hari, bervariasi per baris menurut kawasan dan hari transaksi) |
-| Target latih vs nilai | **latih** di `..._capped`, **dinilai** di target mentah (keputusan 2026-08-24, bagian 5 `metodologi-pemodelan-dan-pemilihan-model.md`) |
+| Target latih vs nilai | **latih** di `..._capped`, **dinilai** di target mentah (keputusan 2026-08-24, `docs/detail-tahap-preprocessing.md` Subbab 3.3) |
 | Strategi model | satu model global per algoritma, dilatih lintas seluruh deret, dengan identitas item/cabang/kategori sebagai fitur |
 | Validasi | walk-forward 5 fold (Juli–November 2025), test set Desember 2025 terkunci |
 | Kandidat model | Random Forest, XGBoost, LSTM |
@@ -117,7 +117,8 @@ Detail lengkap: `preprocessing.md` — Bagian 1 (metodologi) dan Bagian 2
 |---|---|
 | `preprocessing.md` (Bagian 1) | keputusan preprocessing dan alasannya, gaya akademis |
 | `preprocessing.md` (Bagian 2) | dokumentasi teknis per tahap, naratif + trade-off |
-| `metodologi-pemodelan-dan-pemilihan-model.md` | metrik, tangga keputusan K1–K3, protokol pembukaan test set (bagian 19), rencana kerja (bagian 21) |
+| `detail-tahap-perbandingan-model.md` | metrik, tangga keputusan K1–K4, protokol pembukaan test set (bagian 1.9), rencana kerja (bagian 2.8) |
+| `detail-tahap-modeling-{rf,xgb,lstm}.md` | konstruksi dan hasil tiap model kandidat, masing-masing dengan bagian akademis dan teknis |
 
 **Hasil (angka, bukan rencana)**
 
