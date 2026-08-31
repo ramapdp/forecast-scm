@@ -1421,7 +1421,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Produces: `fit_scaler(df, feature_cols) -> dict[str, tuple[float, float]]`, `apply_scaler(df, scaler, feature_cols) -> pd.DataFrame`, `save_scaler(scaler, path=SCALER_FILE) -> None`, `load_scaler(path=SCALER_FILE) -> dict`, `inverse_log_target(values: np.ndarray) -> np.ndarray`, and `to_sequences(df, feature_cols, target_col=TARGET_COL, lookback=LOOKBACK, log_target=False) -> dict` with keys `X` (`np.ndarray` shaped `(n, lookback, len(feature_cols))`, dtype float32), `y`, `keys`, `fold_id`.
 - `to_tabular` already accepts `log_target` from Task 9; this task adds the matching flag to `to_sequences` and the tests covering both.
 
-**On `log_target`:** spec §3.6 notes that quantiles are equivariant under monotonic transforms, so training on `log1p(y)` and inverting with `expm1` returns the exact same quantile — unlike mean regression, where the transform biases the result. The target is heavily right-skewed (99th percentile 488, max 3,067), so this matters most for the LSTM. It is a parameter rather than always-on because the choice belongs to the modeling spec. **Both adapters must receive the same value** — `validate_contract()` compares `y` values, so a mismatch fails loudly rather than silently producing an unfair comparison.
+**On `log_target`:** spec section 3.6 notes that quantiles are equivariant under monotonic transforms, so training on `log1p(y)` and inverting with `expm1` returns the exact same quantile — unlike mean regression, where the transform biases the result. The target is heavily right-skewed (99th percentile 488, max 3,067), so this matters most for the LSTM. It is a parameter rather than always-on because the choice belongs to the modeling spec. **Both adapters must receive the same value** — `validate_contract()` compares `y` values, so a mismatch fails loudly rather than silently producing an unfair comparison.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1953,7 +1953,7 @@ Expected: completes with no error, every assertion passing.
 
 - [ ] **Step 3: Update `docs/pipeline-overview.md`**
 
-In §2, after stage 12 (QA checks), add:
+In bagian 2, after stage 12 (QA checks), add:
 
 ```markdown
 13. **Modeling preprocessing** (`utils/modeling_prep.py`, run via
@@ -1972,7 +1972,7 @@ In §2, after stage 12 (QA checks), add:
     `(pair, date)` sets, targets, and fold assignments.
 ```
 
-In §4 ("Expected modelling phase"), remove the now-completed
+In section 4 ("Expected modelling phase"), remove the now-completed
 "Categorical encoding strategy" and "LSTM-specific prep" bullets, and replace
 the "Validation strategy" bullet with:
 
@@ -1982,7 +1982,7 @@ the "Validation strategy" bullet with:
   December 2025 opened exactly once for the final figure.
 ```
 
-Also update the §3 bullet about the seven notebook-only QA assertions: they now
+Also update the section 3 bullet about the seven notebook-only QA assertions: they now
 run from the script via `run_qa_checks()`.
 
 - [ ] **Step 4: Verify the docs are consistent**
@@ -2013,7 +2013,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] `category_mapping.json` exists under `dataset/model_ready/`
 
   **Corrected during execution:** an earlier draft of this list also required
-  `scaler_params.json` here. That was wrong. Scaling is fit *per fold* (§4.3),
+  `scaler_params.json` here. That was wrong. Scaling is fit *per fold* (section 4.3),
   so there is no single global scaler for `build_model_input()` to persist —
   writing one would contradict the anti-leakage rule in the same design. The
   `fit_scaler` / `save_scaler` / `load_scaler` utilities are implemented and

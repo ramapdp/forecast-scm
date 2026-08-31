@@ -3,10 +3,10 @@
 ## Purpose
 
 `notebook/eda.ipynb` explores `dataset/dataset.csv` (raw, pre-pipeline) with charts covering
-`Kuantitas` distribution/outliers (§3) and time-series/seasonality (§5). `notebook/data-processing.ipynb`
+`Kuantitas` distribution/outliers (section 3) and time-series/seasonality (section 5). `notebook/data-processing.ipynb`
 runs the full cleansing + feature-engineering pipeline (branch drop, dense-panel building,
 min-history filtering, category canonicalization, outlier capping, calendar features) and already
-has numeric QA assertions (§8: non-negative `Kuantitas`, no duplicate `(pair, Tanggal)`,
+has numeric QA assertions (bagian 8: non-negative `Kuantitas`, no duplicate `(pair, Tanggal)`,
 outlier-capping invariants, lag leakage spot-check, outlet-join sanity) — but no visualizations.
 This spec adds a new section that reproduces analogous distribution/outlier and seasonality charts
 computed on `featured` (the post-pipeline output), so the pipeline's transformations can be
@@ -16,10 +16,10 @@ sanity-checked visually, not just via row counts and asserts.
 
 Verified before starting this design — yes, no gaps found for pipeline-code items:
 
-- 🔴 region/lead-time integration (marked done 2026-08-08): confirmed present in notebook §7
+- 🔴 region/lead-time integration (marked done 2026-08-08): confirmed present in notebook bagian 7
   (`apply_region_features`, `add_lead_time_target`, QA cells `49b2b61b`/`5f4860c9`).
-- 🟡 outlier-handling wired into the notebook (marked done 2026-08-08): confirmed present in §5
-  (`compute_pair_baseline`/`apply_outlier_capping`) and §8 QA cell `80494edc`, in the documented
+- 🟡 outlier-handling wired into the notebook (marked done 2026-08-08): confirmed present in section 5
+  (`compute_pair_baseline`/`apply_outlier_capping`) and section 8 QA cell `80494edc`, in the documented
   order (after calendar features, before lag/rolling).
 - All remaining unchecked items in that file are either data-owner confirmations (no code
   change needed) or separately-scoped gap-engineering items (QA-in-script, cold-start fallback for
@@ -27,7 +27,7 @@ Verified before starting this design — yes, no gaps found for pipeline-code it
 
 ## Placement
 
-New section appended after §8 (QA checks) and before the final concluding markdown cell
+New section appended after section 8 (QA checks) and before the final concluding markdown cell
 (`4cb8c25d`), operating on the `featured` DataFrame already built by earlier cells. Self-contained:
 adds its own `matplotlib`/palette setup (data-processing.ipynb doesn't otherwise plot), rather than
 touching earlier cells.
@@ -71,13 +71,13 @@ Line chart of daily total `Kuantitas` (raw) with 7-day rolling mean, Ramadan per
 Eid al-Fitr/Eid al-Adha dates marked with vertical lines — same style as eda.ipynb cell 33, reusing
 `calendar_features.RAMADAN_PERIODS`/`EID_AL_FITR_DATES`/`EID_AL_ADHA_DATES` (module already imported
 in `data-processing.ipynb` cell `db5a0791`). Confirms the seasonal pattern EDA found in the raw data
-survives branch-dropping (§2) and min-history filtering (§3).
+survives branch-dropping (section 2) and min-history filtering (section 3).
 
 ## Chart 4: Mean daily total by day-of-week (overall)
 
 Bar chart, mean total `Kuantitas` per day-of-week, all branches/items combined — same style as
 eda.ipynb cell 34. Reuses the `day_of_week` column already added by `calendar_features.add_calendar_features`
-(§4) instead of recomputing `_dow`.
+(section 4) instead of recomputing `_dow`.
 
 ## Chart 5: Mean daily total by day-of-week, per `Kategori Barang`
 
@@ -96,10 +96,10 @@ EDA's raw-data shape overall, not diverge structurally.
 
 ## Out of scope
 
-- Reproducing eda.ipynb's other chart groups (data health §2, temporal coverage §4, item×outlet
-  structure §6, lead-time proxy §7, month-seasonality bar, branch×day-of-week deviation heatmap,
+- Reproducing eda.ipynb's other chart groups (data health bagian 2, temporal coverage bagian 4, item×outlet
+  structure section 6, lead-time proxy section 7, month-seasonality bar, branch×day-of-week deviation heatmap,
   year-over-year consistency) — not requested for this pass.
-- Moving any of these charts or the existing §8 numeric QA into `utils/prepare_forecast_data.py`'s
+- Moving any of these charts or the existing section 8 numeric QA into `utils/prepare_forecast_data.py`'s
   `main()` — charts are notebook-only by nature; the numeric-QA-in-script gap is already tracked
   separately in `docs/todolist-data-preprocessing.md` (🟡 "7 QA assertion cuma ada di notebook").
 - Any change to pipeline logic (`utils/*.py`) — this is a notebook-only, visualization-only addition.

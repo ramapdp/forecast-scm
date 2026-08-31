@@ -2034,7 +2034,7 @@ cells = [
     md("## Benchmark\n\n"
        "Satu putaran dua-fit di fold 5 dengan `DEFAULT_PARAMS`, di CPU dan MPS.\n"
        "Yang diukur: detik per epoch, epoch tempat early stopping mendarat, dan\n"
-       "peak RSS. Ketiganya yang mengisi rumus anggaran di §2.2 spec."),
+       "peak RSS. Ketiganya yang mengisi rumus anggaran di bagian 2.2 spec."),
     code("import resource, time\n\n"
          "frame = walk_forward.eligible_rows(df)\n"
          "split = walk_forward.prepare_fold(frame, 5, prepared=True)\n"
@@ -2318,9 +2318,9 @@ Required sections and their sources:
 | Section | Where every number comes from |
 |---|---|
 | 1. Ringkasan | pooled pinball/MAE/coverage from `lstm_walk_forward_results.csv`; shortfall/overstock table for `lstm`, `xgboost`, `random_forest`, `naive_roll_mean_7` |
-| 2. Setup evaluasi | the table from `hasil-modeling-xgb.md` §2 with the LSTM rows changed: implementation `torch==2.8.0`, architecture (hidden/layers/dropout from `lstm_best_params.json`), epoch count via early stopping + refit, device chosen |
+| 2. Setup evaluasi | the table from `hasil-modeling-xgb.md` section 2 with the LSTM rows changed: implementation `torch==2.8.0`, architecture (hidden/layers/dropout from `lstm_best_params.json`), epoch count via early stopping + refit, device chosen |
 | 3. Benchmark | the numbers recorded in Task 8 Step 4: CPU vs MPS `sec_per_epoch`, `best_epoch`, wall time, peak RSS, device chosen and why |
-| 4. Anggaran pencarian | the formula from spec §2.2, the measured inputs, and the resulting N. State the asymmetry against XGB's 30 and RF's 18 plainly |
+| 4. Anggaran pencarian | the formula from spec section 2.2, the measured inputs, and the resulting N. State the asymmetry against XGB's 30 and RF's 18 plainly |
 | 5. Pencarian hyperparameter | `lstm_search_results.csv` — top rows, bottom rows, the spread, and per-dimension medians for `log_target` and `num_layers` |
 | 6. Hasil walk-forward | `lstm_walk_forward_results.csv` — per fold, per `demand_segment`, per `is_delivery_day`, with `best_epoch` per fold from the notebook output |
 | 7. Head-to-head tiga arah | the three results CSVs, both slices (5 folds, and folds 1/2/4) |
@@ -2328,7 +2328,7 @@ Required sections and their sources:
 | 9. Reproduksi | the nbconvert command, and the note that the search resumes from its checkpoint |
 | 10. Batasan | `docs/batasan-penelitian.md` B-1/B-2/B-3, plus the four asymmetries |
 
-Section 7 must contain, verbatim in substance, the four asymmetries from spec §3.2 — the three-row protocol table, and this paragraph:
+Section 7 must contain, verbatim in substance, the four asymmetries from spec section 3.2 — the three-row protocol table, and this paragraph:
 
 > **LSTM melihat masukan yang lebih banyak dari fitur yang sama.** Random
 > Forest dan XGBoost menerima ringkasan 28 hari terakhir yang sudah diringkas
@@ -2341,14 +2341,14 @@ Section 7 must contain, verbatim in substance, the four asymmetries from spec §
 > kaya — dan kalau ia kalah meski masukannya lebih kaya, itu temuan yang jauh
 > lebih kuat daripada sekadar "LSTM kalah".
 
-Also carry over the unit caveat that `hasil-modeling-xgb.md` §1 has, since the same mixed-unit sum appears:
+Also carry over the unit caveat that `hasil-modeling-xgb.md` section 1 has, since the same mixed-unit sum appears:
 
 > Catatan satuan: `shortfall_units` dan `overstock_units` menjumlahkan unit
 > lintas SKU yang satuannya campur (Kg, Porsi, Botol, PCS, …), jadi angkanya
 > sah untuk membandingkan antar model pada baris yang sama, tapi tidak punya
 > makna fisik sebagai satu besaran tunggal.
 
-And state, in §2 or §6, the 5% step-count difference between the two fits, as spec §2.4 requires.
+And state, in section 2 or section 6, the 5% step-count difference between the two fits, as spec section 2.4 requires.
 
 - [ ] **Step 2: Verify every number in the document against its artifact**
 
@@ -2449,5 +2449,5 @@ fold 5, CPU:
 `DEFAULT_PARAMS` moved to `num_layers=1` — the most expensive *retained* combo,
 so the benchmark above measures the worst case of the space actually searched.
 The consequence is that this search never asks whether a second layer would
-have helped; `docs/hasil-modeling-lstm.md` §4 and §10 must say so.
+have helped; `docs/hasil-modeling-lstm.md` section 4 and section 10 must say so.
 

@@ -11,7 +11,7 @@ sebelum refresh kategori WIP-2 2026-08-22, jadi level 4 pada `Kategori Barang_id
 Model yang dimuat ulang tidak akan gagal — ia tetap memberi angka, dari fitur
 yang salah. Angka di dokumen ini tetap sah sebagai catatan run tersebut, bukan
 sebagai gambaran `model_input.parquet` yang sekarang. Model ini akan **dilatih
-ulang** dalam migrasi multi-kuantil berikutnya; latar lengkapnya di §0
+ulang** dalam migrasi multi-kuantil berikutnya; latar lengkapnya di bagian 0
 `docs/pipeline-overview.md` dan B-9 `docs/batasan-penelitian.md`.
 
 **Desember 2025 tidak dibuka.** Semua angka di bawah datang dari walk-forward
@@ -26,7 +26,7 @@ terhadap target service level 0.90.
 
 Terhadap Random Forest (2.410) selisihnya **0,8%**, dan di potongan fold yang
 tidak ikut memilih pemenang selisih itu menyusut jadi **0,1%** (2.400 lawan
-2.403) — praktis seri. §6 membahas kenapa angka setipis itu belum cukup untuk
+2.403) — praktis seri. bagian 6 membahas kenapa angka setipis itu belum cukup untuk
 menobatkan pemenang.
 
 XGBoost **kalah MAE** dari `naive_roll_mean_7` (14.31 lawan 9.65), persis
@@ -85,7 +85,7 @@ dengan yang dilihat Random Forest, jadi perbandingannya setara.
 Ketiga baseline naive dinilai pada **baris yang identik** dengan XGBoost —
 dijamin oleh `utils/modelling/walk_forward.py` yang memiliki definisi fold dan kelayakan
 baris, dan menerima model sebagai callable yang disuntikkan. Baris yang sama
-itu juga yang dipakai run Random Forest, yang membuat §6 sah dilakukan.
+itu juga yang dipakai run Random Forest, yang membuat bagian 6 sah dilakukan.
 
 ## 3. Benchmark
 
@@ -114,7 +114,7 @@ Dua hal yang dikonfirmasi angka ini:
    2,7× lebih murah per putaran, 5,5× per fit — dengan peak RSS 3,65 GB lawan
    4,92 GB. Itulah sebabnya anggaran pencarian bisa dinaikkan ke 30 kandidat
    tanpa menambah waktu jam dinding, dan itu juga yang bikin perbandingan di
-   §6 punya asimetri yang harus disebutkan.
+   bagian 6 punya asimetri yang harus disebutkan.
 
 Konfigurasi benchmark ini adalah `DEFAULT_PARAMS`, bukan pemenang pencarian —
 tujuannya mengukur ongkos dan menguji plafon ronde, bukan mencetak skor.
@@ -343,7 +343,7 @@ adalah penjelasan tandingan yang sama hidupnya dengan "XGBoost memang lebih
 baik":
 
 1. **Anggaran pencarian 30 kandidat lawan 18.** XGBoost dapat 67% lebih banyak
-   undian dari ruangnya karena fitnya 2,7× lebih murah (§3). Sebagian dari
+   undian dari ruangnya karena fitnya 2,7× lebih murah (bagian 3). Sebagian dari
    selisih 0,1% itu bisa saja cuma anggaran pencarian yang lebih besar.
 2. **Early stopping lawan jumlah pohon yang dipatok.** Jumlah ronde XGBoost
    dipilih per fold dari data (313–682), sementara RF memakai `n_estimators`
@@ -427,10 +427,10 @@ libomp` sekali di macOS (Linux: `libgomp`, biasanya sudah ada).
   0.9 dengan baseline titik-tengah menghukum yang pertama karena melakukan
   persis apa yang diminta. Pinball@0.9 adalah kriterianya.
 - **Fold 3 dan 5 ikut memilih pemenang**, jadi skornya di potongan per-fold
-  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di §5.1 adalah
+  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di bagian 5.1 adalah
   angka yang bersih.
 - **Perbandingan lawan RF belum dinetralkan anggarannya.** 30 kandidat lawan
-  18, dan early stopping lawan jumlah pohon yang dipatok (§6). Menyamakan
+  18, dan early stopping lawan jumlah pohon yang dipatok (bagian 6). Menyamakan
   keduanya butuh run ulang, bukan pembacaan ulang tabel yang sama.
 - **Coverage sedikit di bawah target di ekor periode.** Fold 4 dan 5 mencetak
   0.898 dan 0.894 terhadap target 0.90, begitu juga segmen `erratic` (0.893)

@@ -1,7 +1,7 @@
 # Runbook — menjalankan Tahap B (pencarian) di PC Windows + RTX 4060 Ti 8 GB
 
 Dokumen ini adalah prosedur, bukan desain. Alasan di balik pembagian mesinnya
-ada di Bagian 1 dan §0bis
+ada di Bagian 1 dan bagian 0bis
 `superpowers/specs/2026-08-24-distributed-gpu-training-design.md`; di sini
 hanya langkah-langkahnya, berurutan, untuk dijalankan sekali dari awal sampai
 selesai.

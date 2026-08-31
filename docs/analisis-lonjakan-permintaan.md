@@ -37,7 +37,7 @@ terukur adalah stockout sungguhan, bukan pesanan yang sudah ditangani di luar
 model.
 
 Pertanyaan aslinya diajukan sebagai pilihan biner: pre-order, atau permintaan
-organik/restock? Jawabannya bukan salah satu dari keduanya — lihat §4.
+organik/restock? Jawabannya bukan salah satu dari keduanya — lihat bagian 4.
 
 ## 2. Langkah 1 — hipotesis restock gugur
 
@@ -53,12 +53,12 @@ Diukur pada jendela 7 hari sebelum vs 7 hari sesudah, pada pasangan (item,
 cabang) yang sama, dengan `segment_id` ikut menjadi kunci sehingga tidak ada
 jendela yang menyeberangi masa tutup cabang:
 
-| Kelompok (Packaging di-cap) | n | rata2 sebelum | rata2 sesudah | selisih | rasio median | p (Wilcoxon) |
-|---|---:|---:|---:|---:|---:|---:|
-| semua baris di-cap | 4.269 | 17,59 | 17,71 | +0,7% | 1,000 | 0,676 |
-| lonjakan **sendirian** | 1.122 | 25,35 | 25,70 | **+1,4%** | 1,000 | 0,237 |
-| lonjakan serentak (≥3 item) | 2.784 | 10,87 | 10,64 | −2,0% | 1,000 | 0,919 |
-| kontrol: hari biasa (rasio 0,8–1,25×) | 93.004 | 24,33 | 24,50 | +0,7% | 1,000 | 0,003 |
+| Kelompok (Packaging di-cap)           |      n | rata2 sebelum | rata2 sesudah |   selisih | rasio median | p (Wilcoxon) |
+| ------------------------------------- | -----: | ------------: | ------------: | --------: | -----------: | -----------: |
+| semua baris di-cap                    |  4.269 |         17,59 |         17,71 |     +0,7% |        1,000 |        0,676 |
+| lonjakan **sendirian**                |  1.122 |         25,35 |         25,70 | **+1,4%** |        1,000 |        0,237 |
+| lonjakan serentak (≥3 item)           |  2.784 |         10,87 |         10,64 |     −2,0% |        1,000 |        0,919 |
+| kontrol: hari biasa (rasio 0,8–1,25×) | 93.004 |         24,33 |         24,50 |     +0,7% |        1,000 |        0,003 |
 
 Dijalankan ulang dengan hari lonjakan lain **dikeluarkan** dari kedua jendela
 (supaya lonjakan tetangga tidak menutupi penurunan yang sedang dicari), hasilnya
@@ -68,11 +68,11 @@ Sebagai pemeriksaan ketiga, **kadensi** pengambilan juga tidak berubah — jumla
 hari bergerak (`Kuantitas > 0`) dalam 7 hari sesudah dibandingkan 7 hari
 sebelum:
 
-| Kelompok | hari bergerak/7 sebelum | sesudah | selisih |
-|---|---:|---:|---:|
-| semua Packaging di-cap | 4,93 | 5,02 | +1,7% |
-| lonjakan sendirian | 4,95 | 4,97 | **+0,3%** |
-| kontrol hari biasa | 5,24 | 5,24 | +0,0% |
+| Kelompok               | hari bergerak/7 sebelum | sesudah |   selisih |
+| ---------------------- | ----------------------: | ------: | --------: |
+| semua Packaging di-cap |                    4,93 |    5,02 |     +1,7% |
+| lonjakan sendirian     |                    4,95 |    4,97 | **+0,3%** |
+| kontrol hari biasa     |                    5,24 |    5,24 |     +0,0% |
 
 **Kesimpulan.** Tidak ada penurunan sesudah lonjakan, baik pada volume maupun
 pada frekuensi pengambilan. Lonjakan bersifat **aditif**: ia berdiri di atas
@@ -104,11 +104,11 @@ adalah hari acak di cabang itu".
 1.157 cabang-hari punya lonjakan Packaging berdiri sendiri; 29.905 cabang-hari
 tanpa lonjakan apa pun menjadi pembanding.
 
-| Item | rasio median hari lonjakan | rasio median hari biasa | pangsa ≥2× | persentil (dicocokkan per hari-dalam-minggu) | p |
-|---|---:|---:|---:|---:|---:|
-| Nasi Kebuli (FGS-00004) | **1,915** | 0,912 | 46,8% vs 6,5% | **0,821** | 2,9e−137 |
-| Sambal - FG (FGS-00005) | 1,885 | 0,917 | 45,4% vs 6,3% | 0,818 | 3,2e−136 |
-| Ayam Kebuli (FGS-00001) | 1,659 | 0,921 | 32,9% vs 5,7% | 0,756 | 1,7e−112 |
+| Item                    | rasio median hari lonjakan | rasio median hari biasa |    pangsa ≥2× | persentil (dicocokkan per hari-dalam-minggu) |        p |
+| ----------------------- | -------------------------: | ----------------------: | ------------: | -------------------------------------------: | -------: |
+| Nasi Kebuli (FGS-00004) |                  **1,915** |                   0,912 | 46,8% vs 6,5% |                                    **0,821** | 2,9e−137 |
+| Sambal - FG (FGS-00005) |                      1,885 |                   0,917 | 45,4% vs 6,3% |                                        0,818 | 3,2e−136 |
+| Ayam Kebuli (FGS-00001) |                      1,659 |                   0,921 | 32,9% vs 5,7% |                                        0,756 | 1,7e−112 |
 
 Pencocokan per hari-dalam-minggu itu perlu, bukan hiasan: 65,1% lonjakan
 Packaging sendirian jatuh di akhir pekan sementara hari biasa hanya 24,7%. Tanpa
@@ -118,12 +118,12 @@ efeknya bertahan di atas efek hari.
 
 Dipecah per kemasan yang melonjak, persentil Nasi Kebuli pada hari itu:
 
-| Kemasan yang melonjak | n | rasio median Nasi Kebuli | persentil | p |
-|---|---:|---:|---:|---:|
-| Rice Bowl 600 ml | 815 | **2,04** | 0,848 | 4,3e−97 |
-| Lunch Box | 35 | 2,76 | 0,856 | 9,6e−08 |
-| Gelas 16 Oz | 87 | 1,31 | 0,729 | 7,1e−11 |
-| Gelas 22 Oz | 135 | 1,28 | 0,695 | 2,8e−12 |
+| Kemasan yang melonjak |   n | rasio median Nasi Kebuli | persentil |       p |
+| --------------------- | --: | -----------------------: | --------: | ------: |
+| Rice Bowl 600 ml      | 815 |                 **2,04** |     0,848 | 4,3e−97 |
+| Lunch Box             |  35 |                     2,76 |     0,856 | 9,6e−08 |
+| Gelas 16 Oz           |  87 |                     1,31 |     0,729 | 7,1e−11 |
+| Gelas 22 Oz           | 135 |                     1,28 |     0,695 | 2,8e−12 |
 
 **Kesimpulan.** Lonjakan Packaging "sendirian" adalah **peristiwa permintaan
 nyata**, bukan pergerakan kemasan saja. Makanan ikut naik ~2× median-nya, di
@@ -143,11 +143,11 @@ Jadi resolusinya bukan salah satu dari dua opsi yang ditanyakan, melainkan opsi
 ketiga yang tidak ada dalam pertanyaan: **bercampur, dan tidak dapat dipisahkan
 dari data yang ada.**
 
-Ini konsisten dengan kedua langkah sebelumnya. Aditif (§2) menjelaskan kenapa
+Ini konsisten dengan kedua langkah sebelumnya. Aditif (bagian 2) menjelaskan kenapa
 tidak ada penurunan sesudahnya — permintaan itu memang benar-benar terjadi,
-lewat jalur mana pun ia datang. Ko-gerakan makanan (§3) menjelaskan kenapa
+lewat jalur mana pun ia datang. Ko-gerakan makanan (bagian 3) menjelaskan kenapa
 lonjakan itu terlihat menyeluruh di cabang. Konsentrasi akhir pekan yang terukur
-(§5) adalah bentuk yang disebutkan pemilik data.
+(bagian 5) adalah bentuk yang disebutkan pemilik data.
 
 ## 5. Konsekuensi yang belum masuk pertimbangan sebelumnya
 
@@ -163,15 +163,15 @@ karena itu menghapus **sebagian sinyal yang sebenarnya dapat dipelajari**.
 
 Konsentrasi akhir pekannya tegas dan bergradasi rapi:
 
-| Hari | Pangsa baris di-cap | Pangsa seluruh panel |
-|---|---:|---:|
-| Senin | 7,0% | 14,3% |
-| Selasa | 8,7% | 14,3% |
-| Rabu | 10,3% | 14,3% |
-| Kamis | 12,2% | 14,2% |
-| Jumat | 17,4% | 14,3% |
-| **Sabtu** | **20,4%** | 14,3% |
-| **Minggu** | **23,9%** | 14,3% |
+| Hari       | Pangsa baris di-cap | Pangsa seluruh panel |
+| ---------- | ------------------: | -------------------: |
+| Senin      |                7,0% |                14,3% |
+| Selasa     |                8,7% |                14,3% |
+| Rabu       |               10,3% |                14,3% |
+| Kamis      |               12,2% |                14,2% |
+| Jumat      |               17,4% |                14,3% |
+| **Sabtu**  |           **20,4%** |                14,3% |
+| **Minggu** |           **23,9%** |                14,3% |
 
 ### Dampaknya terbatas, dan arahnya bisa diperkirakan
 
@@ -184,13 +184,13 @@ baris di-cap sepanjang dua tahun data.
 Yang terpangkas adalah item bervolume kecil:
 
 | Median pasangan (unit/hari) | Baris di-cap | % baris di-cap |
-|---|---:|---:|
-| ≤2 | 3.819 | 50,6% |
-| 3–5 | 1.562 | 20,7% |
-| 6–10 | 935 | 12,4% |
-| 11–25 | 565 | 7,5% |
-| 26–100 | 632 | 8,4% |
-| >100 | 39 | 0,5% |
+| --------------------------- | -----------: | -------------: |
+| ≤2                          |        3.819 |          50,6% |
+| 3–5                         |        1.562 |          20,7% |
+| 6–10                        |          935 |          12,4% |
+| 11–25                       |          565 |           7,5% |
+| 26–100                      |          632 |           8,4% |
+| >100                        |           39 |           0,5% |
 
 83,6% baris yang dipangkas berasal dari pasangan dengan median ≤10 unit/hari;
 median dari `pair_median` pada baris yang di-cap adalah **2 unit/hari**. Item

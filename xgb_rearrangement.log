@@ -1,0 +1,31 @@
+selesai dalam 2.89 jam, disimpan ke dataset/model_ready/xgb_walk_forward_results_rearranged.csv
+best_iteration per fold: [375, 242, 255, 297, 390]
+
+K1 (5 fold, sesudah rearrangement)          : 2.8910
+K1 (fold 1/2/4 bersih, sesudah rearrangement): 2.9115  <- bandingkan ke XGBoost asli 2,9433 dan RF 2,8508
+crossing_rate sesudah rearrangement          : 0.0000  <- harus 0 (sort menjamin monoton)
+
+K2 (fold 1/2/4 bersih) sesudah rearrangement:
+ quantile  target  coverage       gap
+     0.05    0.05  0.440805  0.390805
+     0.10    0.10  0.460381  0.360381
+     0.15    0.15  0.480811  0.330811
+     0.20    0.20  0.502672  0.302672
+     0.25    0.25  0.525075  0.275075
+     0.30    0.30  0.546954  0.246954
+     0.35    0.35  0.570601  0.220601
+     0.40    0.40  0.595237  0.195237
+     0.45    0.45  0.621800  0.171800
+     0.50    0.50  0.649593  0.149593
+     0.55    0.55  0.677469  0.127469
+     0.60    0.60  0.706826  0.106826
+     0.65    0.65  0.737521  0.087521
+     0.70    0.70  0.768368  0.068368
+     0.75    0.75  0.800720  0.050720
+     0.80    0.80  0.835193  0.035193
+     0.85    0.85  0.870418  0.020418
+     0.90    0.90  0.907685  0.007685
+     0.95    0.95  0.946415 -0.003585
+
+[cek reproduksibilitas] K1 SEBELUM rearrangement, fold 1/2/4: 2.9433  <- bandingkan ke angka resmi 2,9433
+[cek reproduksibilitas] crossing_rate SEBELUM rearrangement per fold: {1: 0.986943481371416, 2: 0.9826034793041392, 3: 0.9685119782136931, 4: 0.9663151987713391, 5: 0.9784836237401264}  <- bandingkan ke angka resmi 0,9767

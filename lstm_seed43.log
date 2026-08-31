@@ -1,0 +1,4 @@
+selesai dalam 9.81 jam, disimpan ke dataset/model_ready/lstm_walk_forward_results_seed43.csv
+best_epoch per fold: [8, 13, 6, 10, 12]
+K1 (5 fold)          : 3.0805
+K1 (fold 1/2/4 bersih): 3.0732  <- bandingkan ke RF 2.8508

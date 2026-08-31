@@ -265,7 +265,7 @@ multi-quantile spec).
 The migration checklist and the multi-quantile spec both quote "18 candidates"
 for XGBoost. That is a transcription of the **Random Forest** budget; XGBoost's
 measured budget is 30 (`dataset/model_ready/xgb_search_results.csv`, 30 rows;
-`docs/hasil-modeling-xgb.md` §"Pencarian hyperparameter"). 30 is the number that
+`docs/hasil-modeling-xgb.md` section "Pencarian hyperparameter"). 30 is the number that
 applies here.
 
 `n_estimators` is absent by design (see Decisions). `max_depth=None` has no

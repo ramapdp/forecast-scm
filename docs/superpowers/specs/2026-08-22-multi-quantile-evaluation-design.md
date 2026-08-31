@@ -143,9 +143,9 @@ pencarian hyperparameter yang sudah diperluas ke multi-kuantil.
 > **Koreksi 2026-08-24.** Baris XGBoost semula menyebut "18 kandidat" — itu
 > anggaran Random Forest, bukan XGBoost. Anggaran XGBoost yang terukur adalah 30
 > (`dataset/model_ready/xgb_search_results.csv`, 30 baris). Ruang pencarian LSTM
-> juga dikoreksi dari 48 menjadi 144, sesuai `SEARCH_SPACE` di §2.1
+> juga dikoreksi dari 48 menjadi 144, sesuai `SEARCH_SPACE` di bagian 2.1
 > `2026-08-19-lstm-modeling-design.md`; angka 48 adalah ruang setelah dua dimensi
-> dipotong oleh benchmark, sebagaimana tercatat di §18
+> dipotong oleh benchmark, sebagaimana tercatat di bagian 18
 > `metodologi-pemodelan-dan-pemilihan-model.md`.
 >
 > Random Forest tidak muncul di kolom "perubahan yang diperlukan" karena
@@ -159,8 +159,8 @@ tidak diulang" **sudah tidak berlaku**: pencarian RF ikut dijalankan ulang, 18
 kandidat, pada data pasca-reclass dan kriteria K1. Pembalikannya memang bukan
 konsekuensi migrasi ini — persis seperti yang ditulis paragraf itu tentang
 bundle — melainkan konsekuensi reclass WIP-2 yang sama: `rf_best_params.json`
-dipilih 2026-08-18, di atas data pra-reclass. Lihat §Part 2
-`2026-08-18-random-forest-modeling-design.md` dan §"Langkah 1–3"
+dipilih 2026-08-18, di atas data pra-reclass. Lihat Part 2
+`2026-08-18-random-forest-modeling-design.md` dan bagian "Langkah 1–3"
 `2026-08-22-model-comparison-refactor-migration.md`.
 
 ## Testing
@@ -232,7 +232,7 @@ dipilih 2026-08-18, di atas data pra-reclass. Lihat §Part 2
      Mengurangi anggaran justru akan membuat run multi-kuantil dicari lebih
      sempit daripada run kuantil-tunggal yang digantikannya, sehingga
      perbandingan lama-baru tidak lagi setara. Untuk LSTM, N dipatok 12 dan
-     tidak diturunkan ulang dari formula anggaran §2.2 spec LSTM;
+     tidak diturunkan ulang dari formula anggaran bagian 2.2 spec LSTM;
      konsekuensinya plafon 8 jam kemungkinan terlampaui, dicatat sebagai ongkos
      terukur di `docs/hasil-modeling-lstm.md`.
 
@@ -244,8 +244,8 @@ dipilih 2026-08-18, di atas data pra-reclass. Lihat §Part 2
      > melainkan penilaian bahwa ketimpangan anggaran tidak boleh dipertahankan
      > ketika ketiga model dicari ulang dari nol, karena kekalahan LSTM di K1
      > menjadi tidak dapat diatribusikan antara arsitektur dan kedangkalan
-     > pencarian. Uraian lengkapnya di §2.2
-     > `2026-08-19-lstm-modeling-design.md` dan §21
+     > pencarian. Uraian lengkapnya di bagian 2.2
+     > `2026-08-19-lstm-modeling-design.md` dan bagian 21
      > `docs/metodologi-pemodelan-dan-pemilihan-model.md`. Anggaran XGBoost (30)
      > dan RF (18) tidak berubah.
    - **Peralihan ke Tahap B memicu pengulangan pencarian dengan grid yang

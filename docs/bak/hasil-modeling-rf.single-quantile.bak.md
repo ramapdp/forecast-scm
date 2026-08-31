@@ -10,7 +10,7 @@
 >
 > Yang tetap sah dibaca dari sini: *peringkat* ke-18 kandidat pencarian di
 > bawah kriteria lama — satu-satunya salinan yang tersisa, dan dasar
-> perbandingan peringkat di §4 dokumen baru.
+> perbandingan peringkat di bagian 4 dokumen baru.
 
 # Hasil Modeling — Random Forest kuantil 0.9
 
@@ -25,7 +25,7 @@ sebelum refresh kategori WIP-2 2026-08-22, jadi kolom one-hot WIP-2 kini selalu 
 Model yang dimuat ulang tidak akan gagal — ia tetap memberi angka, dari fitur
 yang salah. Angka di dokumen ini tetap sah sebagai catatan run tersebut, bukan
 sebagai gambaran `model_input.parquet` yang sekarang. Model ini akan **dilatih
-ulang** dalam migrasi multi-kuantil berikutnya; latar lengkapnya di §0
+ulang** dalam migrasi multi-kuantil berikutnya; latar lengkapnya di bagian 0
 `docs/pipeline-overview.md` dan B-9 `docs/batasan-penelitian.md`.
 
 **Desember 2025 tidak dibuka.** Semua angka di bawah datang dari walk-forward
@@ -320,7 +320,7 @@ run yang terbunuh OS tidak menghanguskan seluruh sore.
   0.9 dengan baseline titik-tengah menghukum yang pertama karena melakukan
   persis apa yang diminta. Pinball@0.9 adalah kriterianya.
 - **Fold 3 dan 5 ikut memilih pemenang**, jadi skornya di potongan per-fold
-  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di §5.1 adalah
+  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di bagian 5.1 adalah
   angka yang bersih.
 - **Satu model, belum perbandingan.** XGBoost dan LSTM yang direncanakan di
   `docs/pipeline-overview.md` belum dijalankan, jadi belum ada yang bisa

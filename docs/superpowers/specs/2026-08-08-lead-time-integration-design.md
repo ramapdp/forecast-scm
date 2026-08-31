@@ -3,7 +3,7 @@
 ## Purpose
 
 Finish the region/lead-time integration flagged as the highest-priority gap in
-`docs/todolist-data-preprocessing.md` (§🔴): wire the already-drafted
+`docs/todolist-data-preprocessing.md` (marked 🔴): wire the already-drafted
 `outlet_features.apply_region_features` into the scripted pipeline, make
 `lead_time_days` vary per row instead of being a flat constant, and build the
 cumulative-demand-until-next-delivery target that is the core business goal
@@ -179,7 +179,7 @@ block), so this grouping is purely for readability.
 - `docs/superpowers/specs/2026-07-21-forecast-data-prep-design.md`: update
   the sections that currently describe region mapping as absent.
 - `docs/todolist-data-preprocessing.md`: check off the four items under
-  §🔴 (wiring, variable `lead_time_days`, cumulative target, doc updates).
+  the 🔴 heading (wiring, variable `lead_time_days`, cumulative target, doc updates).
 - `CLAUDE.md`: add the new notebook and `featured.parquet` to the pipeline
   description; correct the run command to `python3 -m
   utils.prepare_forecast_data`.
@@ -187,10 +187,10 @@ block), so this grouping is purely for readability.
 ## Out of scope
 
 - Confirming `kawasan`/`hari_pengiriman` provenance with the data owner
-  (tracked separately in `docs/todolist-data-preprocessing.md` §🟠) — this
+  (tracked separately in `docs/todolist-data-preprocessing.md` under the 🟠 heading) — this
   design proceeds on the current `dataset/outlet_mapping.csv` as-is, per
   explicit user direction to not block on that confirmation.
-- Re-running `eda.ipynb` §5/§7 to segment day-of-week/lead-time analysis by
+- Re-running `eda.ipynb` section 5/7 to segment day-of-week/lead-time analysis by
   region — noted in the todolist as a nice-to-have follow-up, not required
   for the pipeline to produce correct model-ready data.
 - Moving the 7 QA assertions from notebook-only into the script (tracked

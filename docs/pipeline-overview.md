@@ -23,7 +23,7 @@ What changed: the data owner confirmed on 2026-08-22 that `Barang Semi FG
 `docs/batasan-penelitian.md`.
 
 The `category_mapping.json` file itself did **not** get renumbered — per the
-index-stability policy (§4.12(e) of `docs/metodologi-preprocessing.md`), WIP-2
+index-stability policy (section 4.12(e), Part 1, of `docs/preprocessing.md`), WIP-2
 keeps index 4 as an orphan and no other category shifted. That is exactly what
 makes this failure quiet: a stale model still loads, still finds every column
 it expects, and still returns confident numbers. What broke is narrower and

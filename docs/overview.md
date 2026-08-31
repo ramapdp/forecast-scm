@@ -29,7 +29,7 @@ terkendali, lewat ramalan permintaan kumulatif sampai pengiriman berikutnya.
 |---|---|
 | Granularitas | satu deret waktu per pasangan (`Kode Barang`, `Nama Cabang`), harian |
 | Target | `target_lead_time_cumulative` — total permintaan dari besok sampai kiriman berikutnya (3 atau 4 hari, bervariasi per baris menurut kawasan dan hari transaksi) |
-| Target latih vs nilai | **latih** di `..._capped`, **dinilai** di target mentah (keputusan 2026-08-24, §5 `metodologi-pemodelan-dan-pemilihan-model.md`) |
+| Target latih vs nilai | **latih** di `..._capped`, **dinilai** di target mentah (keputusan 2026-08-24, bagian 5 `metodologi-pemodelan-dan-pemilihan-model.md`) |
 | Strategi model | satu model global per algoritma, dilatih lintas seluruh deret, dengan identitas item/cabang/kategori sebagai fitur |
 | Validasi | walk-forward 5 fold (Juli–November 2025), test set Desember 2025 terkunci |
 | Kandidat model | Random Forest, XGBoost, LSTM |
@@ -97,8 +97,8 @@ dataset/csv/*.csv
   → evaluation.py               pinball per τ, K1, coverage, fill rate, crossing
 ```
 
-Detail lengkap: `metodologi-preprocessing.md` (metodologi) dan
-`dokumentasi-preprocessing-id.md` (dokumentasi teknis).
+Detail lengkap: `preprocessing.md` — Bagian 1 (metodologi) dan Bagian 2
+(dokumentasi teknis).
 
 ## 6. Peta dokumen
 
@@ -109,15 +109,15 @@ Detail lengkap: `metodologi-preprocessing.md` (metodologi) dan
 | `overview.md` | dokumen ini |
 | `batasan-penelitian.md` | B-1…B-11, batasan yang tidak bisa dihilangkan dengan menulis kode lebih baik. Wajib dibaca sebelum menafsirkan hasil apa pun |
 | `pipeline-overview.md` | status dan struktur pipeline |
-| `temuan-eda.md` | temuan EDA atas `dataset.csv`: konteks bisnis, 13 kesimpulan, open questions, checklist pra-modeling. Narasi ini dulu ada di `notebook/eda.ipynb` |
+| `detail-tahap-eda.md` | elaborasi mendetail EDA atas `dataset.csv`: konteks bisnis, tahapan analisis bagian 1.3–1.13, kesimpulan dan checklist pra-modeling (bagian 1.14), plus detail teknis notebook di Bagian 2. Menggantikan `temuan-eda.md` |
 
 **Metodologi**
 
 | Dokumen | Isi |
 |---|---|
-| `metodologi-preprocessing.md` | keputusan preprocessing dan alasannya |
-| `dokumentasi-preprocessing-id.md` | dokumentasi teknis per tahap |
-| `metodologi-pemodelan-dan-pemilihan-model.md` | metrik, tangga keputusan K1–K3, protokol pembukaan test set (§19), rencana kerja (§21) |
+| `preprocessing.md` (Bagian 1) | keputusan preprocessing dan alasannya, gaya akademis |
+| `preprocessing.md` (Bagian 2) | dokumentasi teknis per tahap, naratif + trade-off |
+| `metodologi-pemodelan-dan-pemilihan-model.md` | metrik, tangga keputusan K1–K3, protokol pembukaan test set (bagian 19), rencana kerja (bagian 21) |
 
 **Hasil (angka, bukan rencana)**
 
@@ -177,7 +177,7 @@ memicu error, bukan diabaikan diam-diam).
 | Fase 3 — XGBoost | 🔶 baru probe Tahap 0 (kandidat 0, CPU, 19.959 detik); pencarian penuh belum jalan |
 | Fase 3 — LSTM | ⬜ belum jalan |
 | Penulisan ulang `hasil-modeling-*.md` | 🔶 `-rf.md` selesai 2026-08-25; `-xgb.md` dan `-lstm.md` setelah Fase 3 masing-masing |
-| Pembukaan test set Desember 2025 | ⬜ belum pernah dibuka, protokol §19 |
+| Pembukaan test set Desember 2025 | ⬜ belum pernah dibuka, protokol bagian 19 |
 | Alokasi kuantil tersegmentasi | ⬜ setelah pemenang ditetapkan |
 | Data biaya/margin per SKU | ⬜ terbuka (B-10), 0% volume terisi |
 
@@ -206,7 +206,7 @@ Beberapa pola berulang yang menjelaskan kenapa kode ditulis seperti sekarang:
    yang tidak menguntungkan hasil.
 5. **Nilai kategori pensiun tetap memegang indeksnya.** Membebaskan indeks
    akan mengarahkan model terlatih ke kategori yang keliru
-   (`metodologi-preprocessing.md` §4.12(e)).
+   (`preprocessing.md` bagian 4.12(e), Bagian 1).
 6. **TDD.** Tes ditulis dan dipastikan gagal karena alasan yang benar
    sebelum implementasi. 842 tes per 2026-08-26.
 7. **Notebook berdiri sendiri, `utils/` tempat kode diuji.** Sejak 2026-08-26

@@ -339,7 +339,7 @@ once globally, otherwise December statistics leak into the July fold. Scaler
 parameters are persisted alongside `category_mapping.json` for weekly inference.
 
 `target_lead_time_cumulative` and raw quantity features are `log1p`-transformed
-(safe per §3.6).
+(safe per bagian 3.6).
 
 **Sequences spanning a relocation date.** Four branches have exact relocation
 dates mid-series, so some 28-day windows mix old-city and new-city demand

@@ -1048,14 +1048,14 @@ git commit -m "chore: regenerate artifacts without fabricated closure rows"
 
 - [ ] **Step 1: Update `docs/dokumentasi-preprocessing-id.md`**
 
-- §2 "Sumber data": add a row for `dataset/outlet_closures.csv` — "Interval tutup per outlet (relokasi, tutup sementara); 3 baris terkonfirmasi pemilik data 2026-08-15".
-- §3 flow diagram: annotate stage 5 as `build_panel.py (panel harian padat per segmen + filter riwayat min.)`.
-- §3 size table and §13 artifact table: replace 1.522.868 / 1.467.822 / 63 with the measured values and 64 columns; `model_input.parquet` becomes 76 columns.
-- §5: add a subsection explaining that days inside a recorded closure produce no rows, that `segment_id` numbers the contiguous active blocks, and that every shift-based feature groups by pair + segment. Include the KY011 before/after table (104,0 → 371,3; cv 1,863 → 0,502; peringkat #59 → #46) as the worked example.
-- §8.4 leakage table: add a row — "Fitur bergeser dikelompokkan per (pasangan, segmen) | Lag, rolling, dan target tidak pernah melintasi periode outlet tutup".
-- §9 QA list: change "7 asersi" to the new count and describe the three added checks.
-- §15: add Cilebut as a known cold-start case, and add `KY068 - Kebuli Yaman Kramatwatu` (gap 13 hari, 2025-06-28..2025-07-10) as a borderline gap awaiting owner confirmation.
-- §16 glossary: add "**Segmen**" — "Blok tanggal aktif kontinu milik satu pasangan; dipisahkan oleh periode outlet tutup".
+- section 2 "Sumber data": add a row for `dataset/outlet_closures.csv` — "Interval tutup per outlet (relokasi, tutup sementara); 3 baris terkonfirmasi pemilik data 2026-08-15".
+- bagian 3 flow diagram: annotate stage 5 as `build_panel.py (panel harian padat per segmen + filter riwayat min.)`.
+- section 3 size table and section 13 artifact table: replace 1.522.868 / 1.467.822 / 63 with the measured values and 64 columns; `model_input.parquet` becomes 76 columns.
+- section 5: add a subsection explaining that days inside a recorded closure produce no rows, that `segment_id` numbers the contiguous active blocks, and that every shift-based feature groups by pair + segment. Include the KY011 before/after table (104,0 → 371,3; cv 1,863 → 0,502; peringkat #59 → #46) as the worked example.
+- bagian 8.4 leakage table: add a row — "Fitur bergeser dikelompokkan per (pasangan, segmen) | Lag, rolling, dan target tidak pernah melintasi periode outlet tutup".
+- section 9 QA list: change "7 asersi" to the new count and describe the three added checks.
+- section 15: add Cilebut as a known cold-start case, and add `KY068 - Kebuli Yaman Kramatwatu` (gap 13 hari, 2025-06-28..2025-07-10) as a borderline gap awaiting owner confirmation.
+- bagian 16 glossary: add "**Segmen**" — "Blok tanggal aktif kontinu milik satu pasangan; dipisahkan oleh periode outlet tutup".
 
 - [ ] **Step 2: Update `docs/pipeline-overview.md`**
 

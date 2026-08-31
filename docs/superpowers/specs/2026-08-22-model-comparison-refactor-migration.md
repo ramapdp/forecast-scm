@@ -3,8 +3,8 @@
 ## Status
 
 **Menggantikan pendekatan evaluasi di `metodologi-pemodelan-dan-pemilihan-model.md`
-§15–18 sebelum test set Desember 2025 dibuka.** Test set belum pernah
-dibuka (dikonfirmasi §1 `hasil-modeling-rf.md`: "Desember 2025 tidak
+bagian 15–18 sebelum test set Desember 2025 dibuka.** Test set belum pernah
+dibuka (dikonfirmasi bagian 1 `hasil-modeling-rf.md`: "Desember 2025 tidak
 dibuka"), sehingga migrasi ini **tidak membuang hasil evaluasi out-of-sample
 apa pun** — yang perlu diulang hanya pencarian hyperparameter dan
 walk-forward di kelima fold latih (Juli–November 2025), bukan pengujian
@@ -26,7 +26,7 @@ Checklist ini mulai dijalankan 2026-08-24. Status per butir:
 | 2 — spec LSTM | ✅ selesai |
 | 3 — spec Random Forest | ✅ selesai |
 | 0b — implementasi kode multi-kuantil | ✅ selesai 2026-08-24 (lihat di bawah) |
-| 4 — `metodologi` §15–18 | ⚠️ sebagian: definisi K1/K2 di §15 dan §17 selesai, plus §19 dan §21 (perluasan cakupan, disetujui pemilik proyek 2026-08-24). §16 dan §18 diberi penanda "menunggu penggantian" dan ditulis ulang setelah butir 5 |
+| 4 — `metodologi` bagian 15–18 | ⚠️ sebagian: definisi K1/K2 di bagian 15 dan bagian 17 selesai, plus bagian 19 dan bagian 21 (perluasan cakupan, disetujui pemilik proyek 2026-08-24). bagian 16 dan bagian 18 diberi penanda "menunggu penggantian" dan ditulis ulang setelah butir 5 |
 | 5 — `hasil-modeling-{rf,xgb,lstm}.md` | ⬜ menunggu notebook dijalankan ulang |
 | 6 — spec segmentasi kuantil | ✅ selesai |
 | 7 — `batasan-penelitian.md` / `pipeline-overview.md` | ⚠️ direvisi, lihat "Koreksi butir 7" di bawah |
@@ -40,14 +40,14 @@ saat ini masih kuantil tunggal dari ujung ke ujung: `evaluation.py`
 ada `QUANTILE_SET` di mana pun. Langkah 2 tidak dapat dijalankan sebelum
 `evaluation.py`, `walk_forward.py`, `model_common.py`, `model_xgboost.py`,
 `model_lstm.py`, `model_random_forest.py`, dan ketiga notebook diubah. Pekerjaan
-itu dicatat sebagai butir 0b di §21 `metodologi-pemodelan-dan-pemilihan-model.md`.
+itu dicatat sebagai butir 0b di bagian 21 `metodologi-pemodelan-dan-pemilihan-model.md`.
 
 **Koreksi angka kandidat.** Butir 1 di bawah menyebut "18 kandidat" untuk
 XGBoost, dan tabel "Dampak teknis per model" di
 `2026-08-22-multi-quantile-evaluation-design.md` menyebut angka yang sama. Itu
 keliru — 18 adalah anggaran **Random Forest**. Anggaran XGBoost yang benar-benar
 dijalankan adalah **30** (`dataset/model_ready/xgb_search_results.csv` berisi 30
-baris; `docs/hasil-modeling-xgb.md` §"Pencarian hyperparameter"). LSTM = 12 sudah
+baris; `docs/hasil-modeling-xgb.md` bagian "Pencarian hyperparameter"). LSTM = 12 sudah
 benar. Angka yang berlaku: **XGBoost 30, LSTM 12.**
 
 **Keputusan anggaran pencarian (2026-08-24).** Pertanyaan terbuka nomor 2 di spec
@@ -57,7 +57,7 @@ multi-kuantil, bagian anggaran, **ditutup**: anggaran dipertahankan pada 30
 tertulis: ongkos komputasi sengaja dikesampingkan karena tujuannya menemukan
 model terbaik. Untuk LSTM ini berarti N **dipatok** 12, bukan diturunkan ulang
 dari formula anggaran — konsekuensinya plafon 8 jam kemungkinan terlampaui, dan
-itu dicatat sebagai ongkos terukur, bukan kegagalan (lihat §2.2 spec LSTM).
+itu dicatat sebagai ongkos terukur, bukan kegagalan (lihat bagian 2.2 spec LSTM).
 Bagian *warm start* dari pertanyaan terbuka nomor 2 (peralihan Tahap A → Tahap B)
 **tetap terbuka**.
 
@@ -68,8 +68,8 @@ dipulihkan dari 48 ke **144** di `utils/model_lstm.py` (`num_layers` dan
 `hidden_size` dikembalikan), dan konfigurasi terbaiknya diulang pada **3 seed**.
 Angka yang berlaku sejak revisi ini: **RF 18, XGBoost 30, LSTM 30.** Dasarnya
 bukan perubahan posisi soal ongkos melainkan validitas atribusi ketika ketiga
-model dicari ulang dari nol — uraian lengkap di §21
-`docs/metodologi-pemodelan-dan-pemilihan-model.md` dan §2.2
+model dicari ulang dari nol — uraian lengkap di bagian 21
+`docs/metodologi-pemodelan-dan-pemilihan-model.md` dan bagian 2.2
 `2026-08-19-lstm-modeling-design.md`. Konsekuensinya butir 0c menjadi jauh lebih
 mahal, dan perkiraan ongkosnya dilaporkan sebelum butir itu dijalankan.
 
@@ -170,7 +170,7 @@ tidak terbaca sebagai kecelakaan.
 **Pencarian RF ikut diulang — keputusan dibalik 2026-08-24 (pemilik proyek).**
 Revisi sebelumnya memakai ulang `rf_best_params.json` apa adanya, dengan alasan
 hyperparameter forest membentuk daun dan seluruh `QUANTILE_SET` dibaca dari daun
-yang sama. Alasan itu masih berlaku dan tetap tercatat di §Part 2
+yang sama. Alasan itu masih berlaku dan tetap tercatat di Part 2
 `2026-08-18-random-forest-modeling-design.md`, tetapi tidak menyentuh
 keberatan yang membalikkannya: params itu dipilih 2026-08-18, **sebelum**
 reclass WIP-2 masuk ke artefak (dibangun ulang 2026-08-23 22:52). Kebasian itu
@@ -179,7 +179,7 @@ yang dipilih di atas data yang sama adalah posisi yang tidak konsisten dengan
 keputusan itu. Anggarannya tidak berubah (18 kandidat, `SEARCH_FOLDS = (3, 5)`).
 
 Efek sampingnya: premis T-7 — "ketiga model dicari ulang penuh dari nol"
-(§21 `metodologi-pemodelan-dan-pemilihan-model.md`) — kini benar apa adanya,
+(bagian 21 `metodologi-pemodelan-dan-pemilihan-model.md`) — kini benar apa adanya,
 dan asimetri kriteria yang sebelumnya diserahkan ke bagian keterbatasan hilang.
 
 ### Perkiraan ongkos Fase 3 (2026-08-24)
@@ -335,7 +335,7 @@ memang tidak berubah, sesuai butir 7.
 **Prasyarat Random Forest yang perlu dibaca bersama butir 3.** "RF tidak perlu
 retrain" berlaku untuk **pencarian hyperparameter**, bukan untuk artefak
 terlatihnya. `models/random_forest_q90.joblib` basi sejak reclass kategori WIP-2
-2026-08-22 (§0 `docs/pipeline-overview.md`, prasyarat §19
+2026-08-22 (bagian 0 `docs/pipeline-overview.md`, prasyarat bagian 19
 `docs/metodologi-pemodelan-dan-pemilihan-model.md`), jadi walk-forward RF dan fit
 final-nya tetap harus dijalankan ulang — hanya `rf_best_params.json` yang dipakai
 ulang apa adanya.
@@ -373,7 +373,7 @@ berganda.
 
 | Dokumen | Dampak |
 |---|---|
-| `metodologi-pemodelan-dan-pemilihan-model.md` | §15–18 direvisi: definisi K1/K2 (lihat `2026-08-22-multi-quantile-evaluation-design.md` Bagian 2–3), tabel hasil, kesimpulan tangga keputusan — semuanya perlu ditulis ulang dengan angka baru |
+| `metodologi-pemodelan-dan-pemilihan-model.md` | bagian 15–18 direvisi: definisi K1/K2 (lihat `2026-08-22-multi-quantile-evaluation-design.md` Bagian 2–3), tabel hasil, kesimpulan tangga keputusan — semuanya perlu ditulis ulang dengan angka baru |
 | `2026-08-18-random-forest-modeling-design.md` | Bagian evaluasi diperluas ke `QUANTILE_SET`; bagian pencarian hyperparameter **tidak berubah** (RF tidak perlu retrain) |
 | `2026-08-19-xgboost-modeling-design.md` | `quantile_alpha` diubah ke daftar; pencarian hyperparameter diulang |
 | `2026-08-19-lstm-modeling-design.md` | Arsitektur head diubah; pencarian hyperparameter diulang |
@@ -396,7 +396,7 @@ berganda.
    tambahkan catatan bahwa evaluasi walk-forward sekarang membaca seluruh
    titik `QUANTILE_SET` dari forest yang sama; **tidak ada perubahan pada
    bagian pencarian hyperparameter**.
-4. **`docs/metodologi-pemodelan-dan-pemilihan-model.md`** §15–18: revisi
+4. **`docs/metodologi-pemodelan-dan-pemilihan-model.md`** bagian 15–18: revisi
    definisi K1 (rata-rata pinball di `QUANTILE_SET`, bukan pinball@0,9
    tunggal — definisi lengkap di `2026-08-22-multi-quantile-evaluation-design.md`
    Bagian 2), revisi K2 (coverage dicek per kuantil, Bagian 3), tabel hasil
@@ -425,7 +425,7 @@ Bukan bebas urutan — beberapa langkah bergantung pada langkah sebelumnya:
 2. Jalankan ulang notebook ketiga model sesuai spec yang sudah diubah.
 3. Tulis ulang poin 5 (`hasil-modeling-*.md`) dari hasil run tersebut.
 4. Baru revisi poin 4 (`metodologi-pemodelan-dan-pemilihan-model.md`
-   §15–18), karena tabel hasil di situ mengutip angka dari poin 5.
+   bagian 15–18), karena tabel hasil di situ mengutip angka dari poin 5.
 5. Terakhir, poin 6 (spec segmentasi kuantil) — independen dari 1–5,
    bisa dikerjakan kapan saja, tapi logis ditutup terakhir karena ia
    mengonsumsi hasil dari langkah 1–4 (pemenang model + kapabilitas
@@ -449,5 +449,5 @@ Bukan bebas urutan — beberapa langkah bergantung pada langkah sebelumnya:
   — Bagian 4 dan bagian urutan pengerjaan yang terdampak migrasi ini.
 - `docs/batasan-penelitian.md` B-9 — komitmen kuantil 0,9 yang tidak
   berubah isinya akibat migrasi ini.
-- `docs/metodologi-pemodelan-dan-pemilihan-model.md` §15–18 — tangga
+- `docs/metodologi-pemodelan-dan-pemilihan-model.md` bagian 15–18 — tangga
   keputusan yang menjadi target revisi dokumen ini.

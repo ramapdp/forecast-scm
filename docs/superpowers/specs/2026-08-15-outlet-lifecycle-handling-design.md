@@ -150,7 +150,8 @@ Serang`, `Kebuli Yaman Cadas`). At 14 the two confirmed closures fire
 (2025-06-28 → 2025-07-10) — worth asking the data owner about, but not worth
 lowering the threshold for.
 
-This also closes a documentation gap: `docs/dokumentasi-preprocessing-id.md` §4
+This also closes a documentation gap: `docs/preprocessing.md` bagian 14 (Bagian 2,
+formerly `docs/dokumentasi-preprocessing-id.md` bagian 4)
 claims dropped branches are printed every run, but `filter_matched_branches`
 never printed anything. This warning becomes the promised visibility mechanism.
 
@@ -218,7 +219,7 @@ rule would corrupt it. Only relocations that *are* a closure qualify.
 Lowering the threshold cannot help: `filter_min_history` counts days *before the
 cutoff*, and Cilebut has zero pre-cutoff days, so any threshold ≥ 1 excludes it.
 It is a pure cold-start case, recorded as such in
-`docs/todolist-data-preprocessing.md` and §15 of the Indonesian documentation.
+`docs/todolist-data-preprocessing.md` and section 15 of the Indonesian documentation.
 It enters the dataset by itself once it has ≥ 60 days before the next cutoff, with
 no code change. A new QA assertion prints branches that pass the name filter but
 vanish after `filter_min_history`, so future cases surface deliberately rather
@@ -301,5 +302,5 @@ recording the owner confirmation and date, matching the comment style of
 - `docs/superpowers/specs/2026-08-08-lead-time-integration-design.md` — the
   relocation-continuity decision.
 - `docs/outlet_relocation_notes.md` — old → new outlet mappings.
-- `docs/dokumentasi-preprocessing-id.md` — Indonesian pipeline documentation to
-  update once implemented.
+- `docs/preprocessing.md` (Bagian 2, formerly `docs/dokumentasi-preprocessing-id.md`)
+  — Indonesian pipeline documentation to update once implemented.

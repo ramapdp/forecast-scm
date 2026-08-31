@@ -114,13 +114,15 @@ Ini bukan kegagalan analisis, melainkan temuan tentang **batas data**. Batas
 lingkup "permintaan di luar pesanan" tetap benar sebagai perumusan bisnis;
 yang tidak ada adalah cara mengoperasionalkannya menjadi pemisahan baris.
 
-**Konsekuensi yang belum masuk pertimbangan sebelumnya.** Justifikasi capping
-selama ini adalah "komponen ini tidak dapat diprediksi". Alasan itu berlaku
-untuk komponen pesanan (B-1/B-2: buku pesanan tidak terekam), **tetapi tidak
-untuk lonjakan pelanggan langsung akhir pekan** — `day_of_week` dan `is_weekend`
-ada di 56 kolom `FEATURE_COLS`, jadi pola itu justru dapat dan seharusnya
-dipelajari model. Untuk baris yang dipangkas, capping karena itu menghapus
-sebagian sinyal yang sebenarnya **dapat dipelajari**.
+**Konsekuensi yang sempat dikhawatirkan, sudah diuji (2026-08-29).**
+Justifikasi capping selama ini adalah "komponen ini tidak dapat diprediksi".
+Alasan itu berlaku untuk komponen pesanan (B-1/B-2: buku pesanan tidak
+terekam), **tetapi tidak untuk lonjakan pelanggan langsung akhir pekan** —
+`day_of_week` dan `is_weekend` ada di 56 kolom `FEATURE_COLS`, jadi pola itu
+secara teori dapat dipelajari model, dan sempat dikhawatirkan capping
+menghapus sebagian sinyal itu untuk baris yang dipangkas. **Diuji langsung
+di bawah, dan tidak terbukti** — model tampaknya tetap menangkap pola akhir
+pekan meski sebagian barisnya di-cap.
 
 Dampaknya terbatas dan arahnya bisa diperkirakan. Karena ambang 5× bersifat
 relatif terhadap median pasangan, item bervolume besar praktis tidak terkena:
@@ -129,10 +131,26 @@ akhir pekannya tetap utuh di target latih (94 baris di-cap sepanjang dua tahun,
 median pasangan 86 unit/hari). Yang terpangkas adalah item bervolume kecil —
 83,6% baris yang di-cap berasal dari pasangan dengan median ≤10 unit/hari,
 terutama Rice Bowl 600 ml (1.186 baris) dan kelompok Loyang (2.538 baris).
-Prediksi yang bisa diuji: model kemungkinan **sistematis meramal terlalu rendah
-di akhir pekan untuk item bervolume kecil**. Pemeriksaannya dijadwalkan di
-`docs/todolist-proyek.md` Fase D butir 0d; kalau terkonfirmasi, angkanya masuk
-bab batasan menggantikan dugaan ini.
+
+**Diuji 2026-08-29 — hipotesis TIDAK terkonfirmasi.** Prediksi RF (bundle
+tersimpan, tanpa retrain) pada baris validasi, `pair_median` diambil persis
+dari `outlier_handling.compute_pair_baseline()` untuk pasangan bermedian
+≤10 unit/hari (ambang yang sama persis), disilangkan dengan `is_weekend`:
+
+| | n | shortfall/baris | coverage@0,9 |
+|---|---:|---:|---:|
+| hari biasa & bervolume kecil | 151.077 | 0,357 | 0,9400 |
+| akhir pekan & bervolume kecil | 60.818 | **0,309** | 0,9406 |
+
+Arahnya **berlawanan** dengan prediksi: shortfall per baris di akhir pekan
+13% **lebih rendah** dari hari biasa (bukan lebih tinggi), dan coverage
+sedikit lebih tinggi, bukan lebih rendah. `day_of_week`/`is_weekend` di
+`FEATURE_COLS` tampaknya berhasil menyerap pola akhir pekan meski sebagian
+barisnya di-cap saat training. Capping karena itu **tidak terbukti** semahal
+yang diperkirakan pada dimensi ini — komponen yang terpangkas mungkin memang
+tergolong komponen pesanan (B-1/B-2, tidak dapat diprediksi dari data mana
+pun), bukan sinyal akhir-pekan yang hilang. Rincian di
+`docs/todolist-proyek.md` Fase D butir 0d.
 
 Yang **tidak** berubah: keputusan target (latih di `capped`, K1 di mentah,
 ditutup 2026-08-24) tetap berlaku dan tidak dibuka kembali. Jawaban ini justru
@@ -247,7 +265,7 @@ konfirmasi pemilik data, bukan pada pembandingan baris.
   `demand_segment`) yang dipakai mencapai janji itu, selama rata-rata
   tertimbangnya kembali ke 0,9 secara agregat.
 
-  **Konsekuensi.** Model produksi yang dibekukan lewat protokol §19 tetap
+  **Konsekuensi.** Model produksi yang dibekukan lewat protokol bagian 19 tetap
   dilatih dan dipilih pada kuantil 0,9 seragam — klarifikasi ini tidak
   mengubah proses pemilihan model. Perluasan ke alokasi kuantil tersegmentasi
   adalah pekerjaan lanjutan terpisah, dijalankan setelah pemenang ditetapkan,
@@ -338,7 +356,7 @@ memuat **7 kategori**, turun dari 8; 19.987 baris berpindah dari WIP-2 ke
 (1.502.522), begitu pula 70 SKU, 59 cabang, dan 2.979 pasangan item-cabang —
 relabeling hanya menulis ulang satu kolom. Jumlah SKU dengan kategori
 bervariasi turun dari 10 menjadi **0**. Sesuai kebijakan stabilitas indeks
-(§4.12(e) `metodologi-preprocessing.md`), indeks 4 milik WIP-2 **dipertahankan
+(bagian 4.12(e), Bagian 1, `preprocessing.md`), indeks 4 milik WIP-2 **dipertahankan
 sebagai indeks yatim** di `category_mapping.json` dan tidak ada kategori lain
 yang dinomori ulang, sehingga `Kategori Barang_idx` sekarang memakai
 {1, 2, 3, 5, 6, 7, 8}.
@@ -451,7 +469,7 @@ ditutup — lihat kriteria penutupan di B-10 untuk ambang yang sama.
 
 **Fakta.** Satuan fisik pada dataset ini campur (Kg, Porsi, Botol, PCS)
 sebagaimana sudah dicatat di seluruh dokumen hasil model
-(`docs/hasil-modeling-{rf,xgb,lstm}.md` §1). Tanpa data biaya (B-10), tidak
+(`docs/hasil-modeling-{rf,xgb,lstm}.md` bagian 1). Tanpa data biaya (B-10), tidak
 ada cara mengonversi unit-unit tersebut ke satuan yang sebanding secara
 ekonomi.
 

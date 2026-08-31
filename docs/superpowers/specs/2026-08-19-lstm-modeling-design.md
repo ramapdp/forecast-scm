@@ -370,7 +370,7 @@ summed pinball loss. The recorded scores in
 `hidden_size` kehilangan 256 dan `num_layers` dikunci ke `[1]` — setelah ongkos
 per epoch diukur pada 2026-08-19. Pemangkasan itu **keputusan ongkos, bukan
 temuan**: tidak ada satu pun bukti bahwa lapisan kedua atau hidden 256 tidak
-menolong, karena keduanya tidak pernah dicoba (dinyatakan terbuka di §18
+menolong, karena keduanya tidak pernah dicoba (dinyatakan terbuka di bagian 18
 `metodologi-pemodelan-dan-pemilihan-model.md` dan di `hasil-modeling-lstm.md`).
 Karena run multi-kuantil mencari ketiga model ulang dari nol, dua dimensi
 kapasitas itu dikembalikan dan kode kembali sama dengan spec: ruang 144, bukan
@@ -473,7 +473,7 @@ Tiga hal berubah bersamaan, dan ketiganya bergerak ke arah yang sama:
 | Yang berubah | Dari | Menjadi | Alasan |
 |---|---|---|---|
 | Jumlah kandidat | 12 | **30** | setara XGBoost; kekalahan LSTM jadi bisa diatribusikan |
-| Ruang pencarian | 48 (kode) | **144** | `num_layers` dan `hidden_size` dipulihkan — dipotong karena ongkos, bukan karena terbukti tidak menolong (lihat §2.1) |
+| Ruang pencarian | 48 (kode) | **144** | `num_layers` dan `hidden_size` dipulihkan — dipotong karena ongkos, bukan karena terbukti tidak menolong (lihat bagian 2.1) |
 | Pengulangan seed | tidak ada | **3 seed pada konfigurasi terbaik** | varians terukur langsung, bukan diduga dari selisih antar fold |
 
 Pengulangan tiga seed menjawab keberatan yang berdiri sendiri: LSTM satu-satunya
@@ -534,7 +534,7 @@ Perbaikannya: `TestWalkForwardIntegration` di `test/test_model_lstm.py`
 (2026-08-24), setara yang sudah dimiliki XGBoost — `run_fold` dijalankan
 sungguhan lewat `bind_panel`, hasilnya diperiksa punya satu baris per titik
 kuantil, dan satu tes memastikan pelanggaran bentuk memang ditolak runner-nya.
-Ditambah `TestSeedRepeats` untuk protokol tiga seed di §2.3.
+Ditambah `TestSeedRepeats` untuk protokol tiga seed di bagian 2.3.
 
 Keempat baris ini bersama adalah alasan konkret penyetaraan anggaran
 diputuskan. Ia bukan kemurahan hati terhadap LSTM: tanpa keempatnya, kalimat

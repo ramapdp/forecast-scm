@@ -27,8 +27,8 @@ kriterianya (K1). Uraian lengkap di Part 2.
 bundle final `models/random_forest_q90.joblib` tetap harus dibangun ulang —
 bukan karena migrasi multi-kuantil, melainkan karena reclass kategori WIP-2
 2026-08-22 membuat bundle yang ada **stale**: ia masih memuat kolom one-hot
-WIP-2 yang kini selalu nol, dan memuat tanpa error (lihat §0
-`docs/pipeline-overview.md` dan prasyarat §19
+WIP-2 yang kini selalu nol, dan memuat tanpa error (lihat bagian 0
+`docs/pipeline-overview.md` dan prasyarat bagian 19
 `docs/metodologi-pemodelan-dan-pemilihan-model.md`). "RF tidak perlu retrain"
 berlaku untuk **pencarian hyperparameter**, bukan untuk artefak terlatihnya.
 
@@ -104,8 +104,8 @@ Settled during brainstorming 2026-08-18.
 | Scope | Shared walk-forward runner + Random Forest + hyperparameter tuning | The runner is written once and reused by XGBoost and the LSTM, so the comparison is enforced structurally rather than by discipline — the same argument the preprocessing spec made for its adapters |
 | Tuning budget | Random search, 18 candidates, scored on folds 3 and 5; winner refit and reported over all 5 folds | A full grid over 5 folds at 1.28M training rows is not runnable on the available hardware. Reporting the search folds' own scores would be optimistic, so the reported number comes from the full walk-forward |
 | Model granularity | One global model | `demand_segment_idx` is already a feature, so the trees can split on it themselves. Maximum data per model, one artifact to ship weekly. Metrics are still reported per segment |
-| Categorical encoding | Ordinal indices by default, one-hot as a searched flag | The preprocessing spec assumed one-hot expansion (§3.4) but never tested it. High-cardinality one-hot is known to dilute split quality and feature importance in forests; making it a hyperparameter settles the question with evidence instead of assumption |
-| Target scale | `log_target` as a searched flag | Quantiles are equivariant under monotonic transforms, so inversion is exact and unbiased (preprocessing spec §3.6). What is actually being tested is the effect on split selection under a target whose 99th percentile is 488 and maximum 3,067 |
+| Categorical encoding | Ordinal indices by default, one-hot as a searched flag | The preprocessing spec assumed one-hot expansion (section 3.4) but never tested it. High-cardinality one-hot is known to dilute split quality and feature importance in forests; making it a hyperparameter settles the question with evidence instead of assumption |
+| Target scale | `log_target` as a searched flag | Quantiles are equivariant under monotonic transforms, so inversion is exact and unbiased (preprocessing spec section 3.6). What is actually being tested is the effect on split selection under a target whose 99th percentile is 488 and maximum 3,067 |
 
 ### Non-goals
 
@@ -312,7 +312,7 @@ informative dimensions are few — random sampling covers each dimension's range
 better than a truncated grid at equal cost.
 
 `max_depth=None` and `min_samples_leaf` under 20 are absent by design, per
-§1.3. `max_samples_leaf` is searched rather than fixed because it trades
+section 1.3. `max_samples_leaf` is searched rather than fixed because it trades
 quantile fidelity against memory directly, and 1 (the library default, which
 reduces each leaf to a single stored value) is kept in the space as the cheap
 end of that trade so the cost of buying fidelity is measured rather than

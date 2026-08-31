@@ -14,7 +14,7 @@ cuma di output cell notebook yang bisa hilang saat di-clear.
 langsung: yang lama pinball@0,9 pada satu titik kuantil, yang ini K1 —
 rata-rata pinball lintas 19 titik `QUANTILE_SET_A`. Larangan itu tercatat
 sebagai T-10 di `docs/todolist-proyek.md`. Satu hal yang **sah** dibawa lintas
-dokumen adalah *peringkat* kandidat pencarian; itu dibahas di §4.3.
+dokumen adalah *peringkat* kandidat pencarian; itu dibahas di bagian 4.3.
 
 **Desember 2025 tidak dibuka.** Semua angka di bawah datang dari walk-forward
 lima fold di Juli–November 2025. Test set final masih terkunci.
@@ -38,7 +38,7 @@ walk-forward. Ini bukan kabar baik yang mengejutkan melainkan cek struktural
 yang lolos: setiap titik kuantil forest adalah persentil dari satu distribusi
 empiris daun yang sama, jadi inversi mustahil secara konstruksi. Nilai bukan-nol
 di kolom ini akan berarti ada bug, bukan ada kelemahan model
-(§K2 `metodologi-pemodelan-dan-pemilihan-model.md`).
+(kriteria K2 `metodologi-pemodelan-dan-pemilihan-model.md`).
 
 Di τ=0,9 — titik yang benar-benar dijanjikan ke bisnis (B-9) — coverage 0,928
 terhadap target 0,90, dengan fill rate 0,959. Sisi bisnisnya, di 345.547 baris
@@ -59,14 +59,14 @@ service level dipatok di 0,9.
 > sah untuk membandingkan antar model pada baris yang sama, tapi tidak punya
 > makna fisik sebagai satu besaran tunggal.
 
-**Satu temuan yang tidak boleh dilewatkan** dan dibahas penuh di §5.2: coverage
+**Satu temuan yang tidak boleh dilewatkan** dan dibahas penuh di bagian 5.2: coverage
 RF berada **di atas** targetnya di seluruh 19 titik kuantil, dengan simpangan
 +0,381 di τ=0,05 yang mengecil monoton ke +0,011 di τ=0,95. Dibaca mentah lewat
 tabel pola K2, "simpangan searah di hampir seluruh τ" adalah alasan kuat untuk
 tersisih. Dibaca dengan datanya, sebagian besar simpangan di ujung bawah
 **dipaksa oleh bentuk target** dan akan muncul pada model apa pun di dataset ini.
 Bagian mana yang dipaksa dan bagian mana yang benar-benar bias model dipisahkan
-secara kuantitatif di §5.2.
+secara kuantitatif di bagian 5.2.
 
 ## 2. Setup evaluasi
 
@@ -148,7 +148,7 @@ tak berbobot. **Tidak ada subsampling.**
 `n_estimators` sengaja tidak ikut dicari: kualitas forest monoton terhadap
 jumlah pohon, jadi mencarinya membelanjakan anggaran untuk pertanyaan yang
 jawabannya sudah diketahui. Ia dipatok 200 selama pencarian dan dinaikkan untuk
-fit final (§6).
+fit final (bagian 6).
 
 Ke-18 kandidat selesai dinilai; tidak ada yang gagal (kolom `error` kosong
 semua).
@@ -299,7 +299,7 @@ konsisten dan patut dicatat. Kelima nilainya tetap di atas 0,90 dan rentangnya
 tanpa fold tambahan.
 
 **Fold 3 dan 5 adalah fold yang memilih pemenang.** K1 RF di gabungan kedua
-fold itu = **2,8808**, persis sama dengan skor pencarian di §4.1 — konfigurasi
+fold itu = **2,8808**, persis sama dengan skor pencarian di bagian 4.1 — konfigurasi
 dan seed-nya identik, jadi kesamaan ini adalah cek reprodusibilitas yang lolos,
 bukan kebetulan. Dipotong ke fold 1, 2, dan 4 saja — tiga fold yang tidak
 menyentuh seleksi, dan potongan yang menjadi kriteria K1 resmi:
@@ -313,7 +313,7 @@ menyentuh seleksi, dan potongan yang menjadi kriteria K1 resmi:
 
 2,8508 di fold bersih lawan 2,8808 di fold seleksi — RF justru **sedikit lebih
 baik** di fold yang tidak ikut memilihnya, jadi tidak ada optimisme seleksi yang
-terukur. Masuk akal mengingat ruang parameternya sedatar §4.2.
+terukur. Masuk akal mengingat ruang parameternya sedatar bagian 4.2.
 
 RF **kalah MAE** dari `naive_roll_mean_7` (15,055 lawan 9,721). Ini bukan
 kegagalan, ini konsekuensi yang diminta: prediksi di τ=0,9 sengaja bias ke atas,
@@ -366,13 +366,26 @@ Ini tidak dijelaskan oleh massa nol dan harus dibaca sebagai over-coverage
 sungguhan: distribusi ramalan RF secara sistematis bergeser ke atas di paruh
 bawah grid. Di τ=0,50, RF mencakup 66% baris — median ramalannya terlalu tinggi.
 
-**Mekanisme yang diduga, belum diukur.** Target 99,55% bilangan bulat dan 70,3%
-bernilai ≤ 5, jadi prediksi dan aktual sering **bernilai sama persis**, dan
-coverage yang memakai `≤` menghitung setiap ikatan itu sebagai tercakup. Efeknya
-menaikkan coverage di seluruh grid, bukan hanya di nol. Ini **hipotesis**, bukan
-temuan: cara termurah mengujinya adalah menghitung ulang coverage dengan `<`
-tegas di atas satu contoh prediksi yang disimpan, dan selisih antara kedua
-angka itu adalah besar efek ikatan. Belum dikerjakan.
+**Mekanisme ikatan — diukur 2026-08-29, bukan lagi hipotesis.** Target 99,55%
+bilangan bulat dan 70,3% bernilai ≤ 5, jadi prediksi dan aktual sering
+**bernilai sama persis**, dan coverage yang memakai `≤` menghitung setiap
+ikatan itu sebagai tercakup. Diuji dengan memprediksi ulang (bundle
+tersimpan, tanpa retrain) pada 345.547 baris validasi dan menghitung coverage
+dua cara: `tie_rate` (selisih `≤` vs `<` tegas) bergerak **9% di τ=0,95
+sampai 43% di τ=0,30** — jauh lebih besar dari over-coverage +0,18 di atas.
+
+**Tapi mengganti `≤` dengan `<` bukan koreksi — ia berbalik arah.** Di
+τ=0,40, kelebihan-di-atas-lantai dengan `≤` = +0,175; dengan `<` tegas jadi
+**−0,255** (RF tampak jauh *kurang* meramal). `<` menghukum setiap prediksi
+yang **tepat sasaran** — lazim di sini karena target integer dan forest
+membaca kuantil dari sampel training bertipe sama — sebagai "tidak
+tercakup", padahal itu prediksi paling akurat yang bisa dihasilkan.
+Kesimpulannya: over-coverage +0,18 di median **tetap** bias nyata (bukan bisa
+dihapus dengan ganti operator), tapi harus dibaca dengan konteks bahwa ~43%
+baris di sekitarnya memang bernilai identik prediksi-aktual — properti
+kediskretan target, bukan artefak pembulatan metrik semata. `≤` (standar
+definisi kuantil) tetap definisi yang paling defensif untuk dipakai.
+Rinciannya di `docs/todolist-proyek.md` (butir 🆕 "Uji hipotesis efek ikatan").
 
 **Yang harus diputuskan sebelum Fase E.** Tabel pola K2 di
 `metodologi-pemodelan-dan-pemilihan-model.md` membaca "simpangan searah di
@@ -424,7 +437,7 @@ yang cuma menang di tempat menebak nol itu mudah.
 
 Coverage@0,9 konsisten 0,903–0,946 lintas segmen, semuanya di atas target 0,90.
 Yang paling ketat `erratic` (0,9029), yang paling longgar `intermittent`
-(0,9462) — dan urutan itu sejalan dengan §5.2: segmen dengan share nol
+(0,9462) — dan urutan itu sejalan dengan bagian 5.2: segmen dengan share nol
 tertinggi punya lantai coverage tertinggi.
 
 ### 5.4 Per `is_delivery_day`
@@ -478,7 +491,7 @@ tengah migrasi; penggantian namanya masuk daftar hygiene, bukan blocker.
 Seluruh run di CPU Mac lokal — keputusan pemilik proyek 2026-08-25 bahwa
 seluruh Fase 3 dijalankan di satu device, supaya K3 terbaca dalam bacaan paling
 ketat dan tidak ada penyerahan device antar model
-(§0 `2026-08-24-distributed-gpu-training-design.md`).
+(bagian 0 `2026-08-24-distributed-gpu-training-design.md`).
 
 | tahap | wall clock |
 |---|---:|
@@ -525,10 +538,10 @@ di ruang pencarian atau grid kuantil berbeda.
   dengan baseline titik-tengah menghukum yang pertama karena melakukan persis
   apa yang diminta. K1 adalah kriterianya.
 - **K2 di τ rendah belum bisa dibaca sebagai kalibrasi** sampai aturannya
-  dinyatakan ulang terhadap lantai `share_nol` (§5.2). Bagian yang sudah bisa
+  dinyatakan ulang terhadap lantai `share_nol` (bagian 5.2). Bagian yang sudah bisa
   dibaca sekarang adalah over-coverage +0,18 di sekitar median, yang nyata.
 - **Fold 3 dan 5 ikut memilih pemenang**, jadi skornya di potongan per-fold
-  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di §5.1 adalah
+  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di bagian 5.1 adalah
   angka yang bersih dan yang menjadi K1 resmi.
 - **Satu seed, satu kali latih.** Setiap konfigurasi dilatih sekali. Untuk RF
   ini kurang mengkhawatirkan daripada untuk LSTM — bagging 200 pohon sudah

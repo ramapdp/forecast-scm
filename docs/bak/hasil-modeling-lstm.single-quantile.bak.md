@@ -11,7 +11,7 @@ sebelum refresh kategori WIP-2 2026-08-22, jadi baris embedding untuk WIP-2 kini
 Model yang dimuat ulang tidak akan gagal — ia tetap memberi angka, dari fitur
 yang salah. Angka di dokumen ini tetap sah sebagai catatan run tersebut, bukan
 sebagai gambaran `model_input.parquet` yang sekarang. Model ini akan **dilatih
-ulang** dalam migrasi multi-kuantil berikutnya; latar lengkapnya di §0
+ulang** dalam migrasi multi-kuantil berikutnya; latar lengkapnya di bagian 0
 `docs/pipeline-overview.md` dan B-9 `docs/batasan-penelitian.md`.
 
 **Desember 2025 tidak dibuka.** Semua angka di bawah datang dari walk-forward
@@ -27,7 +27,7 @@ service level 0.90, lawan 0.909 milik XGBoost dan 0.932 milik Random Forest.
 Pada kriteria yang dipakai memilih, LSTM **juara ketiga**: 2.427 lawan 2.390
 (XGBoost) dan 2.410 (Random Forest) — tertinggal 1,6% dan 0,7%. Di potongan
 fold yang tidak ikut memilih pemenang, jaraknya menyusut jadi 0,9% dan 0,7%.
-§6 membahas kenapa urutan setipis itu belum menobatkan siapa pun, dan §9
+bagian 6 membahas kenapa urutan setipis itu belum menobatkan siapa pun, dan bagian 9
 mencatat satu asimetri yang khusus merugikan LSTM: ia dapat 12 undian
 pencarian, XGBoost 30, RF 18.
 
@@ -76,7 +76,7 @@ kuantil yang sama.
 | Jendela | 28 hari (`modeling_prep.LOOKBACK`), berakhir di baris prediksi |
 | Jumlah epoch | early stopping (`EARLY_STOPPING_EPOCHS = 5`) di ekor 30 hari terakhir jendela training, lalu **refit** di seluruh baris training pada epoch itu |
 | Plafon epoch | `MAX_EPOCHS = 100` |
-| Device | CPU (§3) |
+| Device | CPU (bagian 3) |
 
 **Yang membedakan model ini dari dua lainnya**: ia membaca 28 harinya sendiri,
 bukan ringkasan hasil rekayasa dari 28 hari itu yang disediakan `lag_*` dan
@@ -84,7 +84,7 @@ bukan ringkasan hasil rekayasa dari 28 hari itu yang disediakan `lag_*` dan
 atau diurutkan ulang — tapi jumlah informasi yang sampai ke model tidak sama:
 RF dan XGBoost melihat satu baris berisi ringkasan, LSTM melihat 28 baris
 mentah yang meringkasnya. Itu perbedaan yang paling layak diingat saat membaca
-§6, karena artinya perbandingan ketiganya bukan cuma soal keluarga model.
+bagian 6, karena artinya perbandingan ketiganya bukan cuma soal keluarga model.
 
 Empat detail konstruksi yang menentukan sah-tidaknya angka di atas:
 
@@ -120,7 +120,7 @@ Ketiga baseline naive dinilai pada **baris yang identik** dengan LSTM —
 dijamin oleh `utils/modelling/walk_forward.py` yang memiliki definisi fold dan kelayakan
 baris, dan menerima model sebagai callable yang disuntikkan. `walk_forward.py`
 tidak disentuh sama sekali untuk model ini. Baris yang sama itu juga yang
-dipakai run RF dan XGBoost, yang membuat §6 sah dilakukan.
+dipakai run RF dan XGBoost, yang membuat bagian 6 sah dilakukan.
 
 ## 3. Benchmark
 
@@ -168,7 +168,7 @@ Tiga hal yang ditentukan angka ini:
    `SEARCH_SPACE` karena itu membuang `num_layers=2` dan `hidden_size=256`, dan
    `DEFAULT_PARAMS` pindah ke `num_layers=1`. Kedalaman yang dikorbankan, bukan
    lebar, karena membuangnya membeli detik paling banyak per dimensi yang
-   dihapus. Konsekuensinya dicatat di §4 dan §9: pencarian ini **tidak pernah
+   dihapus. Konsekuensinya dicatat di bagian 4 dan bagian 9: pencarian ini **tidak pernah
    menanyakan** apakah lapisan kedua akan menolong.
 
 3. **Jendela padat tidak pernah dimaterialisasi.** Tensor 1.502.522 × 28 × 56
@@ -181,7 +181,7 @@ Tiga hal yang ditentukan angka ini:
 
 **Benchmark ini meleset di satu hal, dan melesetnya mahal.** `best_epoch = 3`
 yang diukur di `DEFAULT_PARAMS` ternyata tidak mewakili kandidat pencarian:
-epoch yang sebenarnya dipilih early stopping bergerak **3–13** (§4). Karena
+epoch yang sebenarnya dipilih early stopping bergerak **3–13** (bagian 4). Karena
 `candidate_budget` menskalakan linear terhadap angka itu, plafon 8 jam yang
 dihitungnya jadi terlalu optimistis — tujuh kandidat yang ongkosnya tercatat
 menghabiskan 6,63 jam, yang kalau diekstrapolasi ke 12 kandidat berarti
@@ -246,7 +246,7 @@ Tiga hal yang terbaca dari sebaran ini:
 
 **Yang tidak ditanyakan pencarian ini**: apakah lapisan LSTM kedua menolong,
 dan apakah `hidden_size=256` menolong. Keduanya dibuang dari ruang pencarian
-karena ongkos (§3), bukan karena bukti. Jadi kesimpulan yang jujur dari tabel
+karena ongkos (bagian 3), bukan karena bukti. Jadi kesimpulan yang jujur dari tabel
 di atas bukan "arsitektur ini yang terbaik", melainkan "ini yang terbaik di
 antara yang sempat diuji dalam plafon 8 jam".
 
@@ -334,7 +334,7 @@ dengan skor pencarian — konfigurasi dan seed-nya identik). Dipotong ke fold 1,
 2.421 di potongan bersih lawan 2.427 gabungan kelima fold — **lebih baik, bukan
 lebih buruk**. Optimisme seleksinya nol yang terukur; kebetulan dua fold yang
 memilih pemenang justru dua fold yang lebih sulit bagi model ini. Ini pola yang
-sama dengan RF dan konsisten dengan ruang parameter yang memang datar (§4).
+sama dengan RF dan konsisten dengan ruang parameter yang memang datar (bagian 4).
 
 ### 5.2 Per `demand_segment`
 
@@ -490,7 +490,7 @@ kecil dengan akurasi yang tidak bisa dibedakan.
 layak sebelum Desember, dipotong di batas Desember oleh
 `purging.lookahead_safe_mask()` — populasi baris yang sama persis dengan yang
 dinilai di atas. Jendelanya tetap dipotong dari panel penuh, karena baris
-konteks di luar himpunan layak tetap riwayat yang sah (§2).
+konteks di luar himpunan layak tetap riwayat yang sah (bagian 2).
 
 | | |
 |---|---|
@@ -522,17 +522,17 @@ bisa memprediksi dari satu baris sendirian — ia butuh 28 hari di belakangnya.
   --ExecutePreprocessor.timeout=-1 notebook/modeling_lstm.ipynb
 ```
 
-Butuh belasan jam (§3). Pencarian menulis checkpoint tiap kandidat selesai ke
+Butuh belasan jam (bagian 3). Pencarian menulis checkpoint tiap kandidat selesai ke
 `lstm_search_results.csv` dan melanjutkan dari sana kalau dijalankan ulang —
 run yang menghasilkan dokumen ini memang dijalankan berkali-kali dari
 checkpoint, dan itu satu-satunya alasan ia selesai sama sekali.
 
 Dependensi barunya satu baris di `requirements.txt`: `torch==2.8.0`.
 
-**Bagaimana angka §5–§7 sebenarnya dijalankan**: cell 9 dan 10 dieksekusi
+**Bagaimana angka bagian 5–7 sebenarnya dijalankan**: cell 9 dan 10 dieksekusi
 headless lewat skrip terpisah, bukan lewat nbconvert atas seluruh notebook.
 Cell benchmark sengaja tidak dijalankan ulang — nilainya sudah terukur dan
-tercatat (§3), dan mengukur ulang akan menarik `N_CANDIDATES` dari `best_epoch`
+tercatat (bagian 3), dan mengukur ulang akan menarik `N_CANDIDATES` dari `best_epoch`
 yang baru, sehingga N yang berbeda akan membatalkan checkpoint 12 kandidat yang
 sudah selesai atau menambah kandidat yang anggarannya tidak pernah dibayar.
 Menjalankan notebook itu utuh dari nol akan menghasilkan angka yang sama selama
@@ -558,25 +558,25 @@ benchmark-nya mendarat di `best_epoch = 3` lagi.
   0.9 dengan baseline titik-tengah menghukum yang pertama karena melakukan
   persis apa yang diminta. Pinball@0.9 adalah kriterianya.
 - **Fold 3 dan 5 ikut memilih pemenang**, jadi skornya di potongan per-fold
-  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di §5.1 adalah
+  bukan out-of-sample terhadap seleksi. Potongan fold 1/2/4 di bagian 5.1 adalah
   angka yang bersih.
 - **Kedalaman tidak pernah diuji.** `num_layers=2` dan `hidden_size=256`
   dibuang dari ruang pencarian karena ongkos wall-clock sebelum kandidat
-  pertama ditarik (§3, §4). Pertanyaan "apakah LSTM yang lebih dalam menang"
+  pertama ditarik (bagian 3, bagian 4). Pertanyaan "apakah LSTM yang lebih dalam menang"
   tidak dijawab run ini, dan menjawabnya butuh plafon waktu baru — bukan
   pembacaan ulang tabel yang sama.
 - **Satu seed, tanpa pengulangan.** Setiap kandidat dilatih sekali dengan
   `random_state=42`. LSTM satu-satunya dari ketiga model yang hasilnya
   bergantung pada inisialisasi acak dan urutan batch, jadi selisih 0,7–0,9%
-  terhadap dua model lain (§6) tidak bisa dipisahkan dari varians seed. Mengukur
+  terhadap dua model lain (bagian 6) tidak bisa dipisahkan dari varians seed. Mengukur
   itu butuh 3–5 pengulangan per konfigurasi, yang tidak muat di plafon yang
   sama.
 - **Anggaran pencariannya paling kecil dari ketiga model** — 12 kandidat lawan
-  30 dan 18 — dan itu berpihak melawan LSTM di §6. Menyamakannya butuh run
+  30 dan 18 — dan itu berpihak melawan LSTM di bagian 6. Menyamakannya butuh run
   ulang.
 - **Plafon 8 jam terlampaui.** Anggaran diturunkan dari `best_epoch = 3` yang
   terukur di benchmark, sementara kandidat sebenarnya berhenti di epoch 3–13,
-  sehingga ongkos riilnya sekitar 11,4 jam (§3). `candidate_budget()` bekerja
+  sehingga ongkos riilnya sekitar 11,4 jam (bagian 3). `candidate_budget()` bekerja
   sesuai rumusnya; yang salah adalah asumsi bahwa `best_epoch` benchmark
   mewakili ruang pencarian. Kalau mekanisme ini dipakai lagi, angka epoch yang
   disuntikkan sebaiknya yang paling pesimistis, bukan yang terukur di satu
@@ -586,7 +586,7 @@ benchmark-nya mendarat di `best_epoch = 3` lagi.
   fold mendarat di bawah target 0.90. Layak diperiksa lagi saat test set
   Desember dibuka.
 - **Ketiga model sudah dijalankan, rekomendasi final belum diambil.** Angka di
-  §6 menunjukkan ketiganya praktis setara pada kriteria, jadi pemilihan model
+  bagian 6 menunjukkan ketiganya praktis setara pada kriteria, jadi pemilihan model
   produksi adalah keputusan yang harus menimbang hal di luar pinball — ongkos
   training, ukuran artefak, kemudahan pemeliharaan — dan itu belum dituliskan
   di mana pun.

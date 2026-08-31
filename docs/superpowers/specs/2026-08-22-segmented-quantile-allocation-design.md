@@ -5,7 +5,7 @@
 **Draf, menunggu konfirmasi ulang pemilik data** (lihat "Pertanyaan terbuka").
 Tidak mengubah satu baris kode pun sampai konfirmasi itu diterima secara
 tertulis. Spec ini adalah rencana lanjutan yang **hanya dikerjakan setelah**
-pemenang di antara Random Forest/XGBoost/LSTM ditetapkan lewat protokol §19
+pemenang di antara Random Forest/XGBoost/LSTM ditetapkan lewat protokol bagian 19
 `metodologi-pemodelan-dan-pemilihan-model.md` — bukan bagian dari perbandingan
 ketiga model itu sendiri.
 
@@ -26,7 +26,7 @@ untuk seluruh SKU, sesuai keputusan pemilik data 2026-08-16 yang tercatat di
 dua tempat independen (`batasan-penelitian.md` B-9 dan
 `2026-08-12-modeling-preprocessing-design.md` baris 92). Keputusan itu
 menghasilkan kekurangan stok berkurang 73–76% dengan ongkos kelebihan stok
-2,5–2,8× lipat (`docs/hasil-modeling-{rf,xgb,lstm}.md` §1) — pertukaran yang
+2,5–2,8× lipat (`docs/hasil-modeling-{rf,xgb,lstm}.md` bagian 1) — pertukaran yang
 secara matematis melekat pada kuantil 0,9 yang sama untuk setiap item,
 terlepas dari perishability atau volatilitas demand-nya.
 
@@ -62,7 +62,7 @@ keputusan kunci.
 
 ## Non-goals
 
-- Mengganti model pemenang atau mengubah kriteria pemilihan model (§17–18
+- Mengganti model pemenang atau mengubah kriteria pemilihan model (bagian 17–18
   `metodologi-pemodelan-dan-pemilihan-model.md`) — spec ini berjalan
   **sesudah** pemenang dibekukan.
 - Fitur pengurangan hasil prediksi dengan stock opname — di luar cakupan,
@@ -76,7 +76,7 @@ keputusan kunci.
 ## Latar: mengapa satu kuantil menghasilkan overstock berat pada segmen tertentu
 
 Ketiga model kuantil 0,9 (RF, XGBoost, LSTM) memangkas kekurangan stok
-73–76% dengan ongkos kelebihan stok 2,5–2,8× (§16.4
+73–76% dengan ongkos kelebihan stok 2,5–2,8× (bagian 16.4
 `metodologi-pemodelan-dan-pemilihan-model.md`). Pertukaran ini seragam
 karena kuantilnya seragam — item Barang Semi FG WIP-2 (Ayam Kebuli, Nasi
 Kebuli, Sambal) yang masa simpannya harian menanggung beban kelebihan stok
@@ -122,7 +122,7 @@ Kode Barang;unit_cost;unit_margin;shelf_life_days;salvage_value_ratio;cost_sourc
 | `Kode Barang` | teks | Ya | Kunci penghubung, harus cocok dengan `Kode Barang` hasil normalisasi Tahap 3 |
 | `unit_cost` | pecahan | Ya | Biaya produksi/pengadaan per unit `Satuan` barang tersebut |
 | `unit_margin` | pecahan | Ya | Margin kotor per unit; proksi Cu (biaya understock) |
-| `shelf_life_days` | bilangan bulat | Ya | Perkiraan masa simpan dalam hari. Item praktis tidak kedaluwarsa (Packaging, RM kering) diisi sentinel besar (365), **bukan dikosongkan** — pola sentinel yang sama dengan `days_until_ramadan` (§4.12(d) `metodologi-preprocessing.md`) |
+| `shelf_life_days` | bilangan bulat | Ya | Perkiraan masa simpan dalam hari. Item praktis tidak kedaluwarsa (Packaging, RM kering) diisi sentinel besar (365), **bukan dikosongkan** — pola sentinel yang sama dengan `days_until_ramadan` (bagian 4.12(d) `preprocessing.md`) |
 | `salvage_value_ratio` | pecahan, 0–1 | Tidak, default 0 | Proporsi nilai yang masih terselamatkan bila tidak terjual sebelum rusak (mis. sisa nasi diolah ulang) |
 | `cost_source` | teks kategorik | Ya | `alokasi_resep` \| `estimasi_tim_scm` \| `harga_pasar_langsung` |
 | `cost_confidence` | teks kategorik | Ya | `tinggi` \| `sedang` \| `rendah` |
@@ -150,8 +150,8 @@ kedua yang menyusun jalur proksi, mengikuti pola fail-loud yang sama):
 
 - `Kategori Barang` pada baris data yang **tidak ditemukan** di berkas ini →
   error saat simulasi dijalankan, bukan default diam-diam ke peringkat
-  tengah. Ini konsisten dengan pola `event_driven_items.csv` (§4.12 butir a
-  `metodologi-preprocessing.md`): SKU/kategori baru yang muncul di
+  tengah. Ini konsisten dengan pola `event_driven_items.csv` (bagian 4.12 butir a
+  `preprocessing.md`): SKU/kategori baru yang muncul di
   pemutakhiran data harus diklasifikasikan eksplisit oleh manusia, bukan
   diasumsikan. Kasus konkret yang divalidasi mekanisme ini: reklasifikasi
   WIP-2 → Barang Jadi (FG) yang dikonfirmasi retroaktif (lihat "Pertanyaan
@@ -205,7 +205,7 @@ volume nyata per kategori, bukan penalaran nama kategori semata:
 **Skema tujuh kategori ini dikonfirmasi pemilik data (2026-08-22) sebagai
 kategori update terbaru**, menggantikan skema delapan kategori (termasuk
 `Barang Semi FG (WIP-2)` sebagai kategori tersendiri) yang tercatat di
-`metodologi-preprocessing.md` §2.2/§6.9. Pertanyaan terbuka nomor 5 di
+`preprocessing.md` bagian 2.2/6.9. Pertanyaan terbuka nomor 5 di
 bawah, semula berstatus kritis, **ditutup** dengan resolusi ini.
 
 **Catatan heterogenitas — `Barang Jadi (FG)`, dan mekanisme override yang
@@ -303,7 +303,7 @@ seperti yang diminta.
 > XGBoost adalah ilustrasi dari sebelum `QUANTILE_SET` didefinisikan. Nilai yang
 > berlaku sekarang adalah `QUANTILE_SET` Tahap A (19 titik, spasi 0,05).
 
-Dijalankan pada arsitektur pemenang saja (§21
+Dijalankan pada arsitektur pemenang saja (bagian 21
 `metodologi-pemodelan-dan-pemilihan-model.md` sudah menetapkan pola ini
 untuk SHAP; spec ini mengikuti pola yang sama untuk alasan biaya yang
 sama — menjalankan multi-kuantil untuk ketiga arsitektur berarti membayar
@@ -317,9 +317,9 @@ Perluasan teknis per arsitektur, tanpa mengubah data prep:
 | XGBoost (`reg:quantileerror`) | `quantile_alpha` diisi daftar (mis. `[0.6, 0.7, 0.8, 0.9, 0.95]`) — satu fit menghasilkan banyak kuantil sekaligus, didukung native sejak versi yang sudah dipakai proyek ini |
 | LSTM | Head output diperluas dari satu neuron menjadi satu neuron per titik kuantil; loss total = jumlah pinball loss di seluruh titik |
 
-**Jika RF atau LSTM yang menang** (bukan XGBoost seperti usulan §18), poin
+**Jika RF atau LSTM yang menang** (bukan XGBoost seperti usulan bagian 18), poin
 tabel di atas tetap berlaku — perluasan ini tidak bergantung pada model
-mana yang menang di tangga §17–18.
+mana yang menang di tangga bagian 17–18.
 
 ### 5. Simulasi kalibrasi λ
 
@@ -352,7 +352,7 @@ Karena `unit_cost`/`unit_margin` mungkin sebagian besar kosong sampai peta
 resep tersedia, metrik evaluasi utama simulasi ini adalah **days of supply**,
 bukan rupiah — menyelesaikan sekaligus masalah satuan campur (Kg, Porsi,
 Botol, PCS) yang sudah dicatat sebagai keterbatasan di
-`docs/hasil-modeling-{rf,xgb,lstm}.md` §1:
+`docs/hasil-modeling-{rf,xgb,lstm}.md` bagian 1:
 
 ```
 days_of_supply_overstock(pasangan) = overstock_units(pasangan) / roll_mean_28(pasangan)
@@ -361,13 +361,13 @@ days_of_shortfall(pasangan)        = shortfall_units(pasangan) / roll_mean_28(pa
 
 `roll_mean_28` dipilih sebagai penyebut (bukan `roll_mean_7`) karena sudah
 didokumentasikan sebagai "estimasi tingkat permintaan jangka menengah yang
-paling stabil" (§6.7 `metodologi-preprocessing.md`), dan sudah tersedia
+paling stabil" (bagian 6.7 `preprocessing.md`), dan sudah tersedia
 sebagai kolom jadi — tidak perlu turunan baru.
 
 Begitu berkas biaya terisi memadai (ambang diusulkan: `cost_confidence`
 bukan `rendah` untuk segmen yang mewakili ≥ 50% volume), metrik evaluasi
 utama beralih ke rupiah, dan days of supply diturunkan menjadi metrik
-pendamping — persis pola yang sudah dipakai proyek ini untuk MAE (§15.2
+pendamping — persis pola yang sudah dipakai proyek ini untuk MAE (bagian 15.2
 `metodologi-pemodelan-dan-pemilihan-model.md`: dilaporkan untuk konteks,
 bukan kriteria keputusan).
 
@@ -383,15 +383,15 @@ langsung terhadap kode saat implementasi, bukan diasumsikan dari dokumen.
 
 ## Urutan pengerjaan relatif terhadap rencana kerja yang sudah ada
 
-Menyisip di antara butir yang sudah tercatat di §21
+Menyisip di antara butir yang sudah tercatat di bagian 21
 `metodologi-pemodelan-dan-pemilihan-model.md`:
 
 **Diperbarui 2026-08-24** mengikuti migrasi evaluasi multi-kuantil.
 
 | # | Pekerjaan | Sumber |
 |---|---|---|
-| **0a** | **Migrasi evaluasi multi-kuantil: ubah spec RF/XGB/LSTM, jalankan ulang ketiga notebook, tulis ulang `hasil-modeling-*.md`, revisi §15–19 dan §21** | **baru — `2026-08-22-model-comparison-refactor-migration.md`** |
-| 1–3 | Bekukan §18 (dengan angka multi-kuantil), buka test set Desember, tulis hasil | sudah direncanakan — sekarang bergantung pada 0a |
+| **0a** | **Migrasi evaluasi multi-kuantil: ubah spec RF/XGB/LSTM, jalankan ulang ketiga notebook, tulis ulang `hasil-modeling-*.md`, revisi bagian 15–19 dan bagian 21** | **baru — `2026-08-22-model-comparison-refactor-migration.md`** |
+| 1–3 | Bekukan bagian 18 (dengan angka multi-kuantil), buka test set Desember, tulis hasil | sudah direncanakan — sekarang bergantung pada 0a |
 | **3a** | **Spec ini: alokasi kuantil tersegmentasi pada model pemenang** — Bagian 4 sudah diwarisi dari 0a, jadi tinggal Bagian 2, 3, 5, 6, 7 | **baru** |
 | 4 | Dekomposisi harian (`target_h1`…`target_h4`) | sudah direncanakan — independen, tidak saling bergantung dengan 3a |
 | 5 | SHAP untuk pemenang saja | sudah direncanakan |
@@ -401,7 +401,7 @@ sekarang lebih sempit daripada sebelumnya, dan perlu dinyatakan ulang dengan
 tepat:
 
 - **Alasan yang sudah tidak berlaku.** Sebelumnya butir ini beralasan bahwa
-  tangga §17 "butuh kriteria kuantil 0,9 seragam yang tetap sampai G0–K4
+  tangga bagian 17 "butuh kriteria kuantil 0,9 seragam yang tetap sampai G0–K4
   selesai". Itu tidak lagi benar — K1 justru sekarang dinilai lintas 19 titik
   kuantil sekaligus. Kekhawatiran bahwa multi-kuantil membuat perbandingan
   tidak apple to apple juga tidak terbukti: ketiga model diperluas ke
@@ -465,7 +465,7 @@ dulu):
 - Business-rule cap pasca-model (opsi "Jalur C" yang dibahas sebelum
   reinterpretasi B-9 dikonfirmasi) — tidak diperlukan lagi karena
   pendekatan struktural (spec ini) sudah disetujui sebagai jalur utama.
-- Mengubah kriteria atau hasil tangga pemilihan model §17–18.
+- Mengubah kriteria atau hasil tangga pemilihan model bagian 17–18.
 - Automasi elisitasi tim SCM (Proksi B) menjadi survei berulang — untuk
   sekarang berupa berkas CSV yang diisi manual, sama seperti berkas
   konfigurasi lain di pipeline ini.
@@ -503,8 +503,8 @@ dulu):
    - Entri `"Barang Semi FG (WIP-2)": 4` yang masih terlihat di
      `category_mapping.json` (dilampirkan pemilik proyek, 2026-08-22) **bukan
      tanda WIP-2 masih aktif**, melainkan indeks yatim yang dipertahankan
-     sesuai kebijakan stabilitas pipeline sendiri (§4.12 butir e
-     `metodologi-preprocessing.md`: "nilai yang tidak lagi dipakai tetap
+     sesuai kebijakan stabilitas pipeline sendiri (bagian 4.12 butir e
+     `preprocessing.md`: "nilai yang tidak lagi dipakai tetap
      memegang indeksnya"). Tidak ada risiko fungsional terhadap model final
      yang sudah dilatih — kekhawatiran sebelumnya soal `category_mapping.json`
      tidak sinkron dengan skema baru **tidak terbukti**, murni deskripsi
@@ -557,7 +557,7 @@ dulu):
   direinterpretasi (bukan dibatalkan) oleh spec ini.
 - `docs/superpowers/specs/2026-08-12-modeling-preprocessing-design.md` —
   sumber kedua keputusan yang sama, dan sumber `target_h1`…`target_h4`.
-- `docs/metodologi-pemodelan-dan-pemilihan-model.md` §15–21 — kriteria
+- `docs/metodologi-pemodelan-dan-pemilihan-model.md` bagian 15–21 — kriteria
   metrik, tangga pemilihan model, dan rencana kerja tersisa yang disisipi
   spec ini.
 - `docs/hasil-modeling-{rf,xgb,lstm}.md` — angka shortfall/overstock dasar
@@ -568,4 +568,4 @@ dulu):
 - `dataset/pemetaan-sku-per-kategori.csv` — sumber bukti SKU/volume per
   kategori yang mendasari isian di atas, dan sumber konfirmasi skema tujuh
   kategori terbaru (menggantikan skema delapan kategori di
-  `metodologi-preprocessing.md`).
+  `preprocessing.md`).

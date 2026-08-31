@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a new visual-QA section to `notebook/data-processing.ipynb` that reproduces `eda.ipynb`'s distribution/outlier (§3) and seasonality (§5) charts, computed on the post-pipeline `featured` DataFrame instead of raw `dataset.csv`.
+**Goal:** Add a new visual-QA section to `notebook/data-processing.ipynb` that reproduces `eda.ipynb`'s distribution/outlier (section 3) and seasonality (section 5) charts, computed on the post-pipeline `featured` DataFrame instead of raw `dataset.csv`.
 
-**Architecture:** Pure notebook addition — two groups of new cells inserted between the existing §8 QA cells and the `export_featured` call, using `matplotlib` with `eda.ipynb`'s own palette/style constants (redefined locally since `data-processing.ipynb` doesn't currently import `matplotlib`). No changes to any `utils/*.py` module.
+**Architecture:** Pure notebook addition — two groups of new cells inserted between the existing section 8 QA cells and the `export_featured` call, using `matplotlib` with `eda.ipynb`'s own palette/style constants (redefined locally since `data-processing.ipynb` doesn't currently import `matplotlib`). No changes to any `utils/*.py` module.
 
 **Tech Stack:** Jupyter notebook, `matplotlib`, `numpy`, `pandas` (all already in `requirements.txt`); reuses `calendar_features` (already imported in the notebook).
 
@@ -60,8 +60,8 @@ Insert a new **markdown** cell right after the Step 1 cell:
 Section ini adalah pengecekan visual pasca-pipeline terhadap `featured`, bukan re-run `eda.ipynb`
 (yang mengeksplorasi `dataset.csv` mentah sebelum drop cabang/filter min-history/capping/canonicalize
 kategori). Beberapa perbedaan bentuk distribusi/musiman dari `eda.ipynb` **diperkirakan** dan bukan
-bug: cabang yang di-drop karena tidak match `outlets.csv` (§2), pair yang gagal `MIN_HISTORY_DAYS`
-(§3), kategori yang di-canonicalize ke versi terbaru, dan efek outlier-capping (§5) — tapi bentuk
+bug: cabang yang di-drop karena tidak match `outlets.csv` (bagian 2), pair yang gagal `MIN_HISTORY_DAYS`
+(bagian 3), kategori yang di-canonicalize ke versi terbaru, dan efek outlier-capping (bagian 5) — tapi bentuk
 keseluruhannya harus tetap menyerupai `eda.ipynb`, bukan menyimpang secara struktural.
 ```
 
@@ -193,7 +193,7 @@ EOF
 - Modify: `notebook/data-processing.ipynb` — insert 3 new cells after Task 1's last inserted cell (the boxplot cell from Step 4), before cell id `ac0b1f5a`.
 
 **Interfaces:**
-- Consumes: notebook-global `featured`, `plt`, `np`, `BLUE`, `BLUE_DARK` from Task 1; notebook-global `calendar_features` module (already imported in cell `db5a0791`) and its `RAMADAN_PERIODS`, `EID_AL_FITR_DATES`, `EID_AL_ADHA_DATES` dict attributes; `featured["day_of_week"]` column (already added by `calendar_features.add_calendar_features` in §4).
+- Consumes: notebook-global `featured`, `plt`, `np`, `BLUE`, `BLUE_DARK` from Task 1; notebook-global `calendar_features` module (already imported in cell `db5a0791`) and its `RAMADAN_PERIODS`, `EID_AL_FITR_DATES`, `EID_AL_ADHA_DATES` dict attributes; `featured["day_of_week"]` column (already added by `calendar_features.add_calendar_features` in section 4).
 - Produces: nothing consumed by later tasks (this is the last content task).
 
 - [ ] **Step 1: Insert the daily-total time series cell (Ramadan/Eid overlay)**

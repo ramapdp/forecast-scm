@@ -3,8 +3,8 @@
 ## Status
 
 **Alokasi mesin sudah dua kali diputuskan ulang. Yang berlaku sekarang adalah
-§0bis (2026-08-26): pencarian XGBoost dan LSTM di PC Windows ber-RTX 4060 Ti 8 GB,
-walk-forward dan fit final tetap di Mac.** §0 (2026-08-25, seluruh Fase 3 di
+bagian 0bis (2026-08-26): pencarian XGBoost dan LSTM di PC Windows ber-RTX 4060 Ti 8 GB,
+walk-forward dan fit final tetap di Mac.** bagian 0 (2026-08-25, seluruh Fase 3 di
 CPU Mac) berlaku hanya sampai 2026-08-26 dan disimpan karena koreksi ongkos di
 dalamnya masih dipakai. Yang di-supersede sejak awal: Bagian 2 (alokasi per
 mesin), Bagian 4 (pengungkit T4×2), Bagian 6 (persistensi Kaggle/Colab),
@@ -13,7 +13,7 @@ tidak ada mesin sewaan di rencana mana pun sekarang.
 
 **Yang tetap berlaku dan tidak boleh dibaca sebagai usang:**
 
-- **§3bis — hasil Tahap 0.** Itu angka terukur, dan ia tidak kedaluwarsa hanya
+- **bagian 3bis — hasil Tahap 0.** Itu angka terukur, dan ia tidak kedaluwarsa hanya
   karena rencananya berubah. Paritas GPU↔CPU 0,124% dan pengganda ×7,96 adalah
   satu-satunya pengukuran lintas-device yang dimiliki proyek ini, dan
   koreksi ongkos CPU yang lahir darinya (64,6 → ~120 jam) justru yang membentuk
@@ -21,7 +21,7 @@ tidak ada mesin sewaan di rencana mana pun sekarang.
 - **Bagian 1 — aturan dua lapis.** Ia sekarang dipatuhi secara maksimal, bukan
   ditinggalkan: bukan hanya walk-forward dan fit final yang di satu mesin,
   melainkan seluruh Fase 3.
-- **Bagian 7.1 — risiko OOM VRAM.** Diukur dan ditutup di §0bis.
+- **Bagian 7.1 — risiko OOM VRAM.** Diukur dan ditutup di bagian 0bis.
 - **Bagian 5 — seam kode.** `only=`, `provenance=`, `merge_shards()`, dan
   `run_config` sudah ter-merge dan ter-tes. Semuanya tidak-aktif secara default
   (tanpa env var, tiap notebook berperilaku persis seperti sebelum jalur cloud
@@ -52,9 +52,9 @@ device.
    CPU. Probe (3d) mengesahkan kompromi itu dengan 0,124%, tetapi mengesahkan
    bukan berarti meniadakan. Sekarang benchmark, pencarian, walk-forward, dan
    fit final ketiganya berjalan di aritmetika yang sama.
-2. **K3 dalam bacaannya yang paling ketat.** §17
+2. **K3 dalam bacaannya yang paling ketat.** bagian 17
    `metodologi-pemodelan-dan-pemilihan-model.md` mendefinisikan K3 sebagian
-   sebagai wall time training, dan §18 mencatat K3-lah yang menentukan pemenang
+   sebagai wall time training, dan bagian 18 mencatat K3-lah yang menentukan pemenang
    ketika K1 seri dalam 0,88%. Dengan ketiga model diukur di CPU yang sama,
    tie-breaker itu membandingkan model, bukan hardware — dan angkanya langsung
    sebanding dengan run 2026-08-18/19/20 yang tercatat di ketiga
@@ -64,7 +64,7 @@ device.
    diperlonggar; sekarang tidak perlu disentuh.
 4. **Untuk LSTM, tidak ada kecepatan lokal yang ditinggalkan.** MPS sudah
    diukur dan **kalah dari CPU 2×** di mesin ini — 0,392 s/batch lawan 0,193
-   s/batch pada probe 15 batch di fold 5 (§3 `docs/hasil-modeling-lstm.md`),
+   s/batch pada probe 15 batch di fold 5 (bagian 3 `docs/hasil-modeling-lstm.md`),
    karena tidak ada kernel LSTM ter-fuse di MPS pada hidden size ini. Jadi
    "lokal" untuk LSTM memang berarti CPU, bukan pilihan yang menyisakan
    penyesalan.
@@ -86,7 +86,7 @@ berebut core yang sama menghasilkan wall time yang mengukur kontensi, bukan
 model — persis lubang K3 yang Bagian 1 tutup untuk kasus lintas-mesin, hanya
 kali ini terjadi di dalam satu mesin.
 
-Angka XGBoost sudah dikoreksi (§3bis). **Angka LSTM belum**, dan tidak boleh
+Angka XGBoost sudah dikoreksi (bagian 3bis). **Angka LSTM belum**, dan tidak boleh
 dikoreksi dengan mengalikannya 1,87× begitu saja: dasarnya lebih kuat daripada
 dasar XGBoost — rerata **tujuh** kandidat yang benar-benar mencatat
 `elapsed_seconds`, dengan pengganda 19 kuantil ×1,00 (head 19 keluaran praktis
@@ -105,7 +105,7 @@ ketidakpastian 83–98 jam.
   cloud dihidupkan lagi suatu hari, keduanya kembali terbuka.
 - Baris GPU candidate 0 dari Kaggle **tidak masuk pencarian**. Mencampur dua
   device dalam satu pencarian adalah hal yang justru dihindari keputusan ini.
-  Ia tetap tinggal sebagai bukti probe (3d) di §3bis.
+  Ia tetap tinggal sebagai bukti probe (3d) di bagian 3bis.
 - Baris CPU candidate 0 **ikut masuk**: berkasnya diganti nama menjadi
   `dataset/model_ready/xgb_search_results.csv` (2026-08-25) sehingga
   `resume=True` melewatinya. Diverifikasi lolos `_assert_checkpoint_matches()`
@@ -115,22 +115,22 @@ ketidakpastian 83–98 jam.
 
 Pemilik proyek memindahkan **tahap pencarian** kedua model yang tersisa ke PC
 Windows lokal ber-RTX 4060 Ti 8 GB. Walk-forward dan fit final ketiga model tetap di
-Mac. Ini bukan pembatalan §0 melainkan pengembalian ke aturan dua lapis Bagian
+Mac. Ini bukan pembatalan bagian 0 melainkan pengembalian ke aturan dua lapis Bagian
 1 apa adanya — dengan satu perbedaan yang membuatnya lebih baik daripada
 rencana Kaggle/Colab: mesinnya milik sendiri, jadi tidak ada plafon 12 jam per
 sesi, tidak ada kuota 30 GPU-jam/minggu, dan tidak ada persistensi yang harus
 diakali.
 
 Pemicunya angka: pencarian XGBoost berjalan 8,5 jam di Mac dan baru
-menyelesaikan 2 dari 30 kandidat, konsisten dengan koreksi ~120 jam di §3bis.
+menyelesaikan 2 dari 30 kandidat, konsisten dengan koreksi ~120 jam di bagian 3bis.
 
-### Apa yang berubah dari §0
+### Apa yang berubah dari bagian 0
 
 - **Peringkat kandidat lahir di GPU, pemenang di-refit di CPU.** Penyerahan
-  yang §0 tolak, kini diterima lagi — dengan dasar yang sama yang mengesahkan
+  yang bagian 0 tolak, kini diterima lagi — dengan dasar yang sama yang mengesahkan
   rencana Kaggle: paritas terukur 0,124% terhadap ambang 2% (probe 3d).
 - **Kedua kandidat yang sudah dinilai di CPU dibuang** (keputusan pemilik
-  proyek, 2026-08-26). §3bis merencanakan sebaliknya — membiarkan candidate 0
+  proyek, 2026-08-26). bagian 3bis merencanakan sebaliknya — membiarkan candidate 0
   di checkpoint supaya tidak ada jam yang terbuang — tetapi ongkos mengulangnya
   di GPU hanya ~0,9 GPU-jam dari ~15, dan proyek ini sudah berkali-kali memilih
   keterbandingan di atas kecepatan untuk taruhan yang jauh lebih besar.
@@ -197,14 +197,14 @@ berongkos, dan tidak satu pun boleh diputuskan diam-diam di tengah run.
   membayar walk-forward, dan tersedia lagi di Mac tanpa membayar pencarian.
 - `modeling_lstm.ipynb` sel 26 membaca kembali `lstm_seed_repeats.csv` kalau
   sudah lengkap. `run_seed_repeats()` tidak punya resume dan menimpa
-  keluarannya, sementara §13 di Mac membutuhkan `spread` darinya.
+  keluarannya, sementara bagian 13 di Mac membutuhkan `spread` darinya.
 
 Langkah operasionalnya ada di `docs/runbook-pencarian-gpu-windows.md`.
 
 ## Purpose
 
 Fase 3 diperkirakan **~157–172 jam ≈ 6,5–7,2 hari komputasi nonstop** di CPU
-Mac (§"Perkiraan ongkos Fase 3",
+Mac (bagian "Perkiraan ongkos Fase 3",
 `2026-08-22-model-comparison-refactor-migration.md`). Spec ini memangkasnya
 menjadi **~3–4 hari** (atau ~2–3 hari dengan Colab Pro) dengan menjalankan
 pencarian ketiga model serentak di GPU gratis Kaggle dan Colab, lalu
@@ -254,11 +254,11 @@ checkpoint, pemecahan pekerjaan hanyalah harapan.
 membuktikan peringkat itu tidak digerakkan oleh hardware.
 
 **Walk-forward 5 fold dan fit final ketiga model wajib di satu mesin yang
-sama.** Alasannya bukan kerapian, melainkan K3. §17
+sama.** Alasannya bukan kerapian, melainkan K3. bagian 17
 `metodologi-pemodelan-dan-pemilihan-model.md` mendefinisikan K3 sebagai *"wall
 time training, ukuran artefak, ketergantungan pada seed acak, dan bobot
 dependensi"* — dan pada run sebelumnya **K3-lah yang menentukan pemenang**,
-karena K1 ketiga model seri dalam 0,88% (§18). Kalau wall time XGBoost lahir
+karena K1 ketiga model seri dalam 0,88% (bagian 18). Kalau wall time XGBoost lahir
 di P100 Kaggle sementara wall time LSTM lahir di T4 Colab, dan K1 seri lagi,
 maka tie-breaker itu membandingkan **hardware, bukan model**. Lubang itu tidak
 bisa ditambal sesudah run tanpa mengulang seluruhnya.
@@ -385,7 +385,7 @@ punya bukti.
 #### Koreksi anggaran yang dituntut angka ini
 
 Estimasi CPU di `2026-08-22-model-comparison-refactor-migration.md`
-(§"Perkiraan ongkos Fase 3") menyebut pencarian XGBoost **64,6 jam**.
+(bagian "Perkiraan ongkos Fase 3") menyebut pencarian XGBoost **64,6 jam**.
 Candidate 0 sendirian memakan **5,54 jam**. Dibobot ke seluruh 30 kandidat
 menurut `learning_rate` (jumlah ronde ≈ 1/lr), `max_depth`, dan ongkos ekspansi
 `encoding`, pencarian CPU sebenarnya ~**120 jam** — estimasi lama meleset
@@ -589,7 +589,7 @@ Ditulis TDD, merah lebih dulu, sejalan dengan 752 tes yang sudah ada.
    GPU→CPU, dan itu ditutup oleh perluasan probe (3d).
 2. ~~**Apakah pemecahan XGBoost tetap dijalankan kalau probe (3c) menunjukkan
    satu sesi Kaggle sudah cukup.**~~ **MOOT 2026-08-25 — XGBoost dijalankan
-   lokal (§0), jadi tidak ada yang dipecah.** Ditutup sebagai tidak lagi
+   lokal (bagian 0), jadi tidak ada yang dipecah.** Ditutup sebagai tidak lagi
    relevan, bukan sebagai terjawab: kalau jalur cloud dihidupkan lagi kelak,
    pertanyaan ini kembali terbuka apa adanya.
 3. ~~**Akuntansi kuota T4×2** (Bagian 4).~~ **MOOT 2026-08-25, dengan alasan
@@ -602,9 +602,9 @@ Ditulis TDD, merah lebih dulu, sejalan dengan 752 tes yang sudah ada.
 
 - `2026-08-22-multi-quantile-evaluation-design.md` — sumber kebenaran
   metodologi multi-kuantil; spec ini tidak mengubah satu pun keputusannya.
-- `2026-08-22-model-comparison-refactor-migration.md` §"Perkiraan ongkos Fase
+- `2026-08-22-model-comparison-refactor-migration.md` bagian "Perkiraan ongkos Fase
   3" — angka 157–172 jam dan rinciannya per model per tahap.
-- `docs/metodologi-pemodelan-dan-pemilihan-model.md` §17 (definisi K3), §18
+- `docs/metodologi-pemodelan-dan-pemilihan-model.md` bagian 17 (definisi K3), bagian 18
   (K1 seri dalam 0,88%, K3 jadi penentu).
 - `docs/todolist-proyek.md` butir 0c — Langkah 0 (guard checkpoint) dan
   anggaran kandidat yang berlaku.

@@ -62,10 +62,10 @@ executing the definition cells plus a small fit (see the harness pattern used on
 cells up to the run-config cell, then one `make_fit_predict` on a few thousand rows), and rely on
 the sync cell for the rest.
 
-`eda.ipynb` follows the style rules below, so its narrative — business context, findings table,
-open questions, pre-modeling checklist — lives in `docs/temuan-eda.md`, not in the notebook.
-Re-run the notebook whenever `dataset.csv` is regenerated and update that document if the numbers
-move.
+`eda.ipynb` follows the style rules below, so its narrative — business context, per-section
+findings, findings table, open questions, pre-modeling checklist — lives in
+`docs/detail-tahap-eda.md` (Bagian 1), not in the notebook. Re-run the notebook whenever
+`dataset.csv` is regenerated and update that document if the numbers move.
 
 Style rules for the notebooks (set by the data owner on `merge_and_aggregate.ipynb`):
 
