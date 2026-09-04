@@ -6,7 +6,7 @@
 | Mesin evaluasi bersama | `utils/modelling/walk_forward.py`, `model_common.py`, `evaluation.py`                                                                                                                  |
 | Kriteria utama (K1)    | Rata-rata `pinball` lintas `QUANTILE_SET` (19 titik, 0,05–0,95), pada potongan fold 1/2/4                                                                                              |
 | Ambang keputusan K1    | ≥2% terhadap pesaing terdekat, di bawah itu dibaca sebagai tidak terpisahkan                                                                                                           |
-| Status keputusan       | **Random Forest kandidat terdepan berdasarkan berat bukti** (K1, K2, K3) — belum resmi dibekukan, menunggu persetujuan eksplisit pemilik proyek. Test set Desember 2025 masih terkunci |
+| Status keputusan       | **Random Forest kandidat terdepan berdasarkan berat bukti** (K1, K2) — belum resmi dibekukan, menunggu persetujuan eksplisit pemilik proyek. Ongkos komputasi dicatat sebagai catatan pendamping, bukan kriteria pembanding (Bagian 1.5, 2.6). Test set Desember 2025 masih terkunci |
 | Tanggal dokumen        | Ditulis ulang dari `docs/metodologi-pemodelan-dan-pemilihan-model.md` — status keputusan terakhir diperbarui 2026-08-30                                                                |
 
 **Hubungan dengan dokumen lain.** Dokumen ini fokus pada **perbandingan**
@@ -54,8 +54,8 @@ dokumen ini merangkum dan membandingkannya, bukan menggantikannya.
   - [2.3 Tabel Lengkap Hasil Lintas Model](#23-tabel-lengkap-hasil-lintas-model)
   - [2.4 Derau Seed LSTM — Detail Pengujian](#24-derau-seed-lstm--detail-pengujian)
   - [2.5 Rearrangement Kuantil XGBoost — Detail Pengujian](#25-rearrangement-kuantil-xgboost--detail-pengujian)
-  - [2.6 Ongkos Komputasi (K3) Lintas Model](#26-ongkos-komputasi-k3-lintas-model)
-  - [2.7 Risiko Integrasi Produksi (K4)](#27-risiko-integrasi-produksi-k4)
+  - [2.6 Catatan: Ongkos Komputasi Lintas Model](#26-catatan-ongkos-komputasi-lintas-model)
+  - [2.7 Risiko Integrasi Produksi (K3)](#27-risiko-integrasi-produksi-k3)
   - [2.8 Status Keputusan dan Rencana Kerja Tersisa](#28-status-keputusan-dan-rencana-kerja-tersisa)
   - [2.9 Rujukan](#29-rujukan)
 
@@ -174,8 +174,20 @@ konstruksi, kehabisan stok jauh lebih sering daripada yang dijanjikan.
 Rincian tiap baris ada di dokumen per model masing-masing
 (`docs/detail-tahap-modeling-{rf,xgb,lstm}.md` Bagian 1.4–1.6). Tabel ini
 adalah pandangan sisi-berdampingan yang khusus berguna untuk membandingkan.
+Baris ongkos di tabel ini (benchmark, wall time, ukuran artefak) bersifat
+deskriptif saja — bukan kriteria pembanding; rujuk Bagian 1.5 dan 2.6.
 
 ## 1.5 Metrik dan Justifikasinya
+
+Perbandingan ini mencari model yang paling baik **membaca fluktuasi tren
+permintaan** tiap pasangan item–outlet — naik-turunnya kebutuhan dari hari
+ke hari dan dari satu titik sebaran ke titik lain — karena kemampuan itulah
+yang menentukan tercapai-tidaknya tujuan utama proyek: memenuhi kebutuhan
+stok setiap outlet tanpa kehabisan maupun menumpuk berlebihan. Ongkos
+komputasi bukan bagian dari pertanyaan itu, sehingga **tidak pernah menjadi
+metrik pembanding** antarmodel di dokumen ini, sekecil apa pun perannya —
+ia dicatat sebagai informasi pendamping saja (Bagian 2.6), bukan sesuatu
+yang bisa memenangkan atau mengalahkan sebuah model.
 
 ### Kriteria tunggal: rata-rata `pinball` lintas `QUANTILE_SET`
 
@@ -220,10 +232,14 @@ patokan forecasting demand ritel skala besar, 42.840 deret Walmart —
 menilai model pada sembilan titik kuantil sekaligus lewat pinball loss
 terskala yang dirata-ratakan (Makridakis et al., 2021).
 
-**Ongkos komputasi sengaja dikesampingkan** dari kriteria utama. Tujuan
-penelitian ini menemukan model terbaik, bukan model termurah. Ongkos tetap
-dilaporkan, tapi tempatnya di K3 (Bagian 1.7) sebagai penentu tambahan,
-bukan alasan mempersempit kriteria utama.
+**Ongkos komputasi sengaja dikesampingkan sepenuhnya** dari tangga
+keputusan — bukan hanya dari kriteria utama, tapi dari setiap anak tangga,
+termasuk sebagai penentu tambahan saat kriteria lain seri. Tujuan
+penelitian ini menemukan model yang paling baik membaca fluktuasi tren
+permintaan, bukan model termurah dijalankan; model yang murah tapi kurang
+akurat tetap gagal memenuhi tujuan utama proyek. Ongkos tetap dilaporkan
+sebagai catatan pendamping (Bagian 2.6), tapi tidak satu angka pun di sana
+pernah dipakai memutuskan pemenang.
 
 **Kuantil 0,9 tidak dicabut; ia berpindah peran.** Ia tetap komitmen bisnis
 yang mengatur apa yang dikirim ke outlet (B-9, seragam untuk setiap SKU),
@@ -438,17 +454,23 @@ pada baris yang sama. Dilaporkan sebagai laju untuk XGBoost dan LSTM;
 Random Forest kebal secara struktural. Laju yang material dibaca di K2,
 bukan diperbaiki diam-diam dengan mengurutkan hasil (Bagian 2.5).
 
-### K3 — Ongkos operasional dan reprodusibilitas
+### Catatan — Ongkos Operasional dan Reprodusibilitas (bukan anak tangga)
 
 > Wall time training, ukuran artefak, ketergantungan pada seed acak, dan
-> bobot dependensi.
+> bobot dependensi — dicatat sebagai informasi pendamping, **tidak pernah**
+> dipakai memutuskan pemenang, termasuk saat K1/K2 menyatakan seri.
 
-Anak tangga ini sah menjadi penentu justru karena K1 menyatakan seri. Bila
-tiga model sama akuratnya dalam batas yang bisa diukur, memilih yang
-paling murah dan paling bisa direproduksi adalah keputusan rekayasa yang
-benar — bukan kompromi.
+Ini bukan sekadar diletakkan di anak tangga terakhir — ia sengaja
+dikeluarkan dari tangga sama sekali. Alasannya tidak berubah dari Bagian
+1.5: tujuan perbandingan ini adalah menemukan model yang paling baik
+membaca fluktuasi tren permintaan, sehingga kebutuhan stok tiap outlet
+benar-benar terpenuhi, bukan menemukan model yang paling murah dijalankan.
+Model yang murah tapi kalah akurat tetap kalah, seri atau tidak. Angka
+lengkapnya tetap dilaporkan (Bagian 2.6) supaya tim yang akan
+mengoperasikan model tahu konsekuensi rekayasanya, tapi tidak satu baris
+pun di sana mengubah urutan kemenangan.
 
-### K4 — Risiko integrasi produksi
+### K3 — Risiko integrasi produksi
 
 > Apa yang harus tersedia saat model dipanggil untuk meramal, dan apa yang
 > gagal secara diam-diam bila salah dipasang.
@@ -514,18 +536,18 @@ satu-titik, jadi tidak cukup untuk menyisihkan RF secara mandiri, dan
 dengan K1 sekarang condong ke RF, K2 di titik ini tidak mengubah arah
 kesimpulan K1.
 
+### Catatan — Ongkos operasional (bukan anak tangga, tidak memengaruhi keputusan)
+
+Dicatat sebagai informasi pendamping saja (tabel lengkap Bagian 2.6): pada
+satu-satunya tahap yang device-nya sebanding lintas ketiganya (walk-forward
++ fit final, CPU Mac), LSTM ~6,3× lebih lambat dari RF dan ~2,9× lebih
+lambat dari XGBoost — dan satu-satunya model yang hasilnya terbukti
+bergantung seed pada besaran yang jauh melebihi selisih K1 antar model. RF
+kebetulan juga yang paling murah pada tahap yang sebanding, dan XGBoost di
+tengah — tapi fakta ini tidak pernah dipakai untuk memutuskan siapa yang
+menang, di sini maupun di Bagian 1.10.
+
 ### K3 — dicatat, belum jadi penentu
-
-Karena K2 belum tuntas menyisihkan siapa pun, K3 belum sah dipakai
-memutuskan sendirian. Dicatat supaya tersedia begitu status K1/K2 selesai
-(tabel lengkap Bagian 2.6): pada satu-satunya tahap yang device-nya
-sebanding lintas ketiganya (walk-forward + fit final, CPU Mac), LSTM
-~6,3× lebih lambat dari RF dan ~2,9× lebih lambat dari XGBoost — dan
-satu-satunya model yang hasilnya terbukti bergantung seed pada besaran
-yang jauh melebihi selisih K1 antar model. RF tetap yang paling murah pada
-tahap yang sebanding, dan XGBoost di tengah.
-
-### K4 — dicatat, belum jadi penentu
 
 Rincian di Bagian 2.7.
 
@@ -602,7 +624,10 @@ validasi, yang harus dibahas sebagai keterbatasan generalisasi musiman.
 - Kalibrasi ketiganya mendarat di sasaran (0,902–0,934 terhadap 0,90).
 - Dengan anggaran pencarian yang sudah disetarakan (RF 18, XGBoost dan
   LSTM 30 kandidat pada ruang yang proporsional, 3 seed pada LSTM), Random
-  Forest unggul secara konsisten atas keduanya di K1, K2, dan K3.
+  Forest unggul secara konsisten atas keduanya di K1 dan K2 — dua kriteria
+  yang benar-benar dipakai memutuskan. Sebagai catatan tambahan yang tidak
+  memengaruhi keputusan ini, RF juga yang paling murah dijalankan pada
+  tahap yang sebanding (Bagian 2.6).
 
 ### Yang tidak boleh dinyatakan
 
@@ -816,7 +841,11 @@ dibandingkan langsung:
 Artefak: `dataset/model_ready/xgb_walk_forward_results_rearranged.csv`
 (model_name `xgboost_rearranged`, tidak masuk git).
 
-## 2.6 Ongkos Komputasi (K3) Lintas Model
+## 2.6 Catatan: Ongkos Komputasi Lintas Model
+
+**Bukan kriteria pembanding** (Bagian 1.5, 1.7) — dicatat semata sebagai
+informasi pendamping bagi tim yang akan mengoperasikan model terpilih.
+Tidak satu angka pun di tabel ini pernah dipakai memutuskan pemenang.
 
 |                                               |           random_forest |              xgboost |                                    lstm |
 | --------------------------------------------- | ----------------------: | -------------------: | --------------------------------------: |
@@ -841,7 +870,7 @@ Pada tahap yang sebanding, LSTM ~6,3× lebih lambat dari RF dan ~2,9× lebih
 lambat dari XGBoost — dan satu-satunya model yang hasilnya terbukti
 bergantung seed pada besaran yang jauh melebihi selisih K1 antar model.
 
-## 2.7 Risiko Integrasi Produksi (K4)
+## 2.7 Risiko Integrasi Produksi (K3)
 
 | Model             | Yang wajib tersedia saat inferensi                                                                                                                                              | Kegagalan diam-diam bila salah dipasang                                                                                                                                                                                                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -851,8 +880,8 @@ bergantung seed pada besaran yang jauh melebihi selisih K1 antar model.
 
 Random Forest dan XGBoost memprediksi dari satu baris; LSTM satu-satunya
 yang butuh 28 hari riwayat di belakang setiap baris yang diramalkan — beban
-operasional tambahan yang tidak muncul di angka K1/K2/K3 mana pun, tapi
-relevan bagi tim yang akan mengoperasikan model terpilih.
+operasional tambahan yang tidak muncul di skor K1 atau K2 mana pun, dan
+justru inilah yang ditangkap K3 di bagian ini.
 
 ## 2.8 Status Keputusan dan Rencana Kerja Tersisa
 
